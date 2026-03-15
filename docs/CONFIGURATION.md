@@ -210,12 +210,28 @@ The QR landing flow publishes a descriptor with these public fields:
 The descriptor is intentionally transport bootstrap data.
 It is not a long-term credential.
 
+`GET https://pair.zhihand.com/pair?d=<base64url>` has two public modes:
+
+- browser mode
+  - default response
+  - returns a human-facing HTML landing page with an embeddable QR code
+- machine mode
+  - requested with `Accept: application/json` or `?format=json`
+  - returns the raw `pairing` descriptor JSON that the Android app claims
+
+Public-safe expectation:
+
+- OpenClaw shows or links to the canonical `pair.zhihand.com/pair?...` URL
+- the Android app camera scans that QR code
+- the Android app resolves the descriptor in JSON mode before claim
+
 ## Android Public Expectations
 
 The public integration model expects the Android app to:
 
 - scan a QR code or open a pairing URL
-- resolve the pairing descriptor from `pair.zhihand.com`
+- resolve the pairing descriptor from `pair.zhihand.com` with
+  `Accept: application/json`
 - claim the pairing session against the deployment control plane
 - persist the returned long-term credential locally
 - poll paired-host commands through the control plane

@@ -207,12 +207,27 @@
 这组字段只负责“引导配对”。
 它不是长期凭据，也不能替代后续 claim 后签发的 credential。
 
+`GET https://pair.zhihand.com/pair?d=<base64url>` 当前分两种公共模式：
+
+- 浏览器模式
+  - 默认返回
+  - 返回给人看的 HTML 落地页，并直接渲染可扫码二维码
+- 机器模式
+  - 通过 `Accept: application/json` 或 `?format=json` 请求
+  - 返回 Android claim 需要的 `pairing` 描述符 JSON
+
+公共流程约定：
+
+- OpenClaw 侧展示或链接到标准 `pair.zhihand.com/pair?...`
+- Android app 用相机扫这张二维码
+- Android app 再以 JSON 模式解析描述符并执行 claim
+
 ## Android 公共集成预期
 
 公共模型默认 Android App 完成以下动作：
 
 - 扫二维码或打开配对链接
-- 从 `pair.zhihand.com` 解析配对描述符
+- 通过 `Accept: application/json` 从 `pair.zhihand.com` 解析配对描述符
 - 向控制面 claim 对应 pairing session
 - 在本地持久化长期凭据
 - 通过控制面轮询 paired-host 命令

@@ -186,11 +186,13 @@ host-side recovery path and does not change the public QR claim flow.
 
 1. The host registers itself against the control plane.
 2. The plugin creates a pairing session and pair URL.
-3. The Android app scans the QR code and claims the pairing session.
-4. The control plane returns a long-lived mobile credential.
-5. OpenClaw can then use `zhihand_status`, `zhihand_screen_read`, and
+3. The pair URL is the canonical QR landing page; browsers render a scannable
+   HTML page, while the Android app resolves the same URL in JSON mode.
+4. The Android app scans the QR code and claims the pairing session.
+5. The control plane returns a long-lived mobile credential.
+6. OpenClaw can then use `zhihand_status`, `zhihand_screen_read`, and
    `zhihand_control`.
-6. If the phone later claims a newer pairing session for the same host edge,
+7. If the phone later claims a newer pairing session for the same host edge,
    the adapter can recover forward to that latest claimed session instead of
    staying pinned to an older local credential.
 
