@@ -4,9 +4,36 @@ export type NativeMobileAgentConfig = {
   agentId: string;
   user: string;
   promptText: string;
+  promptInput?: OpenResponsesInputItem[];
   instructions?: string;
   maxOutputTokens?: number;
   signal?: AbortSignal;
+};
+
+export type OpenResponsesInputText = {
+  type: "input_text";
+  text: string;
+};
+
+export type OpenResponsesInputImage = {
+  type: "input_image";
+  image_url: string;
+};
+
+export type OpenResponsesInputFile = {
+  type: "input_file";
+  filename: string;
+  file_data: string;
+};
+
+export type OpenResponsesInputContent =
+  | OpenResponsesInputText
+  | OpenResponsesInputImage
+  | OpenResponsesInputFile;
+
+export type OpenResponsesInputItem = {
+  role: "user";
+  content: OpenResponsesInputContent[];
 };
 
 type OpenResponsesTextPart = {
@@ -42,7 +69,7 @@ export async function runNativeMobileAgent(
     body: JSON.stringify({
       model: `openclaw:${config.agentId}`,
       user: config.user,
-      input: config.promptText,
+      input: config.promptInput ?? buildDefaultPromptInput(config.promptText),
       instructions: config.instructions,
       max_output_tokens: config.maxOutputTokens
     })
@@ -65,6 +92,20 @@ export async function runNativeMobileAgent(
     replyText,
     runId: typeof payload.id === "string" ? payload.id : ""
   };
+}
+
+function buildDefaultPromptInput(promptText: string): OpenResponsesInputItem[] {
+  return [
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: promptText
+        }
+      ]
+    }
+  ];
 }
 
 export function extractOpenResponsesText(payload: OpenResponsesResponse): string {
@@ -101,6 +142,7 @@ export function buildNativeMobileAgentInstructions(): string {
     "You are the ZhiHand mobile agent running inside OpenClaw.",
     "Use zhihand tools when needed; do not invent phone state.",
     "Normal chat and phone-operation requests both use this same agent path.",
+    "User prompts may include images, documents, voice-note transcripts, or video preview frames in the same request.",
     "Prefer zhihand_status first when pairing or capture state is unclear.",
     "Prefer zhihand_screen_read before taps or visual navigation when the current screen matters.",
     "If zhihand_screen_read reports a stale or unavailable screen, stop visual actions and ask the user to restore screen sharing.",

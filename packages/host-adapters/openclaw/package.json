@@ -14,7 +14,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types src/index.test.ts src/native_mobile_agent.test.ts"
+    "test": "node --test --experimental-strip-types src/index.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

@@ -201,12 +201,19 @@ host-side recovery path and does not change the public QR claim flow.
 The supported runtime path is:
 
 1. Android app uploads a mobile prompt to the control plane.
-2. The OpenClaw plugin polls pending prompts.
-3. The plugin forwards the prompt to the local OpenClaw `POST /v1/responses`
+2. Android may also upload prompt attachments before the prompt itself.
+3. The OpenClaw plugin polls pending prompts.
+4. The plugin downloads any prompt attachments from the control plane.
+5. The plugin prepares multimodal native-agent input:
+   - images become `input_image`
+   - supported documents become `input_file`
+   - audio attachments are transcribed into text context
+   - video attachments stay limited context and may use preview images
+6. The plugin forwards the prepared prompt to the local OpenClaw `POST /v1/responses`
    endpoint for the dedicated mobile agent.
-4. The dedicated mobile agent decides whether to answer directly or call
+7. The dedicated mobile agent decides whether to answer directly or call
    `zhihand_status`, `zhihand_screen_read`, and `zhihand_control`.
-5. The plugin writes the final assistant reply back to the control plane.
+8. The plugin writes the final assistant reply back to the control plane.
 
 Task cancellation also uses this same path:
 
@@ -222,3 +229,13 @@ stream.
 
 `start_live_capture` may return a permission-required result until the Android
 app already has an active screen-capture session.
+
+## Attachment Best Practice
+
+Preferred handling:
+
+- images and documents remain raw attachments
+- voice notes remain raw audio attachments and are transcribed on the host
+- Android should not treat app-local speech-to-text as the canonical contract
+- video support is intentionally conservative and should be treated as limited
+  context until the deployment adds explicit video understanding

@@ -171,6 +171,13 @@ The public OpenClaw adapter exposes:
 - `start_live_capture`
 - `stop_live_capture`
 
+The public mobile prompt path may also include prompt attachments:
+
+- images
+- audio notes
+- documents
+- limited video attachments plus optional preview images
+
 Coordinate best practice:
 
 - `click`, `long_click`, and `move_to` use `xRatio` and `yRatio` in `[0,1]`
@@ -192,6 +199,15 @@ Coordinate best practice:
 - `auto` and `paste` overwrite the Android clipboard as part of the
   reliability trade-off. Prefer `type` for sensitive text or when clipboard
   mutation is not acceptable.
+
+Attachment best practice:
+
+- send images and documents as raw prompt attachments
+- send voice notes as raw audio attachments
+- let the OpenClaw host transcribe audio before the dedicated mobile agent run
+- avoid app-local speech-to-text as the primary public contract
+- treat video as limited context unless a future deployment adds explicit
+  video understanding
 
 ## Pairing Descriptor Fields
 
@@ -234,8 +250,17 @@ The public integration model expects the Android app to:
   `Accept: application/json`
 - claim the pairing session against the deployment control plane
 - persist the returned long-term credential locally
+- upload prompt attachments through the control plane when the user sends
+  images, files, or voice notes
 - poll paired-host commands through the control plane
 - upload the latest screen snapshot through the control plane when capture is active
+
+Recommended Android prompt UX:
+
+- when the text composer is empty, show a `+` entry point for attachments
+- support image, file, and voice-note attachments on the same prompt path
+- record voice locally and upload it as an audio attachment
+- let the OpenClaw host decide how to transcribe or interpret those inputs
 
 The OpenClaw host adapter may later recover to a newer claimed pairing session
 for the same `edge_id` if the local adapter state falls behind the active phone

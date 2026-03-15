@@ -170,6 +170,13 @@
 - `start_live_capture`
 - `stop_live_capture`
 
+当前公共 mobile prompt 路径也允许携带附件：
+
+- 图片
+- 语音 note
+- 文档
+- 有限视频附件，以及可选的静态预览图
+
 坐标最佳实践：
 
 - `click`、`long_click`、`move_to` 使用基于最新 `zhihand_screen_read`
@@ -189,6 +196,14 @@
 - `input_text` 支持 `submit=true`，表示文本输入成功后立刻补一个 `Enter`。
 - `auto` 和 `paste` 会覆盖 Android 当前系统剪贴板，这是为了输入稳定性做出的
   取舍。敏感文本或不允许改写剪贴板时，应优先使用 `type`。
+
+附件最佳实践：
+
+- 图片和文档直接作为原始 prompt 附件上传
+- 语音 note 直接作为原始音频附件上传
+- 音频转写放在 OpenClaw 宿主侧完成，再送入 native mobile agent
+- 不要把“Android 本地先做语音转文字”当成公共主契约
+- 视频默认只作为有限上下文，除非部署未来显式增加视频理解能力
 
 ## 配对描述符字段
 
@@ -230,8 +245,16 @@
 - 通过 `Accept: application/json` 从 `pair.zhihand.com` 解析配对描述符
 - 向控制面 claim 对应 pairing session
 - 在本地持久化长期凭据
+- 当用户发送图片、文件或语音 note 时，通过控制面上传 prompt 附件
 - 通过控制面轮询 paired-host 命令
 - 在录屏有效时，向控制面上传最新屏幕快照
+
+推荐的 Android prompt 交互：
+
+- 当输入框为空时，右侧主按钮显示 `+`，进入附件入口
+- 图片、文件、语音 note 都走同一条 prompt 路径
+- 语音先在本地录制，再作为音频附件上传
+- 最终如何转写、如何解释，由 OpenClaw 宿主决定
 
 如果 OpenClaw 宿主侧本地保存的 pairing 状态落后于手机当前已 claim 的 session，
 宿主适配器可以按同一 `edge_id` 自动前滚到最新已 claim 的 pairing。

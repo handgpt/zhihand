@@ -135,6 +135,25 @@ export type EnqueueMobilePromptInput = {
   credentialSecret: string;
   text: string;
   clientMessageId?: string;
+  attachmentIds?: string[];
+};
+
+export type MobilePromptAttachmentRecord = {
+  id: string;
+  credential_id: string;
+  edge_id: string;
+  prompt_id?: string;
+  client_attachment_id?: string;
+  parent_client_attachment_id?: string;
+  kind: "image" | "audio" | "video" | "file" | string;
+  purpose?: "input" | "preview" | string;
+  file_name: string;
+  mime_type: string;
+  byte_size: number;
+  width?: number;
+  height?: number;
+  duration_ms?: number;
+  created_at: string;
 };
 
 export type QueuedCommandRecord = {
@@ -169,6 +188,7 @@ export type MobilePromptRecord = {
   edge_id: string;
   client_message_id?: string;
   text: string;
+  attachments?: MobilePromptAttachmentRecord[];
   status: string;
   created_at: string;
   processing_started_at?: string;
@@ -225,6 +245,19 @@ export type FetchScreenSnapshotResult = {
   snapshot: ScreenSnapshotRecord;
   ageMs: number | null;
   capturedAt: string | null;
+};
+
+export type DownloadPromptAttachmentInput = {
+  credentialId: string;
+  controllerToken: string;
+  attachmentId: string;
+};
+
+export type DownloadPromptAttachmentResult = {
+  attachmentId: string;
+  mimeType: string;
+  fileName: string;
+  content: Uint8Array;
 };
 
 export type GetCommandInput = {
@@ -600,7 +633,8 @@ export async function enqueueMobilePrompt(
       method: "POST",
       body: JSON.stringify({
         text: input.text,
-        client_message_id: input.clientMessageId
+        client_message_id: input.clientMessageId,
+        attachment_ids: input.attachmentIds
       }),
       headers: {
         authorization: `Bearer ${input.credentialSecret}`
@@ -608,6 +642,54 @@ export async function enqueueMobilePrompt(
     }
   });
   return payload.prompt;
+}
+
+export async function downloadPromptAttachmentContent(
+  config: ZhiHandPluginConfig,
+  input: DownloadPromptAttachmentInput,
+  fetchImpl: FetchLike = fetch
+): Promise<DownloadPromptAttachmentResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 20_000);
+
+  try {
+    const response = await fetchImpl(
+      `${resolveControlPlaneEndpoint(config)}/v1/credentials/${encodeURIComponent(input.credentialId)}/attachments/${encodeURIComponent(input.attachmentId)}/content`,
+      {
+        method: "GET",
+        headers: {
+          ...buildHeaders(),
+          "x-zhihand-controller-token": input.controllerToken
+        },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) {
+      let message = `Attachment fetch returned ${response.status}.`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (typeof payload.error === "string" && payload.error.trim()) {
+          message = payload.error.trim();
+        }
+      } catch {
+        // Ignore JSON parse failures for binary responses.
+      }
+      throw new Error(message);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const contentDisposition = response.headers.get("content-disposition") ?? "";
+    const fileNameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+    return {
+      attachmentId: input.attachmentId,
+      mimeType: response.headers.get("content-type") ?? "application/octet-stream",
+      fileName: fileNameMatch?.[1]?.trim() || input.attachmentId,
+      content: new Uint8Array(arrayBuffer)
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function listPendingPrompts(

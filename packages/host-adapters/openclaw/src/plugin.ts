@@ -28,6 +28,7 @@ import {
   buildNativeMobileAgentInstructions,
   runNativeMobileAgent
 } from "./native_mobile_agent.ts";
+import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
 
 type OpenClawPluginApi = any;
 
@@ -471,10 +472,16 @@ async function processMobilePrompt(
     abortController
   );
   try {
+    const preparedPrompt = await prepareMobilePromptInput(
+      api,
+      { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+      pairing,
+      prompt
+    );
     const completion = await runOpenClawNativeMobileAgent(
       api,
       pairing,
-      prompt.text,
+      preparedPrompt,
       abortController.signal
     );
     runId = completion.runId;
@@ -513,7 +520,7 @@ async function processMobilePrompt(
 async function runOpenClawNativeMobileAgent(
   api: OpenClawPluginApi,
   pairing: StoredPairingState,
-  promptText: string,
+  prompt: { effectivePromptText: string; promptInput: any[] },
   signal?: AbortSignal
 ) : Promise<{ replyText: string; runId: string }> {
   return await runNativeMobileAgent({
@@ -521,7 +528,8 @@ async function runOpenClawNativeMobileAgent(
     authToken: resolveGatewayAuthToken(api),
     agentId: resolveMobileAgentId(api),
     user: buildMobileAgentUser(pairing),
-    promptText,
+    promptText: prompt.effectivePromptText,
+    promptInput: prompt.promptInput,
     instructions: buildNativeMobileAgentInstructions(),
     signal
   });
