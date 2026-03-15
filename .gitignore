@@ -1,0 +1,8 @@
+.DS_Store
+*.log
+bin/
+dist/
+coverage/
+node_modules/
+.codex-gemini-advisories/
+.codex-pitfalls.md

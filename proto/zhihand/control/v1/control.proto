@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package zhihand.control.v1;
+
+option go_package = "github.com/zhihand/zhihand/gen/go/zhihand/control/v1;controlv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service ControlService {
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+  rpc ListCapabilities(ListCapabilitiesRequest) returns (ListCapabilitiesResponse);
+  rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse);
+  rpc StreamEvents(StreamEventsRequest) returns (stream ControlEvent);
+}
+
+message GetServerInfoRequest {}
+
+message GetServerInfoResponse {
+  string service_name = 1;
+  string version = 2;
+  string protocol_version = 3;
+  repeated Capability capabilities = 4;
+}
+
+message ListCapabilitiesRequest {}
+
+message ListCapabilitiesResponse {
+  repeated Capability capabilities = 1;
+}
+
+message ExecuteActionRequest {
+  Action action = 1;
+}
+
+message ExecuteActionResponse {
+  string request_id = 1;
+  ActionStatus status = 2;
+  google.protobuf.Struct result = 3;
+  ErrorDetail error = 4;
+}
+
+message StreamEventsRequest {
+  repeated string topics = 1;
+  string client_id = 2;
+}
+
+message ControlEvent {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  oneof payload {
+    ActionEvent action_event = 3;
+    CapabilityEvent capability_event = 4;
+    HeartbeatEvent heartbeat_event = 5;
+  }
+}
+
+message Action {
+  string request_id = 1;
+  ActionType type = 2;
+  string source = 3;
+  string target = 4;
+  google.protobuf.Struct parameters = 5;
+  google.protobuf.Timestamp requested_at = 6;
+}
+
+message ActionEvent {
+  Action action = 1;
+  ActionStatus status = 2;
+  google.protobuf.Struct progress = 3;
+  ErrorDetail error = 4;
+}
+
+message Capability {
+  string id = 1;
+  string display_name = 2;
+  string version = 3;
+  repeated ActionType supported_actions = 4;
+  google.protobuf.Struct metadata = 5;
+}
+
+message CapabilityEvent {
+  Capability capability = 1;
+  CapabilityState state = 2;
+}
+
+message HeartbeatEvent {
+  string source = 1;
+  google.protobuf.Timestamp sent_at = 2;
+}
+
+message ErrorDetail {
+  ErrorCode code = 1;
+  string message = 2;
+  google.protobuf.Struct metadata = 3;
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  ACTION_TYPE_SESSION_START = 1;
+  ACTION_TYPE_SESSION_STOP = 2;
+  ACTION_TYPE_DEVICE_CONNECT = 3;
+  ACTION_TYPE_DEVICE_DISCONNECT = 4;
+  ACTION_TYPE_STATE_SYNC = 5;
+  ACTION_TYPE_TOOL_INVOKE = 6;
+  ACTION_TYPE_CAPABILITY_REFRESH = 7;
+}
+
+enum ActionStatus {
+  ACTION_STATUS_UNSPECIFIED = 0;
+  ACTION_STATUS_REQUESTED = 1;
+  ACTION_STATUS_ACCEPTED = 2;
+  ACTION_STATUS_RUNNING = 3;
+  ACTION_STATUS_COMPLETED = 4;
+  ACTION_STATUS_FAILED = 5;
+  ACTION_STATUS_CANCELLED = 6;
+}
+
+enum CapabilityState {
+  CAPABILITY_STATE_UNSPECIFIED = 0;
+  CAPABILITY_STATE_ADDED = 1;
+  CAPABILITY_STATE_UPDATED = 2;
+  CAPABILITY_STATE_REMOVED = 3;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_VALIDATION = 1;
+  ERROR_CODE_UNSUPPORTED = 2;
+  ERROR_CODE_PERMISSION = 3;
+  ERROR_CODE_EXECUTION = 4;
+  ERROR_CODE_TIMEOUT = 5;
+  ERROR_CODE_TRANSPORT = 6;
+}
+

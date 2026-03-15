@@ -1,0 +1,95 @@
+{
+  "id": "zhihand",
+  "name": "ZhiHand",
+  "description": "Pair a ZhiHand Android app, chat through OpenClaw, read the latest phone screen, and send BLE-backed control commands.",
+  "skills": [
+    "skills/zhihand-mobile"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "controlPlaneEndpoint": {
+        "type": "string"
+      },
+      "originListener": {
+        "type": "string"
+      },
+      "displayName": {
+        "type": "string"
+      },
+      "stableIdentity": {
+        "type": "string"
+      },
+      "pairingTTLSeconds": {
+        "type": "number",
+        "minimum": 30
+      },
+      "appDownloadURL": {
+        "type": "string"
+      },
+      "gatewayResponsesEndpoint": {
+        "type": "string"
+      },
+      "gatewayAuthToken": {
+        "type": "string"
+      },
+      "mobileAgentId": {
+        "type": "string"
+      },
+      "requestedScopes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "controlPlaneEndpoint",
+      "originListener"
+    ]
+  },
+  "uiHints": {
+    "controlPlaneEndpoint": {
+      "label": "Control Plane Endpoint",
+      "help": "Base URL for the ZhiHand control plane, for example https://api.zhihand.com."
+    },
+    "originListener": {
+      "label": "Origin Listener",
+      "help": "Public origin metadata recorded for this OpenClaw plugin instance."
+    },
+    "displayName": {
+      "label": "Display Name",
+      "help": "Human-friendly plugin name shown in pairing state."
+    },
+    "stableIdentity": {
+      "label": "Stable Identity",
+      "help": "Stable plugin identity used to reuse the same edge ID across restarts."
+    },
+    "pairingTTLSeconds": {
+      "label": "Pairing TTL Seconds",
+      "help": "How long a generated pairing QR remains valid."
+    },
+    "appDownloadURL": {
+      "label": "App Download URL",
+      "help": "URL shown to users when generating the pairing QR."
+    },
+    "gatewayResponsesEndpoint": {
+      "label": "Gateway Responses Endpoint",
+      "help": "Local OpenClaw /v1/responses endpoint for the dedicated ZhiHand mobile agent."
+    },
+    "gatewayAuthToken": {
+      "label": "Gateway Auth Token",
+      "help": "Gateway bearer token used to call the local OpenClaw /v1/responses endpoint.",
+      "sensitive": true
+    },
+    "mobileAgentId": {
+      "label": "Mobile Agent Id",
+      "help": "Dedicated OpenClaw agent id used for ZhiHand mobile prompts."
+    },
+    "requestedScopes": {
+      "label": "Requested Scopes",
+      "help": "Requested ZhiHand scopes included in the pairing descriptor."
+    }
+  }
+}
