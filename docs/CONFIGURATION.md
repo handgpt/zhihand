@@ -221,6 +221,11 @@ The public integration model expects the Android app to:
 - poll paired-host commands through the control plane
 - upload the latest screen snapshot through the control plane when capture is active
 
+The OpenClaw host adapter may later recover to a newer claimed pairing session
+for the same `edge_id` if the local adapter state falls behind the active phone
+claim. This recovery is host-side state reconciliation; it does not replace the
+QR claim flow or mobile credential issuance.
+
 ## BLE Lease Contract
 
 The Android app and ZhiHand hardware use a BLE lease contract so nearby devices

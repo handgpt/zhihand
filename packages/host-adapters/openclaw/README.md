@@ -178,6 +178,10 @@ Relative to the OpenClaw state directory:
 - `plugins/zhihand/latest-screen.jpg`
   last fetched screen snapshot cache
 
+The adapter may automatically advance local pairing state to the latest claimed
+session for the same host edge when the stored pairing becomes stale. This is a
+host-side recovery path and does not change the public QR claim flow.
+
 ## Pairing Flow
 
 1. The host registers itself against the control plane.
@@ -186,6 +190,9 @@ Relative to the OpenClaw state directory:
 4. The control plane returns a long-lived mobile credential.
 5. OpenClaw can then use `zhihand_status`, `zhihand_screen_read`, and
    `zhihand_control`.
+6. If the phone later claims a newer pairing session for the same host edge,
+   the adapter can recover forward to that latest claimed session instead of
+   staying pinned to an older local credential.
 
 ## Mobile Prompt Path
 

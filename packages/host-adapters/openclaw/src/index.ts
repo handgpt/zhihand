@@ -202,6 +202,11 @@ export type GetPromptInput = {
   promptId: string;
 };
 
+export type GetLatestClaimedPairingInput = {
+  edgeId: string;
+  controllerToken: string;
+};
+
 export type CreatePromptReplyInput = {
   credentialId: string;
   promptId: string;
@@ -450,6 +455,29 @@ export async function getPairingSession(
     apiKey: config.apiKey
   });
   return payload.session;
+}
+
+export async function getLatestClaimedPairingSession(
+  config: ZhiHandPluginConfig,
+  input: GetLatestClaimedPairingInput,
+  fetchImpl: FetchLike = fetch
+): Promise<PairingSession> {
+  const payload = await requestJSON<{ session: PairingSession; controller_token?: string }>({
+    baseURL: resolveControlPlaneEndpoint(config),
+    fetchImpl,
+    timeoutMs: config.timeoutMs,
+    path: `/v1/plugins/${encodeURIComponent(input.edgeId)}/active-pairing`,
+    apiKey: config.apiKey,
+    init: {
+      headers: {
+        "x-zhihand-controller-token": input.controllerToken
+      }
+    }
+  });
+  return {
+    ...payload.session,
+    controller_token: payload.controller_token ?? payload.session.controller_token
+  };
 }
 
 export async function waitForClaim(

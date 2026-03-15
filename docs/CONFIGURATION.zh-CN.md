@@ -218,6 +218,10 @@
 - 通过控制面轮询 paired-host 命令
 - 在录屏有效时，向控制面上传最新屏幕快照
 
+如果 OpenClaw 宿主侧本地保存的 pairing 状态落后于手机当前已 claim 的 session，
+宿主适配器可以按同一 `edge_id` 自动前滚到最新已 claim 的 pairing。
+这只是宿主侧的状态修复，不会替代二维码 claim 和长期 credential 的签发流程。
+
 ## BLE 租约约定
 
 Android App 与 ZhiHand 硬件之间使用 BLE 租约机制，保证多设备竞争时只有一个有效控制端。

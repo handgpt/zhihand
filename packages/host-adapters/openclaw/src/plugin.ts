@@ -12,6 +12,7 @@ import {
   fetchLatestScreenSnapshot,
   getPrompt,
   getPairingSession,
+  getLatestClaimedPairingSession,
   listPendingPrompts,
   registerPlugin,
   type MobilePromptRecord,
@@ -784,8 +785,56 @@ async function refreshPairingSession(
     status: session.status,
     expiresAt: session.expires_at
   };
+  if (state.pairing.status === "claimed" && state.pairing.controllerToken && state.pairing.edgeId) {
+    const recovered = await tryRecoverLatestClaimedPairing(api, state.pairing);
+    if (recovered) {
+      state.pairing = recovered;
+    }
+  }
   await saveState(api.runtime.state.resolveStateDir(), state);
   return state.pairing;
+}
+
+async function tryRecoverLatestClaimedPairing(
+  api: OpenClawPluginApi,
+  pairing: StoredPairingState
+): Promise<StoredPairingState | null> {
+  try {
+    const session = await getLatestClaimedPairingSession(
+      { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+      {
+        edgeId: pairing.edgeId,
+        controllerToken: pairing.controllerToken
+      }
+    );
+    if (!session.credential_id || !session.controller_token) {
+      return pairing;
+    }
+    if (
+      session.id === pairing.sessionId &&
+      session.credential_id === pairing.credentialId &&
+      session.controller_token === pairing.controllerToken
+    ) {
+      return pairing;
+    }
+    api.logger.info?.(
+      `ZhiHand pairing state advanced from ${pairing.sessionId}/${pairing.credentialId ?? "none"} to ${session.id}/${session.credential_id}.`
+    );
+    return {
+      sessionId: session.id,
+      controllerToken: session.controller_token,
+      edgeId: session.edge_id,
+      edgeHost: session.edge_host,
+      pairUrl: session.pair_url,
+      qrPayload: session.qr_payload,
+      credentialId: session.credential_id,
+      status: session.status,
+      expiresAt: session.expires_at
+    };
+  } catch (error) {
+    api.logger.warn?.(`ZhiHand claimed-pairing recovery skipped: ${errorMessage(error)}`);
+    return pairing;
+  }
 }
 
 function resolvePluginConfig(api: OpenClawPluginApi): PluginConfig {

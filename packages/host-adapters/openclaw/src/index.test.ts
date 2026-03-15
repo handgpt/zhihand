@@ -12,6 +12,7 @@ import {
   enqueueMobilePrompt,
   executeAction,
   fetchLatestScreenSnapshot,
+  getLatestClaimedPairingSession,
   fetchServerInfo,
   getCommand,
   getPrompt,
@@ -210,6 +211,42 @@ test("registerPlugin, createPairingSession, and getPairingSession use control-pl
       "GET http://127.0.0.1:8686/v1/pairing/sessions/prs_123"
     ]
   );
+});
+
+test("getLatestClaimedPairingSession uses plugin recovery endpoint with controller token", async () => {
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    assert.equal(
+      request.url,
+      "http://127.0.0.1:8686/v1/plugins/edge_123/active-pairing"
+    );
+    assert.equal(request.headers.get("x-zhihand-controller-token"), "ctl_old");
+    return jsonResponse({
+      session: {
+        id: "prs_new",
+        edge_id: "edge_123",
+        edge_host: "edge-123.edge.zhihand.com",
+        pair_url: "https://pair.zhihand.com/pair?d=new",
+        qr_payload: "new",
+        status: "claimed",
+        credential_id: "crd_new",
+        created_at: "2026-03-15T00:00:00Z",
+        claimed_at: "2026-03-15T00:00:05Z",
+        expires_at: "2026-03-15T00:10:00Z"
+      },
+      controller_token: "ctl_new"
+    }, 200);
+  };
+
+  const session = await getLatestClaimedPairingSession(
+    { controlPlaneEndpoint: "http://127.0.0.1:8686" },
+    { edgeId: "edge_123", controllerToken: "ctl_old" },
+    fakeFetch
+  );
+
+  assert.equal(session.id, "prs_new");
+  assert.equal(session.credential_id, "crd_new");
+  assert.equal(session.controller_token, "ctl_new");
 });
 
 test("getPrompt reads a single mobile prompt through the control plane", async () => {
