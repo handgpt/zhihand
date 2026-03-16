@@ -1,10 +1,12 @@
-# 发布方式
+# 智手®（ZhiHand）发布方式
 
-本文档定义 ZhiHand 对外发布的推荐形态。
+说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
+
+本文档定义智手®（ZhiHand）对外发布的推荐形态。
 
 ## 推荐发布形态
 
-ZhiHand 建议拆成 3 部分发布：
+智手®（ZhiHand）建议拆成 3 部分发布：
 
 1. Android app
 2. 托管 control plane
@@ -14,12 +16,22 @@ ZhiHand 建议拆成 3 部分发布：
 
 ## OpenClaw 分发方式
 
-推荐主路径：
+当前公开前主路径：
+
+- 通过本地 checkout 路径，使用官方 OpenClaw 插件安装命令安装
+
+当前安装命令：
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
+```
+
+正式发布后的目标路径：
 
 - 将插件发布为 npm 包
-- 通过官方 OpenClaw 插件安装命令安装
+- 再通过官方 OpenClaw 插件安装命令安装
 
-目标安装命令：
+正式发布后的安装命令：
 
 ```bash
 openclaw plugins install @handgpt/zhihand
@@ -53,7 +65,7 @@ openclaw plugins install @handgpt/zhihand
 
 ## 用户流程
 
-1. 安装 ZhiHand Android app
+1. 安装智手® Android app
 2. 安装 OpenClaw 插件
 3. 根据宿主要求重启或重新加载 OpenClaw
 4. 执行 `/zhihand pair`

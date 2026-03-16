@@ -33,7 +33,10 @@
   "files": [
     "README.md",
     "openclaw.plugin.json",
-    "src/",
+    "src/index.ts",
+    "src/mobile_prompt_media.ts",
+    "src/native_mobile_agent.ts",
+    "src/plugin.ts",
     "skills/"
   ],
   "publishConfig": {

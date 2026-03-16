@@ -207,7 +207,13 @@ Recommended first public release shape:
 - official hosted control plane
 - npm-published OpenClaw plugin package
 
-Recommended OpenClaw install path:
+Current pre-release OpenClaw install path:
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
+```
+
+Planned public install path after npm publication:
 
 ```bash
 openclaw plugins install @handgpt/zhihand

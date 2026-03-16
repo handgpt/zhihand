@@ -14,13 +14,19 @@ It is a thin plugin layer on top of the shared ZhiHand control-plane contract.
 
 ## Recommended Install
 
-Primary release path:
+Current pre-release install path:
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
+```
+
+Planned public npm install path after the package is published:
 
 ```bash
 openclaw plugins install @handgpt/zhihand
 ```
 
-Recommended discovery paths:
+Recommended discovery paths after npm publication:
 
 - package README
 - OpenClawDir or another community plugin directory
@@ -171,6 +177,8 @@ Recommended first public release:
 - Android app
 - hosted `pair.zhihand.com` and `api.zhihand.com`
 - npm-published OpenClaw plugin
+
+Until that npm release exists, use the local path install shown above.
 
 For non-OpenClaw hosts, publish additional thin adapters on top of the same
 control-plane contract instead of growing this package into a multi-host shell.

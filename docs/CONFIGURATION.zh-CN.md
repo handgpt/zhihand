@@ -1,6 +1,8 @@
-# 公共配置面
+# 智手®（ZhiHand）公共配置面
 
-本文档记录 ZhiHand 公共仓库中允许公开的配置面。
+说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
+
+本文档记录智手®（ZhiHand）公共仓库中允许公开的配置面。
 
 它的目标是：
 
@@ -50,7 +52,7 @@
 - `gatewayAuthToken`
   调用本地 OpenClaw `POST /v1/responses` 时使用的 Gateway Bearer Token
 - `mobileAgentId`
-  专用于 ZhiHand 手机提示词的 OpenClaw agent id
+  专用于智手®手机提示词的 OpenClaw agent id
 - `requestedScopes`
   写入配对描述符中的权限申请列表
 
@@ -80,14 +82,14 @@
 - `appDownloadURL`: `https://zhihand.com/download`
 - `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
 - `mobileAgentId`: `zhihand-mobile`
-- `requestedScopes`: 推荐的 ZhiHand 默认 scopes
+- `requestedScopes`: 推荐的智手®默认 scopes
 
 公共插件默认指向官方托管 control plane。
 如果是自托管部署，再显式覆盖 control-plane endpoint。
 
 ## OpenClaw 运行时最佳实践
 
-公共 ZhiHand 插件应该保持“薄”。
+公共智手®（ZhiHand）插件应该保持“薄”。
 
 推荐的运行时分工：
 
@@ -127,7 +129,7 @@
 
 - `gateway.http.endpoints.responses.enabled = true`
 - 插件能拿到本地 gateway bearer token
-- 专用的 ZhiHand mobile agent 使用支持 tools 的 provider model，例如
+- 专用的智手® mobile agent 使用支持 tools 的 provider model，例如
   `openai-codex/gpt-5.4`
 - `zhihand_*` 工具注册为 optional，并且只对白名单中的专用 agent 开放
 - 如果缺少这些前提，relay 不会启动，并会在启动阶段直接记录配置错误
@@ -205,7 +207,13 @@
 - 官方托管 control plane
 - npm 发布的 OpenClaw 插件包
 
-推荐的 OpenClaw 安装方式：
+当前公开前的 OpenClaw 安装方式：
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
+```
+
+正式发布后的目标安装方式：
 
 ```bash
 openclaw plugins install @handgpt/zhihand
@@ -278,7 +286,7 @@ openclaw plugins install @handgpt/zhihand
 
 ## BLE 租约约定
 
-Android App 与 ZhiHand 硬件之间使用 BLE 租约机制，保证多设备竞争时只有一个有效控制端。
+Android App 与智手®硬件之间使用 BLE 租约机制，保证多设备竞争时只有一个有效控制端。
 
 当前公共常量：
 
