@@ -2,8 +2,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import QRCode from "qrcode";
-
 import {
   buildPairingPrompt,
   createPromptReply,
@@ -61,6 +59,19 @@ type StoredPluginState = {
   plugin?: PluginRecord;
   pairing?: StoredPairingState;
 };
+
+export function formatPairingCommandText(
+  appDownloadURL: string,
+  qrURL: string,
+  nextStep: string = "run /zhihand status"
+): string {
+  return [
+    "ZhiHand pairing QR created.",
+    `Download app: ${appDownloadURL}`,
+    `QR URL: ${qrURL}`,
+    `Open the QR URL in a browser, scan it in the ZhiHand app, then ${nextStep}.`
+  ].join("\n");
+}
 
 const STATE_RELATIVE_PATH = ["plugins", "zhihand", "state.json"] as const;
 const SCREEN_CACHE_FILE = ["plugins", "zhihand", "latest-screen.jpg"] as const;
@@ -142,12 +153,11 @@ export default function register(api: OpenClawPluginApi) {
         content: [
           {
             type: "text",
-            text: [
-              "ZhiHand pairing created.",
-              `Pair URL: ${prompt.pairURL}`,
-              `Download app: ${prompt.appDownloadURL}`,
-              "Open the ZhiHand app, scan the QR code from the pair URL page, then call zhihand_status."
-            ].join("\n")
+            text: formatPairingCommandText(
+              prompt.appDownloadURL,
+              prompt.pairURL,
+              "call zhihand_status"
+            )
           }
         ],
         details: {
@@ -626,18 +636,8 @@ async function handlePairCommand(api: OpenClawPluginApi): Promise<{ text: string
   const prompt = await buildPairingPrompt(result.session, {
     appDownloadURL: resolvePluginConfig(api).appDownloadURL ?? DEFAULT_DOWNLOAD_URL
   });
-  const qrText = await renderQrText(result.session.pair_url);
   return {
-    text: [
-      "ZhiHand pairing created.",
-      `Edge Host: ${result.plugin.edge_host}`,
-      `Pair URL: ${prompt.pairURL}`,
-      `Download app: ${prompt.appDownloadURL}`,
-      "",
-      qrText,
-      "",
-      "Open the ZhiHand app, scan this QR code, then run /zhihand status."
-    ].join("\n")
+    text: formatPairingCommandText(prompt.appDownloadURL, prompt.pairURL)
   };
 }
 
@@ -905,13 +905,6 @@ function normalizedPairingTTL(raw?: number): number {
     return 600;
   }
   return Math.max(30, Math.min(3600, Math.trunc(raw)));
-}
-
-async function renderQrText(pairUrl: string): Promise<string> {
-  return await QRCode.toString(pairUrl, {
-    type: "terminal",
-    small: true
-  });
 }
 
 async function loadState(stateDir: string): Promise<StoredPluginState> {

@@ -181,6 +181,13 @@ control-plane contract instead of growing this package into a multi-host shell.
 - `/zhihand status`
 - `/zhihand unpair`
 
+`/zhihand pair` returns a browser-first pairing summary:
+
+- app download URL
+- QR URL
+
+Open the QR URL in a browser to display the actual scannable QR page.
+
 ## Tools
 
 - `zhihand_pair`
