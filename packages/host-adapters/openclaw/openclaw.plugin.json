@@ -10,7 +10,8 @@
     "additionalProperties": false,
     "properties": {
       "controlPlaneEndpoint": {
-        "type": "string"
+        "type": "string",
+        "default": "https://api.zhihand.com"
       },
       "originListener": {
         "type": "string"
@@ -23,40 +24,47 @@
       },
       "pairingTTLSeconds": {
         "type": "number",
-        "minimum": 30
+        "minimum": 30,
+        "default": 600
       },
       "appDownloadURL": {
-        "type": "string"
+        "type": "string",
+        "default": "https://zhihand.com/download"
       },
       "gatewayResponsesEndpoint": {
-        "type": "string"
+        "type": "string",
+        "default": "http://127.0.0.1:18789/v1/responses"
       },
       "gatewayAuthToken": {
         "type": "string"
       },
       "mobileAgentId": {
-        "type": "string"
+        "type": "string",
+        "default": "zhihand-mobile"
       },
       "requestedScopes": {
         "type": "array",
         "items": {
           "type": "string"
-        }
+        },
+        "default": [
+          "observe",
+          "session.control",
+          "screen.read",
+          "screen.capture",
+          "ble.control"
+        ]
       }
-    },
-    "required": [
-      "controlPlaneEndpoint",
-      "originListener"
-    ]
+    }
   },
   "uiHints": {
     "controlPlaneEndpoint": {
       "label": "Control Plane Endpoint",
-      "help": "Base URL for the ZhiHand control plane, for example https://api.zhihand.com."
+      "help": "Base URL for the ZhiHand control plane. Leave empty to use the official hosted endpoint."
     },
     "originListener": {
       "label": "Origin Listener",
-      "help": "Public origin metadata recorded for this OpenClaw plugin instance."
+      "help": "Advanced override for host origin metadata. Leave empty in normal hosted deployments."
     },
     "displayName": {
       "label": "Display Name",
@@ -64,7 +72,7 @@
     },
     "stableIdentity": {
       "label": "Stable Identity",
-      "help": "Stable plugin identity used to reuse the same edge ID across restarts."
+      "help": "Advanced override for the stable host identity. Leave empty to auto-generate from hostname."
     },
     "pairingTTLSeconds": {
       "label": "Pairing TTL Seconds",
@@ -72,24 +80,24 @@
     },
     "appDownloadURL": {
       "label": "App Download URL",
-      "help": "URL shown to users when generating the pairing QR."
+      "help": "Optional app download URL shown in the pairing prompt. Leave empty for the official download page."
     },
     "gatewayResponsesEndpoint": {
       "label": "Gateway Responses Endpoint",
-      "help": "Local OpenClaw /v1/responses endpoint for the dedicated ZhiHand mobile agent."
+      "help": "Advanced override for the local OpenClaw /v1/responses endpoint."
     },
     "gatewayAuthToken": {
       "label": "Gateway Auth Token",
-      "help": "Gateway bearer token used to call the local OpenClaw /v1/responses endpoint.",
+      "help": "Optional override for the local OpenClaw gateway bearer token. If omitted, the plugin uses OPENCLAW_GATEWAY_TOKEN when available.",
       "sensitive": true
     },
     "mobileAgentId": {
       "label": "Mobile Agent Id",
-      "help": "Dedicated OpenClaw agent id used for ZhiHand mobile prompts."
+      "help": "Dedicated OpenClaw agent id used for ZhiHand mobile prompts. Leave empty for zhihand-mobile."
     },
     "requestedScopes": {
       "label": "Requested Scopes",
-      "help": "Requested ZhiHand scopes included in the pairing descriptor."
+      "help": "Optional requested scopes included in the pairing descriptor. Leave empty for the recommended defaults."
     }
   }
 }

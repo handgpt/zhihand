@@ -1,5 +1,7 @@
 import QRCode from "qrcode";
 
+const DEFAULT_CONTROL_PLANE_ENDPOINT = "https://api.zhihand.com";
+
 export type ZhiHandPluginConfig = {
   endpoint?: string;
   controlPlaneEndpoint?: string;
@@ -317,7 +319,7 @@ export type ZhiHandControlCommandInput =
 export type FetchLike = typeof fetch;
 
 const ZHIHAND_OPENCLAW_USER_AGENT =
-  "ZhiHand-OpenClaw/0.3.0 (+https://zhihand.com)";
+  "ZhiHand-OpenClaw/0.4.1 (+https://zhihand.com)";
 
 type PromptQueueResponse = {
   items: MobilePromptRecord[];
@@ -338,7 +340,7 @@ type ReplyRecordResponse = {
 export function createManifest(): OpenClawPluginManifest {
   return {
     name: "zhihand",
-    version: "0.3.0",
+    version: "0.4.1",
     description: "ZhiHand control-plane and runtime adapter for OpenClaw",
     capabilities: [
       "control.execute",
@@ -357,10 +359,7 @@ export function resolveEndpoint(config: ZhiHandPluginConfig): string {
 }
 
 export function resolveControlPlaneEndpoint(config: ZhiHandPluginConfig): string {
-  const endpoint = config.controlPlaneEndpoint?.trim();
-  if (!endpoint) {
-    throw new Error("ZhiHand control-plane helpers require an explicit controlPlaneEndpoint");
-  }
+  const endpoint = config.controlPlaneEndpoint?.trim() || DEFAULT_CONTROL_PLANE_ENDPOINT;
   return stripTrailingSlash(endpoint);
 }
 

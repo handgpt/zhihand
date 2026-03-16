@@ -1,7 +1,7 @@
 {
-  "name": "zhihand",
-  "version": "0.3.0",
-  "private": true,
+  "name": "@handgpt/zhihand",
+  "version": "0.4.1",
+  "private": false,
   "type": "module",
   "openclaw": {
     "extensions": [
@@ -9,9 +9,35 @@
     ]
   },
   "description": "OpenClaw host adapter for the ZhiHand control model",
+  "license": "MIT",
+  "homepage": "https://github.com/handgpt/zhihand/tree/main/packages/host-adapters/openclaw",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handgpt/zhihand.git",
+    "directory": "packages/host-adapters/openclaw"
+  },
+  "bugs": {
+    "url": "https://github.com/handgpt/zhihand/issues"
+  },
+  "keywords": [
+    "zhihand",
+    "openclaw",
+    "plugin",
+    "android",
+    "phone-control"
+  ],
   "main": "src/plugin.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "files": [
+    "README.md",
+    "openclaw.plugin.json",
+    "src/",
+    "skills/"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "node --test --experimental-strip-types src/index.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts"

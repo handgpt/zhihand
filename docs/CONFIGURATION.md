@@ -32,11 +32,10 @@ The public OpenClaw plugin accepts the following config object under
 `plugins.entries.zhihand.config`:
 
 - `controlPlaneEndpoint`
-  Base URL for the deployment control plane, for example
-  `https://api.zhihand.com`
+  Base URL for the deployment control plane.
+  Default: `https://api.zhihand.com`
 - `originListener`
-  Public origin metadata for the host, for example
-  `https://host.example.zhihand.com`
+  Optional public origin metadata for the host
 - `displayName`
   Human-friendly name shown in pairing state
 - `stableIdentity`
@@ -54,11 +53,6 @@ The public OpenClaw plugin accepts the following config object under
 - `requestedScopes`
   Requested scopes embedded into the pairing descriptor
 
-Required fields:
-
-- `controlPlaneEndpoint`
-- `originListener`
-
 Public-safe example:
 
 ```json
@@ -68,20 +62,7 @@ Public-safe example:
       "zhihand": {
         "enabled": true,
         "config": {
-          "controlPlaneEndpoint": "https://api.zhihand.com",
-          "originListener": "https://host.example.zhihand.com",
-          "displayName": "ZhiHand @ example-host",
-          "stableIdentity": "openclaw-zhihand:example-host",
-          "pairingTTLSeconds": 600,
-          "appDownloadURL": "https://zhihand.com/download",
-          "gatewayResponsesEndpoint": "http://127.0.0.1:18789/v1/responses",
-          "gatewayAuthToken": "set-this-in-deployment",
-          "mobileAgentId": "zhihand-mobile",
-          "requestedScopes": [
-            "observe",
-            "session.control",
-            "ble.control"
-          ]
+          "gatewayAuthToken": "set-this-in-deployment"
         }
       }
     }
@@ -89,8 +70,17 @@ Public-safe example:
 }
 ```
 
-The public plugin intentionally does **not** default to one private control
-plane instance. Deployment-specific endpoints must be configured explicitly.
+Hosted defaults:
+
+- `controlPlaneEndpoint`: `https://api.zhihand.com`
+- `pairingTTLSeconds`: `600`
+- `appDownloadURL`: `https://zhihand.com/download`
+- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
+- `mobileAgentId`: `zhihand-mobile`
+- `requestedScopes`: recommended ZhiHand defaults
+
+The public plugin defaults to the official hosted control plane.
+Self-hosted deployments should override the control-plane endpoint explicitly.
 
 ## OpenClaw Runtime Best Practice
 
@@ -208,6 +198,28 @@ Attachment best practice:
 - avoid app-local speech-to-text as the primary public contract
 - treat video as limited context unless a future deployment adds explicit
   video understanding
+
+## Distribution Best Practice
+
+Recommended first public release shape:
+
+- Android app
+- official hosted control plane
+- npm-published OpenClaw plugin package
+
+Recommended OpenClaw install path:
+
+```bash
+openclaw plugins install @handgpt/zhihand
+```
+
+Recommended discovery paths:
+
+- package README
+- OpenClawDir or another community plugin directory
+- external catalogs where supported
+
+Do not assume every OpenClaw deployment has a first-party plugin store UI.
 
 ## Pairing Descriptor Fields
 

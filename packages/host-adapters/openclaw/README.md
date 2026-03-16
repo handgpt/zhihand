@@ -12,6 +12,22 @@ It is a thin plugin layer on top of the shared ZhiHand control-plane contract.
 - fetches the latest uploaded phone screen snapshot
 - sends control commands and waits for command ACK status
 
+## Recommended Install
+
+Primary release path:
+
+```bash
+openclaw plugins install @handgpt/zhihand
+```
+
+Recommended discovery paths:
+
+- package README
+- OpenClawDir or another community plugin directory
+- external catalogs when the host deployment supports them
+
+Do not assume a first-party plugin store UI is the only distribution path.
+
 ## OpenClaw Plugin Config
 
 The plugin reads its config from:
@@ -31,10 +47,12 @@ Supported fields:
 - `mobileAgentId`
 - `requestedScopes`
 
-Required fields:
+Normal hosted deployments can leave most fields empty.
 
-- `controlPlaneEndpoint`
-- `originListener`
+Recommended minimum:
+
+- no plugin config at all if `OPENCLAW_GATEWAY_TOKEN` is already available in the host environment
+- otherwise only `gatewayAuthToken`
 
 Example:
 
@@ -46,7 +64,25 @@ Example:
       "zhihand": {
         "enabled": true,
         "config": {
-          "controlPlaneEndpoint": "https://api.zhihand.com",
+          "gatewayAuthToken": "set-this-in-deployment"
+        }
+      }
+    }
+  }
+}
+```
+
+Advanced self-host example:
+
+```json
+{
+  "plugins": {
+    "allow": ["zhihand"],
+    "entries": {
+      "zhihand": {
+        "enabled": true,
+        "config": {
+          "controlPlaneEndpoint": "https://api.example.com",
           "originListener": "https://host.example.zhihand.com",
           "displayName": "ZhiHand @ example-host",
           "stableIdentity": "openclaw-zhihand:example-host",
@@ -58,6 +94,8 @@ Example:
           "requestedScopes": [
             "observe",
             "session.control",
+            "screen.read",
+            "screen.capture",
             "ble.control"
           ]
         }
@@ -67,10 +105,18 @@ Example:
 }
 ```
 
-Do not store secrets in this package or this public repository.
+Defaults:
 
-The public plugin intentionally does **not** hardcode one deployment control
-plane or host origin. Those values must be supplied by the deployment.
+- `controlPlaneEndpoint`: `https://api.zhihand.com`
+- `pairingTTLSeconds`: `600`
+- `appDownloadURL`: `https://zhihand.com/download`
+- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
+- `mobileAgentId`: `zhihand-mobile`
+- `requestedScopes`: recommended ZhiHand defaults
+- `stableIdentity`: auto-generated from hostname
+- `originListener`: optional; the control plane can fill a default host metadata value
+
+Do not store secrets in this package or this public repository.
 
 ## Best Practice
 
@@ -117,6 +163,17 @@ Deployment requirements for the native runtime path:
   such as `openai-codex/gpt-5.4`, not `codex-cli/*`
 - if these native-runtime prerequisites are missing, the prompt relay stays
   disabled and logs the configuration error during startup
+
+## Release Shape
+
+Recommended first public release:
+
+- Android app
+- hosted `pair.zhihand.com` and `api.zhihand.com`
+- npm-published OpenClaw plugin
+
+For non-OpenClaw hosts, publish additional thin adapters on top of the same
+control-plane contract instead of growing this package into a multi-host shell.
 
 ## Slash Commands
 

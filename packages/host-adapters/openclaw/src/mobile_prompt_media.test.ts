@@ -119,6 +119,7 @@ test("prepareMobilePromptInput maps attachments into multimodal native-agent inp
   );
 
   assert.equal(fetchCalls.length, 4);
+  assert.equal(prepared.promptInput[0]?.type, "message");
   const content = prepared.promptInput[0]?.content ?? [];
   assert.equal(content[0]?.type, "input_text");
   assert.match((content[0] as { text: string }).text, /hello from voice/);
@@ -126,6 +127,14 @@ test("prepareMobilePromptInput maps attachments into multimodal native-agent inp
   assert.match((content[0] as { text: string }).text, /Unsupported file attachment retained for reference/);
   assert.equal(content.filter((item) => item.type === "input_image").length, 2);
   assert.equal(content.filter((item) => item.type === "input_file").length, 1);
+  const imagePart = content.find((item) => item.type === "input_image");
+  assert.equal(imagePart?.type, "input_image");
+  assert.equal((imagePart as { source: { type: string; media_type?: string } }).source.type, "base64");
+  assert.equal((imagePart as { source: { media_type?: string } }).source.media_type, "image/jpeg");
+  const filePart = content.find((item) => item.type === "input_file");
+  assert.equal(filePart?.type, "input_file");
+  assert.equal((filePart as { source: { type: string; filename?: string } }).source.type, "base64");
+  assert.equal((filePart as { source: { filename?: string } }).source.filename, "att_pdf.bin");
 });
 
 test("prepareMobilePromptInput falls back cleanly when STT is unavailable", async () => {

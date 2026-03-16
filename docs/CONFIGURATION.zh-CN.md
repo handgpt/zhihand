@@ -33,9 +33,10 @@
 公共 OpenClaw 插件使用 `plugins.entries.zhihand.config` 这组配置字段：
 
 - `controlPlaneEndpoint`
-  控制面基地址，例如 `https://api.zhihand.com`
+  控制面基地址。
+  默认值：`https://api.zhihand.com`
 - `originListener`
-  当前宿主实例的公开来源标识，例如 `https://host.example.zhihand.com`
+  可选的宿主公开来源标识
 - `displayName`
   配对界面里展示的人类可读名称
 - `stableIdentity`
@@ -53,11 +54,6 @@
 - `requestedScopes`
   写入配对描述符中的权限申请列表
 
-其中必须显式提供：
-
-- `controlPlaneEndpoint`
-- `originListener`
-
 公开安全的示例：
 
 ```json
@@ -67,20 +63,7 @@
       "zhihand": {
         "enabled": true,
         "config": {
-          "controlPlaneEndpoint": "https://api.zhihand.com",
-          "originListener": "https://host.example.zhihand.com",
-          "displayName": "ZhiHand @ example-host",
-          "stableIdentity": "openclaw-zhihand:example-host",
-          "pairingTTLSeconds": 600,
-          "appDownloadURL": "https://zhihand.com/download",
-          "gatewayResponsesEndpoint": "http://127.0.0.1:18789/v1/responses",
-          "gatewayAuthToken": "set-this-in-deployment",
-          "mobileAgentId": "zhihand-mobile",
-          "requestedScopes": [
-            "observe",
-            "session.control",
-            "ble.control"
-          ]
+          "gatewayAuthToken": "set-this-in-deployment"
         }
       }
     }
@@ -90,8 +73,17 @@
 
 示例里只能使用占位值或可公开域名，不能填真实凭据。
 
-公共插件不会默认绑定某一个私有控制面实例。
-部署方必须显式提供控制面地址和宿主来源标识。
+托管默认值：
+
+- `controlPlaneEndpoint`: `https://api.zhihand.com`
+- `pairingTTLSeconds`: `600`
+- `appDownloadURL`: `https://zhihand.com/download`
+- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
+- `mobileAgentId`: `zhihand-mobile`
+- `requestedScopes`: 推荐的 ZhiHand 默认 scopes
+
+公共插件默认指向官方托管 control plane。
+如果是自托管部署，再显式覆盖 control-plane endpoint。
 
 ## OpenClaw 运行时最佳实践
 
@@ -204,6 +196,28 @@
 - 音频转写放在 OpenClaw 宿主侧完成，再送入 native mobile agent
 - 不要把“Android 本地先做语音转文字”当成公共主契约
 - 视频默认只作为有限上下文，除非部署未来显式增加视频理解能力
+
+## 分发最佳实践
+
+推荐第一阶段公开发布形态：
+
+- Android app
+- 官方托管 control plane
+- npm 发布的 OpenClaw 插件包
+
+推荐的 OpenClaw 安装方式：
+
+```bash
+openclaw plugins install @handgpt/zhihand
+```
+
+推荐发现入口：
+
+- 包 README
+- OpenClawDir 或其他社区插件目录
+- 宿主支持时再补 external catalog
+
+不要假设所有 OpenClaw 部署都有一个第一方插件商店界面。
 
 ## 配对描述符字段
 

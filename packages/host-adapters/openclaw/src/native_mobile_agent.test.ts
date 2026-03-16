@@ -81,6 +81,8 @@ test("runNativeMobileAgent posts to OpenResponses and parses reply", async () =>
   assert.equal(capturedAuth, "Bearer secret");
   assert.match(capturedBody, /openclaw:zhihand-mobile/);
   assert.match(capturedBody, /zhihand:credential:abc/);
+  assert.match(capturedBody, /"type":"message"/);
+  assert.match(capturedBody, /"type":"input_text"/);
 });
 
 test("runNativeMobileAgent surfaces response errors", async () => {

@@ -96,6 +96,7 @@ export async function prepareMobilePromptInput(
   return {
     promptInput: [
       {
+        type: "message",
         role: "user",
         content: contents
       }
@@ -147,7 +148,11 @@ async function toImageInput(
   );
   return {
     type: "input_image",
-    image_url: buildDataUrl(downloaded.mimeType, downloaded.content)
+    source: {
+      type: "base64",
+      media_type: downloaded.mimeType,
+      data: Buffer.from(downloaded.content).toString("base64")
+    }
   };
 }
 
@@ -168,8 +173,12 @@ async function toFileInput(
   );
   return {
     type: "input_file",
-    filename: downloaded.fileName,
-    file_data: buildDataUrl(downloaded.mimeType, downloaded.content)
+    source: {
+      type: "base64",
+      media_type: downloaded.mimeType,
+      data: Buffer.from(downloaded.content).toString("base64"),
+      filename: downloaded.fileName
+    }
   };
 }
 
@@ -228,11 +237,6 @@ function buildVideoContextNote(
   }
   bits.push("use the preview for visible UI details, and ask for a still frame if motion-specific detail matters");
   return bits.join("; ") + ".";
-}
-
-function buildDataUrl(mimeType: string, content: Uint8Array): string {
-  const resolvedMime = mimeType.trim() || "application/octet-stream";
-  return `data:${resolvedMime};base64,${Buffer.from(content).toString("base64")}`;
 }
 
 function sanitizeTempFileName(name: string): string {

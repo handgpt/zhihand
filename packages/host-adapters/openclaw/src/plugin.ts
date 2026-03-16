@@ -64,6 +64,7 @@ type StoredPluginState = {
 
 const STATE_RELATIVE_PATH = ["plugins", "zhihand", "state.json"] as const;
 const SCREEN_CACHE_FILE = ["plugins", "zhihand", "latest-screen.jpg"] as const;
+const DEFAULT_CONTROL_PLANE_ENDPOINT = "https://api.zhihand.com";
 const DEFAULT_DOWNLOAD_URL = "https://zhihand.com/download";
 const DEFAULT_REQUESTED_SCOPES = [
   "observe",
@@ -761,7 +762,7 @@ async function ensurePluginRegistration(
     {
       adapterKind: "openclaw",
       displayName: pluginConfig.displayName ?? `OpenClaw @ ${os.hostname()}`,
-      originListener: requireOriginListener(api),
+      originListener: pluginConfig.originListener?.trim(),
       stableIdentity: pluginConfig.stableIdentity ?? `openclaw-zhihand:${os.hostname()}`
     }
   );
@@ -850,13 +851,7 @@ function resolvePluginConfig(api: OpenClawPluginApi): PluginConfig {
 }
 
 function resolveControlPlaneEndpoint(api: OpenClawPluginApi): string {
-  const endpoint = resolvePluginConfig(api).controlPlaneEndpoint?.trim();
-  if (!endpoint) {
-    throw new Error(
-      "ZhiHand OpenClaw plugin requires plugins.entries.zhihand.config.controlPlaneEndpoint"
-    );
-  }
-  return endpoint;
+  return resolvePluginConfig(api).controlPlaneEndpoint?.trim() || DEFAULT_CONTROL_PLANE_ENDPOINT;
 }
 
 function validatePromptRelayConfig(api: OpenClawPluginApi): void {
@@ -903,16 +898,6 @@ function buildMobileAgentUser(pairing: StoredPairingState): string {
     throw new Error("ZhiHand pairing is claimed but missing a credential id.");
   }
   return `zhihand-mobile:${credential}`;
-}
-
-function requireOriginListener(api: OpenClawPluginApi): string {
-  const originListener = resolvePluginConfig(api).originListener?.trim();
-  if (!originListener) {
-    throw new Error(
-      "ZhiHand OpenClaw plugin requires plugins.entries.zhihand.config.originListener"
-    );
-  }
-  return originListener;
 }
 
 function normalizedPairingTTL(raw?: number): number {

@@ -17,13 +17,31 @@ export type OpenResponsesInputText = {
 
 export type OpenResponsesInputImage = {
   type: "input_image";
-  image_url: string;
+  source:
+    | {
+        type: "url";
+        url: string;
+      }
+    | {
+        type: "base64";
+        media_type: string;
+        data: string;
+      };
 };
 
 export type OpenResponsesInputFile = {
   type: "input_file";
-  filename: string;
-  file_data: string;
+  source:
+    | {
+        type: "url";
+        url: string;
+      }
+    | {
+        type: "base64";
+        media_type: string;
+        data: string;
+        filename?: string;
+      };
 };
 
 export type OpenResponsesInputContent =
@@ -32,6 +50,7 @@ export type OpenResponsesInputContent =
   | OpenResponsesInputFile;
 
 export type OpenResponsesInputItem = {
+  type: "message";
   role: "user";
   content: OpenResponsesInputContent[];
 };
@@ -97,6 +116,7 @@ export async function runNativeMobileAgent(
 function buildDefaultPromptInput(promptText: string): OpenResponsesInputItem[] {
   return [
     {
+      type: "message",
       role: "user",
       content: [
         {

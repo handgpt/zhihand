@@ -43,10 +43,10 @@ test("resolveControlPlaneEndpoint prefers explicit control plane endpoint", () =
   );
 });
 
-test("resolveControlPlaneEndpoint requires explicit control plane endpoint", () => {
-  assert.throws(
-    () => resolveControlPlaneEndpoint({ endpoint: "http://127.0.0.1:8787" }),
-    /require an explicit controlPlaneEndpoint/
+test("resolveControlPlaneEndpoint falls back to the hosted control plane", () => {
+  assert.equal(
+    resolveControlPlaneEndpoint({ endpoint: "http://127.0.0.1:8787" }),
+    "https://api.zhihand.com"
   );
 });
 
@@ -359,7 +359,7 @@ test("enqueueCommand posts controller-authenticated commands", async () => {
   assert.equal(capturedURL, "http://127.0.0.1:8686/v1/credentials/crd_123/commands");
   assert.equal(
     capturedHeaders?.get("user-agent"),
-    "ZhiHand-OpenClaw/0.3.0 (+https://zhihand.com)"
+    "ZhiHand-OpenClaw/0.4.1 (+https://zhihand.com)"
   );
   assert.equal(capturedHeaders?.get("x-zhihand-controller-token"), "ctl_secret");
   assert.match(capturedBody, /receive_home/);
@@ -442,7 +442,7 @@ test("mobile prompt and reply helpers use credential and controller auth correct
   assert.equal(reply.sequence, 1);
   assert.equal(
     calls[0]?.headers.get("user-agent"),
-    "ZhiHand-OpenClaw/0.3.0 (+https://zhihand.com)"
+    "ZhiHand-OpenClaw/0.4.1 (+https://zhihand.com)"
   );
   assert.equal(calls[0]?.headers.get("authorization"), "Bearer cred_secret");
   assert.equal(calls[1]?.headers.get("x-zhihand-controller-token"), "ctl_secret");
@@ -538,7 +538,7 @@ test("fetchLatestScreenSnapshot returns image metadata, freshness headers, and b
   assert.equal(snapshot.capturedAt, "2026-03-12T00:00:00Z");
   assert.equal(
     capturedHeaders?.get("user-agent"),
-    "ZhiHand-OpenClaw/0.3.0 (+https://zhihand.com)"
+    "ZhiHand-OpenClaw/0.4.1 (+https://zhihand.com)"
   );
 });
 
