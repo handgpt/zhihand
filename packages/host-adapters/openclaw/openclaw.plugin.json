@@ -1,5 +1,5 @@
 {
-  "id": "zhihand",
+  "id": "openclaw",
   "name": "ZhiHand",
   "description": "Pair a ZhiHand Android app, chat through OpenClaw, read the latest phone screen, and send BLE-backed control commands.",
   "skills": [

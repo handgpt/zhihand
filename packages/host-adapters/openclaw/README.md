@@ -38,7 +38,7 @@ Do not assume a first-party plugin store UI is the only distribution path.
 
 The plugin reads its config from:
 
-- `plugins.entries.zhihand.config`
+- `plugins.entries.openclaw.config`
 
 Supported fields:
 
@@ -65,9 +65,9 @@ Example:
 ```json
 {
   "plugins": {
-    "allow": ["zhihand"],
+    "allow": ["openclaw"],
     "entries": {
-      "zhihand": {
+      "openclaw": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-in-deployment"
@@ -83,9 +83,9 @@ Advanced self-host example:
 ```json
 {
   "plugins": {
-    "allow": ["zhihand"],
+    "allow": ["openclaw"],
     "entries": {
-      "zhihand": {
+      "openclaw": {
         "enabled": true,
         "config": {
           "controlPlaneEndpoint": "https://api.example.com",
@@ -145,7 +145,7 @@ Recommended deployment shape:
         "id": "zhihand-mobile",
         "model": "openai-codex/gpt-5.4",
         "tools": {
-          "allow": ["zhihand"]
+          "allow": ["openclaw"]
         }
       }
     ]
@@ -243,9 +243,9 @@ Coordinate rules:
 
 Relative to the OpenClaw state directory:
 
-- `plugins/zhihand/state.json`
+- `plugins/openclaw/state.json`
   stored pairing state for the host instance
-- `plugins/zhihand/latest-screen.jpg`
+- `plugins/openclaw/latest-screen.jpg`
   last fetched screen snapshot cache
 
 The adapter may automatically advance local pairing state to the latest claimed

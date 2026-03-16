@@ -29,7 +29,7 @@ Concrete deployment values and secrets belong in deployment-specific docs.
 ## OpenClaw Host Adapter Config
 
 The public OpenClaw plugin accepts the following config object under
-`plugins.entries.zhihand.config`:
+`plugins.entries.openclaw.config`:
 
 - `controlPlaneEndpoint`
   Base URL for the deployment control plane.
@@ -59,7 +59,7 @@ Public-safe example:
 {
   "plugins": {
     "entries": {
-      "zhihand": {
+      "openclaw": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-in-deployment"
@@ -104,7 +104,7 @@ Recommended dedicated agent example:
         "id": "zhihand-mobile",
         "model": "openai-codex/gpt-5.4",
         "tools": {
-          "allow": ["zhihand"]
+          "allow": ["openclaw"]
         }
       }
     ]
@@ -332,8 +332,8 @@ In practice:
 The OpenClaw plugin uses these state-relative artifacts inside the OpenClaw
 state directory:
 
-- `plugins/zhihand/state.json`
-- `plugins/zhihand/latest-screen.jpg`
+- `plugins/openclaw/state.json`
+- `plugins/openclaw/latest-screen.jpg`
 
 This repository intentionally does not document deployment-specific absolute
 paths.

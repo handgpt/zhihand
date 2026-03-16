@@ -73,8 +73,8 @@ export function formatPairingCommandText(
   ].join("\n");
 }
 
-const STATE_RELATIVE_PATH = ["plugins", "zhihand", "state.json"] as const;
-const SCREEN_CACHE_FILE = ["plugins", "zhihand", "latest-screen.jpg"] as const;
+const STATE_RELATIVE_PATH = ["plugins", "openclaw", "state.json"] as const;
+const SCREEN_CACHE_FILE = ["plugins", "openclaw", "latest-screen.jpg"] as const;
 const DEFAULT_CONTROL_PLANE_ENDPOINT = "https://api.zhihand.com";
 const DEFAULT_DOWNLOAD_URL = "https://zhihand.com/download";
 const DEFAULT_REQUESTED_SCOPES = [
