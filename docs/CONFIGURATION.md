@@ -219,6 +219,8 @@ Recommended discovery paths:
 - OpenClawDir or another community plugin directory
 - external catalogs where supported
 
+For update manifests, artifact hosting, and rollout channels, see [UPDATES.md](./UPDATES.md).
+
 Do not assume every OpenClaw deployment has a first-party plugin store UI.
 
 ## Pairing Descriptor Fields

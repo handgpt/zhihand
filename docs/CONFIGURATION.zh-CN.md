@@ -219,6 +219,8 @@ openclaw plugins install @handgpt/zhihand
 
 不要假设所有 OpenClaw 部署都有一个第一方插件商店界面。
 
+有关升级探测、升级包存放和分渠道发布，见 [UPDATES.zh-CN.md](./UPDATES.zh-CN.md)。
+
 ## 配对描述符字段
 
 二维码落地页返回的公共字段包括：
