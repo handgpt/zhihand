@@ -216,7 +216,7 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 Planned public install path after npm publication:
 
 ```bash
-openclaw plugins install @handgpt/zhihand
+openclaw plugins install @zhihand/openclaw
 ```
 
 Recommended discovery paths:

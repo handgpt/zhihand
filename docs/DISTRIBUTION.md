@@ -32,7 +32,7 @@ Planned public path after npm publication:
 Planned install command:
 
 ```bash
-openclaw plugins install @handgpt/zhihand
+openclaw plugins install @zhihand/openclaw
 ```
 
 Recommended discovery paths:

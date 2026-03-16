@@ -216,7 +216,7 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 正式发布后的目标安装方式：
 
 ```bash
-openclaw plugins install @handgpt/zhihand
+openclaw plugins install @zhihand/openclaw
 ```
 
 推荐发现入口：
