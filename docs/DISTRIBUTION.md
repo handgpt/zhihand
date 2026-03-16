@@ -14,25 +14,24 @@ Do not make the OpenClaw plugin the only product surface.
 
 ## OpenClaw Distribution
 
-Current pre-release path:
+Primary release path:
 
-- install the plugin from a local checkout with the official OpenClaw plugin installer
+- install the published npm package with the official OpenClaw plugin installer
 
-Current install command:
-
-```bash
-openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
-```
-
-Planned public path after npm publication:
-
-- publish the plugin as an npm package
-- install it with the official OpenClaw plugin installer
-
-Planned install command:
+Release install command:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
+```
+
+Development fallback:
+
+- install the plugin from a local checkout when developing the adapter itself
+
+Development install command:
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
 Recommended discovery paths:

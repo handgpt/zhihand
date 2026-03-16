@@ -16,25 +16,24 @@
 
 ## OpenClaw 分发方式
 
-当前公开前主路径：
+当前正式主路径：
 
-- 通过本地 checkout 路径，使用官方 OpenClaw 插件安装命令安装
+- 通过 npm 包，使用官方 OpenClaw 插件安装命令安装
 
-当前安装命令：
-
-```bash
-openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
-```
-
-正式发布后的目标路径：
-
-- 将插件发布为 npm 包
-- 再通过官方 OpenClaw 插件安装命令安装
-
-正式发布后的安装命令：
+正式安装命令：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
+```
+
+本地开发 fallback：
+
+- 只有在开发插件本体时，才建议从本地 checkout 直接安装
+
+本地开发安装命令：
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
 推荐发现入口：

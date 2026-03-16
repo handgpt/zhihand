@@ -59,7 +59,7 @@ zhihand/
 
 这个仓库不应变成私有产品基础设施或平台专属应用代码的容器。
 
-当前 OpenClaw 插件还处于公开前的本地路径安装阶段；正式的 npm 安装路径会在包真正发布后再启用。
+当前 OpenClaw 插件已发布为 npm 包，可直接通过 `openclaw plugins install @zhihand/openclaw` 安装；本地路径安装只保留给开发调试。
 
 ## 当前阶段
 

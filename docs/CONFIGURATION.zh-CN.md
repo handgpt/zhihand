@@ -207,16 +207,16 @@
 - 官方托管 control plane
 - npm 发布的 OpenClaw 插件包
 
-当前公开前的 OpenClaw 安装方式：
-
-```bash
-openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
-```
-
-正式发布后的目标安装方式：
+当前 OpenClaw 正式安装方式：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
+```
+
+本地开发 fallback：
+
+```bash
+openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
 推荐发现入口：
