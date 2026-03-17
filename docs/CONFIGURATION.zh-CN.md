@@ -33,6 +33,13 @@ openclaw plugins install @zhihand/openclaw
 - `https://api.zhihand.com`
 - `https://zhihand.com/download`
 
+如果你还需要查看 Android App 或 server 的说明，请直接看：
+
+- [zhihand-android](https://github.com/handgpt/zhihand-android)
+  查看 App 行为、权限和移动端设置
+- [zhihand-server](https://github.com/handgpt/zhihand-server)
+  查看控制面部署和服务端配置
+
 ## 用户实际会看到什么
 
 ### 在 OpenClaw 中

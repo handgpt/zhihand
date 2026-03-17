@@ -62,6 +62,11 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 - **OpenClaw 插件**
   负责把 OpenClaw 接到控制面，并暴露 `zhihand_*` 工具
 
+相关实现仓库：
+
+- [zhihand-android](https://github.com/handgpt/zhihand-android)
+- [zhihand-server](https://github.com/handgpt/zhihand-server)
+
 ## 默认推荐托管模式
 
 第一阶段推荐直接使用官方托管默认值：

@@ -60,6 +60,11 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 - **OpenClaw plugin**
   Connects OpenClaw to the control plane and exposes `zhihand_*` tools.
 
+Related implementation repos:
+
+- [Android app repository](https://github.com/handgpt/zhihand-android)
+- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
+
 ## Hosted By Default
 
 The recommended first release is hosted by default:

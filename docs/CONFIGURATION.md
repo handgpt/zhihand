@@ -29,6 +29,13 @@ For the normal hosted setup, the plugin already defaults to:
 - control-plane traffic on `https://api.zhihand.com`
 - app download URL `https://zhihand.com/download`
 
+If you also need mobile or server details, use these companion repos:
+
+- [Android app repository](https://github.com/handgpt/zhihand-android)
+  App behavior, permissions, and mobile-side settings.
+- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
+  Hosted control-plane deployment and operator-facing configuration.
+
 ## What the User Sees
 
 ### In OpenClaw

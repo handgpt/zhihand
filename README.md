@@ -79,6 +79,10 @@ It does not include private deployment secrets or private product infrastructure
   What most users need, and what advanced self-hosters can override.
 - [Updates](./docs/UPDATES.md)
   How app and device updates are detected and delivered.
+- [Android app repository](https://github.com/handgpt/zhihand-android)
+  Mobile UI, permissions, pairing, and device-side execution.
+- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
+  Hosted control-plane deployment and service configuration.
 - [README.zh-CN.md](./README.zh-CN.md)
   Chinese version.
 

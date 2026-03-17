@@ -81,6 +81,10 @@ openclaw plugins install @zhihand/openclaw
   大多数用户需要什么，进阶用户还能改什么
 - [UPDATES.zh-CN.md](./docs/UPDATES.zh-CN.md)
   App 与设备更新如何探测和发布
+- [zhihand-android](https://github.com/handgpt/zhihand-android)
+  查看 Android App、权限、配对和设备侧执行相关说明
+- [zhihand-server](https://github.com/handgpt/zhihand-server)
+  查看控制面部署与服务端配置说明
 
 ## 面向开发者的文档
 
