@@ -57,7 +57,7 @@ Rules:
 - Check only when `ZhiHand Device` is connected and version metadata is readable.
 - Match the manifest `hardware_version` against the device-reported hardware version.
 - Compare semantic firmware versions, for example `1.0.1 > 1.0.0`.
-- Block firmware install while a task is running or screen sharing is active.
+- Block firmware install while a task is running. Screen sharing may stay active if the BLE OTA path is otherwise idle and ready.
 
 ## Manifest Contract
 
@@ -132,7 +132,7 @@ Never mutate an already published artifact in place.
 3. Confirm hardware compatibility and newer firmware version.
 4. Download firmware binary to app cache.
 5. Verify checksum.
-6. Pause paired-host polling and task execution.
+6. Pause paired-host event execution and command handling.
 7. Transfer the binary over BLE OTA.
 8. Wait for device reboot and re-read the reported version.
 

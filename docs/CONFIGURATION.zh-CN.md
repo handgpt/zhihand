@@ -36,7 +36,9 @@ openclaw plugins install @zhihand/openclaw
 如果你还需要查看 Android App 或 server 的说明，请直接看：
 
 - [zhihand-android](https://github.com/handgpt/zhihand-android)
-  查看 App 行为、权限和移动端设置
+  查看 Android 侧行为、权限和移动端设置
+- [zhihand-ios](https://github.com/handgpt/zhihand-ios)
+  查看 iPhone/iPad 侧行为和 iOS 传输细节
 - [zhihand-server](https://github.com/handgpt/zhihand-server)
   查看控制面部署和服务端配置
 
@@ -50,7 +52,7 @@ openclaw plugins install @zhihand/openclaw
 - `/zhihand status`
 - `/zhihand unpair`
 
-### 在 Android App 中
+### 在移动端 App 中
 
 App 负责：
 
@@ -58,8 +60,9 @@ App 负责：
 - claim 配对关系
 - 本地保存长期凭据
 - 在录屏开启时上传屏幕快照
+- 上传设备画像，便于宿主按 ROM / 机型 / 运行时特征做策略适配
 - 上传提示词与附件
-- 轮询命令并执行设备侧动作
+- 通过 SSE 接收命令与回复，再执行设备侧动作
 
 ## OpenClaw 进阶配置
 
@@ -138,7 +141,7 @@ App 负责：
 推荐分工：
 
 - **插件**
-  负责配对、控制面传输、轮询与 `zhihand_*` 工具
+  负责配对、控制面传输、SSE 事件接入与 `zhihand_*` 工具
 - **OpenClaw agent**
   负责推理、工具编排与最终回复
 

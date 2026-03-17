@@ -1,12 +1,12 @@
 ---
 name: zhihand-mobile
-description: Use when handling prompts from a paired ZhiHand Android device inside OpenClaw. Covers both ordinary chat and phone-operation requests through the same agent path.
+description: Use when handling prompts from a paired ZhiHand mobile device inside OpenClaw. Covers both ordinary chat and phone-operation requests through the same agent path.
 ---
 
 # ZhiHand Mobile
 
 This skill applies to the dedicated OpenClaw mobile agent that serves a paired
-ZhiHand Android app.
+ZhiHand mobile app.
 
 ## Goals
 

@@ -6,7 +6,7 @@ This page explains how ZhiHand is meant to be delivered to real users.
 
 ZhiHand is easiest to use when it is delivered in three parts:
 
-1. **Android app**
+1. **ZhiHand mobile app**
 2. **Hosted ZhiHand control plane**
 3. **OpenClaw plugin**
 
@@ -14,7 +14,7 @@ That means a new user does not need to self-host anything on day one.
 
 ## What Most Users Install
 
-### 1. Android app
+### 1. ZhiHand mobile app
 
 The app is where the user:
 
@@ -46,15 +46,15 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 3. Restart or reload OpenClaw if needed.
 4. Run `/zhihand pair`.
 5. Open the QR URL in a browser.
-6. Scan it from the Android app.
+6. Scan it from the mobile app.
 7. Connect `ZhiHand Device`.
 8. Turn on `Eye` when you want ZhiHand to read the screen.
 9. Start sending requests from the phone or from OpenClaw.
 
 ## What Runs Where
 
-- **Android app**
-  Handles pairing, screen sharing, attachments, and device-side execution.
+- **ZhiHand mobile app**
+  Handles pairing, screen sharing, attachments, device-profile uploads, and device-side execution.
 - **Hosted control plane**
   Stores pairing state, prompts, replies, commands, and attachments.
 - **OpenClaw plugin**

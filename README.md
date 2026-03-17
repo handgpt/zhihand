@@ -2,7 +2,7 @@
 
 ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
-Current public core version: `0.6.0`
+Current public core version: `0.7.0`
 
 In practice, ZhiHand brings three parts together:
 
@@ -55,8 +55,8 @@ Open the returned QR URL in a browser and scan it from the Android app.
 
 ## What Runs Where
 
-- **Android app**
-  Captures user input, uploads screen snapshots, and executes device-side actions.
+- **Mobile app**
+  Captures user input, uploads screen snapshots and device-profile context, and executes device-side actions.
 - **ZhiHand server**
   Stores pairing state, prompts, replies, commands, and attachments.
 - **OpenClaw plugin**

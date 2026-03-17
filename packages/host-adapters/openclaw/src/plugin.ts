@@ -5,15 +5,18 @@ import { randomInt } from "node:crypto";
 
 import {
   buildPairingPrompt,
+  collectCredentialEvents,
   createPromptReply,
   createPairingSession,
   createControlCommand,
   fetchLatestScreenSnapshot,
+  getDeviceProfile,
   getPrompt,
   getPairingSession,
   getLatestClaimedPairingSession,
-  listPendingPrompts,
   registerPlugin,
+  type ControlPlaneStreamEvent,
+  type DeviceProfileRecord,
   type MobilePromptRecord,
   type PairingSession,
   type PluginRecord,
@@ -89,7 +92,6 @@ const DEFAULT_MOBILE_AGENT_ID = "zhihand-mobile";
 const PROMPT_RELAY_IDLE_MS = 1_500;
 const PROMPT_RELAY_ERROR_MS = 3_000;
 const PROMPT_RELAY_MAX_ERROR_MS = 30_000;
-const PROMPT_RELAY_ACTIVE_BATCH = 4;
 const PROMPT_CANCEL_POLL_MS = 500;
 const CONTROL_SETTLE_MS = 2_000;
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
@@ -98,6 +100,7 @@ const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
 type PromptRelayRuntime = {
   stopped: boolean;
   loopPromise: Promise<void> | null;
+  streamAbortController: AbortController | null;
 };
 
 let lastRelayIdleReason = "";
@@ -139,7 +142,7 @@ export default function register(api: OpenClawPluginApi) {
   api.registerTool({
     name: "zhihand_pair",
     label: "ZhiHand Pair",
-    description: "Create a ZhiHand pairing QR flow and return the pairing link for the Android app.",
+    description: "Create a ZhiHand pairing QR flow and return the pairing link for the ZhiHand mobile app.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -197,7 +200,7 @@ export default function register(api: OpenClawPluginApi) {
   api.registerTool({
     name: "zhihand_screen_read",
     label: "ZhiHand Screen",
-    description: "Fetch the latest uploaded ZhiHand phone screen snapshot for the paired Android app.",
+    description: "Fetch the latest uploaded ZhiHand phone screen snapshot for the paired ZhiHand mobile app.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -241,7 +244,7 @@ export default function register(api: OpenClawPluginApi) {
   api.registerTool({
     name: "zhihand_control",
     label: "ZhiHand Control",
-    description: "Queue a phone control action for the paired ZhiHand Android app and wait for the command ACK.",
+    description: "Queue a phone control action for the paired ZhiHand mobile app and wait for the command ACK.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -376,6 +379,8 @@ function createPromptRelayService(api: OpenClawPluginApi) {
     stop: async () => {
       const runtime = getPromptRelayRuntime();
       runtime.stopped = true;
+      runtime.streamAbortController?.abort();
+      runtime.streamAbortController = null;
       for (const controller of activePromptRuns.values()) {
         controller.abort();
       }
@@ -390,7 +395,8 @@ function getPromptRelayRuntime(): PromptRelayRuntime {
   };
   registry[RELAY_RUNTIME_KEY] ??= {
     stopped: false,
-    loopPromise: null
+    loopPromise: null,
+    streamAbortController: null
   };
   return registry[RELAY_RUNTIME_KEY]!;
 }
@@ -434,37 +440,29 @@ async function runPromptRelayLoop(
       }
       lastRelayIdleReason = "";
       consecutiveFailures = 0;
-
-      const prompts = await listPendingPrompts(
+      const runtime = getPromptRelayRuntime();
+      runtime.streamAbortController = new AbortController();
+      await collectCredentialEvents(
         { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
         {
           credentialId: active.credentialId,
           controllerToken: active.controllerToken,
-          limit: PROMPT_RELAY_ACTIVE_BATCH
-        }
-      );
-      if (prompts.length === 0) {
-        consecutiveFailures = 0;
-        await sleep(PROMPT_RELAY_IDLE_MS);
-        continue;
-      }
-
-      const results = await Promise.allSettled(
-        prompts.map(async (prompt) => {
+          topics: ["prompts"],
+          signal: runtime.streamAbortController.signal
+        },
+        async (event) => {
           if (isStopped()) {
             return;
           }
-          await processMobilePrompt(api, active, prompt);
-        })
-      );
-      for (const result of results) {
-        if (result.status === "rejected") {
-          api.logger.warn?.(
-            `ZhiHand prompt relay worker failed: ${errorMessage(result.reason)}`
-          );
+          await handleRelayStreamEvent(api, active, event);
         }
-      }
+      );
+      runtime.streamAbortController = null;
     } catch (error) {
+      if (isStopped() && isAbortError(error)) {
+        return;
+      }
+      getPromptRelayRuntime().streamAbortController = null;
       consecutiveFailures += 1;
       const delayMs = Math.min(
         PROMPT_RELAY_MAX_ERROR_MS,
@@ -476,6 +474,25 @@ async function runPromptRelayLoop(
   }
 }
 
+async function handleRelayStreamEvent(
+  api: OpenClawPluginApi,
+  pairing: StoredPairingState,
+  event: ControlPlaneStreamEvent
+): Promise<void> {
+  if (event.topic !== "prompts" || !event.prompt) {
+    return;
+  }
+  const prompt = event.prompt;
+  if (prompt.status !== "pending" && prompt.status !== "processing") {
+    return;
+  }
+  try {
+    await processMobilePrompt(api, pairing, prompt);
+  } catch (error) {
+    api.logger.warn?.(`ZhiHand prompt relay worker failed: ${errorMessage(error)}`);
+  }
+}
+
 async function processMobilePrompt(
   api: OpenClawPluginApi,
   pairing: StoredPairingState,
@@ -484,6 +501,9 @@ async function processMobilePrompt(
   let runId = "";
   const abortController = new AbortController();
   const promptKey = buildActivePromptRunKey(pairing.credentialId, prompt.id);
+  if (activePromptRuns.has(promptKey)) {
+    return;
+  }
   activePromptRuns.set(promptKey, abortController);
   const stopWatchingCancellation = watchPromptCancellation(
     api,
@@ -492,16 +512,24 @@ async function processMobilePrompt(
     abortController
   );
   try {
+    const deviceProfile = await getDeviceProfile(
+      { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+      {
+        credentialId: pairing.credentialId,
+        controllerToken: pairing.controllerToken
+      }
+    ).catch(() => null);
     const preparedPrompt = await prepareMobilePromptInput(
       api,
       { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
       pairing,
       prompt
     );
+    const promptWithProfile = withDeviceProfileContext(preparedPrompt, deviceProfile);
     const completion = await runOpenClawNativeMobileAgent(
       api,
       pairing,
-      preparedPrompt,
+      promptWithProfile,
       abortController.signal
     );
     runId = completion.runId;
@@ -726,6 +754,27 @@ async function resolveStatus(api: OpenClawPluginApi): Promise<Record<string, unk
   if (pairing?.credentialId) {
     output.credentialId = pairing.credentialId;
     try {
+      const profile = await getDeviceProfile(
+        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+        {
+          credentialId: pairing.credentialId,
+          controllerToken: pairing.controllerToken
+        }
+      );
+      output.deviceProfile = {
+        platform: profile.platform,
+        appVersion: profile.app_version,
+        profileKey: profile.profile_key,
+        brand: stringValue(profile.attributes?.brand),
+        model: stringValue(profile.attributes?.model),
+        romFamily: stringValue(profile.attributes?.rom_family),
+        systemRelease: stringValue(profile.attributes?.system_release),
+        fullAccessStrategyKey: stringValue(profile.attributes?.full_access_strategy_key)
+      };
+    } catch (error) {
+      output.deviceProfileError = errorMessage(error);
+    }
+    try {
       const snapshot = await fetchLatestScreenSnapshot(
         { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
         {
@@ -949,10 +998,19 @@ async function cacheScreenSnapshot(api: OpenClawPluginApi, snapshot: ScreenSnaps
 }
 
 function formatStatusText(status: Record<string, unknown>): string {
+  const deviceProfile = (status.deviceProfile as Record<string, unknown> | undefined) ?? null;
   return [
     `Edge Host: ${stringValue(status.edgeHost) ?? "n/a"}`,
     `Pairing: ${stringValue(status.pairingStatus) ?? "n/a"}`,
     `Credential: ${stringValue(status.credentialId) ?? "not paired"}`,
+    deviceProfile
+      ? `Device: ${[
+          stringValue(deviceProfile.brand),
+          stringValue(deviceProfile.model),
+          stringValue(deviceProfile.romFamily),
+          stringValue(deviceProfile.systemRelease)
+        ].filter(Boolean).join(" / ")}`
+      : `Device Profile: ${stringValue(status.deviceProfileError) ?? "not available"}`,
     status.latestScreenAgeMs != null
       ? `Latest Screen Age: ${status.latestScreenAgeMs} ms`
       : `Latest Screen: ${stringValue(status.latestScreenError) ?? "not available"}`
@@ -1136,4 +1194,66 @@ function errorMessage(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function withDeviceProfileContext(
+  prepared: { promptInput: any[]; effectivePromptText: string },
+  profile: DeviceProfileRecord | null
+): { promptInput: any[]; effectivePromptText: string } {
+  const context = buildDeviceProfileContext(profile);
+  if (!context) {
+    return prepared;
+  }
+
+  const promptInput = prepared.promptInput.map((item, index) => {
+    if (index !== 0 || item.type !== "message" || item.role !== "user" || !Array.isArray(item.content)) {
+      return item;
+    }
+    const content = [...item.content];
+    const first = content[0];
+    if (first?.type === "input_text" && typeof first.text === "string") {
+      content[0] = {
+        ...first,
+        text: `${context}\n\nUser request:\n${first.text}`.trim()
+      };
+    } else {
+      content.unshift({
+        type: "input_text",
+        text: context
+      });
+    }
+    return { ...item, content };
+  });
+
+  return {
+    promptInput,
+    effectivePromptText: `${context}\n\n${prepared.effectivePromptText}`.trim()
+  };
+}
+
+function buildDeviceProfileContext(profile: DeviceProfileRecord | null): string {
+  if (!profile) {
+    return "";
+  }
+  const attributes = profile.attributes ?? {};
+  const lines = [
+    "Current mobile device profile:",
+    `- Platform: ${profile.platform}`,
+    stringValue(profile.profile_key) ? `- Profile Key: ${profile.profile_key}` : "",
+    `- Device: ${[
+      stringValue(attributes.brand),
+      stringValue(attributes.model),
+      stringValue(attributes.rom_family),
+      stringValue(attributes.system_release)
+    ].filter(Boolean).join(" / ")}`,
+    `- Locale: ${stringValue(attributes.locale) ?? "n/a"} | Navigation: ${stringValue(attributes.navigation_mode) ?? "unknown"}`,
+    `- Full Access Strategy: ${stringValue(attributes.full_access_strategy_key) ?? "unknown"}`,
+    `- HID: connected=${booleanFlag(attributes.hid_connected)} bonded=${booleanFlag(attributes.hid_bonded)} pairing=${booleanFlag(attributes.hid_pairing)}`,
+    `- Screen Capture: recording=${booleanFlag(attributes.recording_active)} full_access_enabled=${booleanFlag(attributes.full_access_enabled)}`
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function booleanFlag(value: unknown): string {
+  return value === true ? "yes" : "no";
 }

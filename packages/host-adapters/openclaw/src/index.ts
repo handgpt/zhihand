@@ -212,6 +212,32 @@ export type MobileReplyRecord = {
   sequence: number;
 };
 
+export type DeviceProfileRecord = {
+  credential_id: string;
+  edge_id: string;
+  platform: string;
+  app_version?: string;
+  app_build?: string;
+  profile_key?: string;
+  collected_at: string;
+  updated_at: string;
+  attributes: Record<string, unknown>;
+};
+
+export type ControlPlaneStreamEvent = {
+  id: string;
+  topic: string;
+  kind: string;
+  credential_id: string;
+  edge_id?: string;
+  sequence: number;
+  created_at?: string;
+  command?: QueuedCommandRecord;
+  prompt?: MobilePromptRecord;
+  reply?: MobileReplyRecord;
+  device_profile?: DeviceProfileRecord;
+};
+
 export type ListPendingPromptsInput = {
   credentialId: string;
   controllerToken: string;
@@ -260,6 +286,21 @@ export type DownloadPromptAttachmentResult = {
   mimeType: string;
   fileName: string;
   content: Uint8Array;
+};
+
+export type GetDeviceProfileInput = {
+  credentialId: string;
+  credentialSecret?: string;
+  controllerToken?: string;
+};
+
+export type CollectCredentialEventsInput = {
+  credentialId: string;
+  credentialSecret?: string;
+  controllerToken?: string;
+  topics: string[];
+  afterSequence?: number;
+  signal?: AbortSignal;
 };
 
 export type GetCommandInput = {
@@ -319,7 +360,7 @@ export type ZhiHandControlCommandInput =
 export type FetchLike = typeof fetch;
 
 const ZHIHAND_OPENCLAW_USER_AGENT =
-  "ZhiHand-OpenClaw/0.6.0 (+https://zhihand.com)";
+  "ZhiHand-OpenClaw/0.7.0 (+https://zhihand.com)";
 let nextCommandMessageCounter = 0;
 
 type PromptQueueResponse = {
@@ -341,7 +382,7 @@ type ReplyRecordResponse = {
 export function createManifest(): OpenClawPluginManifest {
   return {
     name: "zhihand",
-    version: "0.6.0",
+    version: "0.7.0",
     description: "ZhiHand control-plane and runtime adapter for OpenClaw",
     capabilities: [
       "control.execute",
@@ -740,6 +781,122 @@ export async function getPrompt(
     }
   });
   return payload.prompt;
+}
+
+export async function getDeviceProfile(
+  config: ZhiHandPluginConfig,
+  input: GetDeviceProfileInput,
+  fetchImpl: FetchLike = fetch
+): Promise<DeviceProfileRecord> {
+  const headers: Record<string, string> = {};
+  if (input.credentialSecret?.trim()) {
+    headers.authorization = `Bearer ${input.credentialSecret.trim()}`;
+  }
+  if (input.controllerToken?.trim()) {
+    headers["x-zhihand-controller-token"] = input.controllerToken.trim();
+  }
+  const payload = await requestJSON<{ profile: DeviceProfileRecord }>({
+    baseURL: resolveControlPlaneEndpoint(config),
+    fetchImpl,
+    timeoutMs: config.timeoutMs,
+    path: `/v1/credentials/${encodeURIComponent(input.credentialId)}/device-profile`,
+    init: {
+      method: "GET",
+      headers
+    }
+  });
+  return payload.profile;
+}
+
+export async function collectCredentialEvents(
+  config: ZhiHandPluginConfig,
+  input: CollectCredentialEventsInput,
+  onEvent: (event: ControlPlaneStreamEvent) => Promise<void> | void,
+  fetchImpl: FetchLike = fetch
+): Promise<void> {
+  const url = new URL(
+    `${resolveControlPlaneEndpoint(config)}/v1/credentials/${encodeURIComponent(input.credentialId)}/events/stream`
+  );
+  for (const topic of input.topics) {
+    url.searchParams.append("topic", topic);
+  }
+  if (input.afterSequence != null && input.afterSequence > 0) {
+    url.searchParams.set("after_seq", String(input.afterSequence));
+  }
+
+  const headers: Record<string, string> = {
+    ...buildHeaders(config.apiKey)
+  };
+  if (input.credentialSecret?.trim()) {
+    headers.authorization = `Bearer ${input.credentialSecret.trim()}`;
+  }
+  if (input.controllerToken?.trim()) {
+    headers["x-zhihand-controller-token"] = input.controllerToken.trim();
+  }
+
+  const response = await fetchImpl(url.toString(), {
+    method: "GET",
+    headers,
+    signal: input.signal
+  });
+  if (!response.ok) {
+    let message = `Event stream failed with status ${response.status}.`;
+    try {
+      const payload = (await response.json()) as { error?: string | { message?: string } };
+      message = extractErrorMessage(payload, response.status);
+    } catch {
+      // Ignore non-JSON stream failures.
+    }
+    throw new Error(message);
+  }
+  if (!response.body) {
+    throw new Error("Event stream returned an empty body.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let dataLines: string[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      while (true) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex < 0) {
+          break;
+        }
+        const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+        buffer = buffer.slice(newlineIndex + 1);
+        if (rawLine.startsWith("data:")) {
+          dataLines.push(rawLine.slice(5).trimStart());
+          continue;
+        }
+        if (rawLine === "") {
+          if (dataLines.length > 0) {
+            const payload = dataLines.join("\n");
+            dataLines = [];
+            await onEvent(JSON.parse(payload) as ControlPlaneStreamEvent);
+          }
+        }
+      }
+    }
+
+    const trailing = buffer.trim();
+    if (trailing.startsWith("data:")) {
+      dataLines.push(trailing.slice(5).trimStart());
+    }
+    if (dataLines.length > 0) {
+      await onEvent(JSON.parse(dataLines.join("\n")) as ControlPlaneStreamEvent);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 export async function createPromptReply(

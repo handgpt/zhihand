@@ -32,7 +32,9 @@ For the normal hosted setup, the plugin already defaults to:
 If you also need mobile or server details, use these companion repos:
 
 - [Android app repository](https://github.com/handgpt/zhihand-android)
-  App behavior, permissions, and mobile-side settings.
+  Android behavior, permissions, and device-side settings.
+- [iOS app repository](https://github.com/handgpt/zhihand-ios)
+  iPhone/iPad client behavior and iOS-specific transport details.
 - [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
   Hosted control-plane deployment and operator-facing configuration.
 
@@ -46,7 +48,7 @@ The plugin provides:
 - `/zhihand status`
 - `/zhihand unpair`
 
-### In the Android app
+### In the mobile app
 
 The app is expected to:
 
@@ -54,8 +56,9 @@ The app is expected to:
 - claim the pairing session
 - keep the paired credential locally
 - upload screen snapshots when screen sharing is active
+- upload device-profile snapshots so the host can adapt behavior by runtime family
 - upload prompts and attachments
-- poll commands and execute device-side actions
+- receive commands and replies over SSE, then execute device-side actions
 
 ## Advanced OpenClaw Configuration
 
@@ -134,7 +137,7 @@ The plugin should stay thin.
 Recommended split:
 
 - **plugin**
-  pairing, control-plane transport, polling, `zhihand_*` tools
+  pairing, control-plane transport, SSE event intake, `zhihand_*` tools
 - **OpenClaw agent**
   reasoning, tool orchestration, final reply
 

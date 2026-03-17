@@ -89,8 +89,9 @@ Near-term implementation note:
 
 ## Current Transport Shim
 
-The current Phase 1 implementation still uses a deployment-level HTTP/JSON shim
-for pairing, command polling, acknowledgements, and latest-screen snapshots.
+The current Phase 1 implementation uses a deployment-level HTTP/JSON + SSE shim
+for pairing, uploads, acknowledgements, device profiles, and server-initiated
+event streams.
 
 That shim is an implementation bridge, not the long-term public protocol.
 

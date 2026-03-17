@@ -2,7 +2,7 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前公共核心版本：`0.6.0`
+当前公共核心版本：`0.7.0`
 
 智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
@@ -57,8 +57,8 @@ openclaw plugins install @zhihand/openclaw
 
 ## 这三部分分别在做什么
 
-- **Android App**
-  负责接收用户输入、上传屏幕快照、执行设备侧动作
+- **移动端 App**
+  负责接收用户输入、上传屏幕快照与设备画像、执行设备侧动作
 - **智手® server**
   负责保存配对关系、提示词、回复、命令和附件
 - **OpenClaw 插件**

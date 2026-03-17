@@ -29,7 +29,7 @@ The public core should stay neutral across host environments and runtime impleme
 
 Current implementation status:
 
-- implemented today: HTTP JSON endpoints, SSE event streaming, bounded in-memory event retention, optional bearer-token protection
+- implemented today: HTTP JSON endpoints, SSE event streaming, per-credential device-profile storage, bounded in-memory event retention, optional bearer-token protection
 - not implemented yet: a public gRPC listener backed by generated proto bindings
 
 ### 3. Host Adapters
@@ -117,6 +117,7 @@ The public repo should define portable contracts. Deployment-specific services a
 - `control.proto` as the public protocol definition
 - `zhihandd` as a reference HTTP/SSE control surface
 - OpenClaw as the first public host adapter
+- per-device profile snapshots so hosts can adapt behavior by ROM/model/runtime context
 - explicit separation between the public core and private deployment services
 
 ### Planned, not yet shipped here

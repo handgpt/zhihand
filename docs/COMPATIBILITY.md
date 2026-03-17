@@ -1,6 +1,6 @@
 # ZhiHand Compatibility Matrix
 
-Current public core release: `0.6.0`
+Current public core release: `0.7.0`
 
 This matrix exists so the public protocol repo, the OpenClaw adapter, and downstream runtimes do not drift silently.
 
@@ -9,8 +9,8 @@ This matrix exists so the public protocol repo, the OpenClaw adapter, and downst
 | Component | Current track | Notes |
 | --- | --- | --- |
 | `control.proto` | `zhihand.control.v1` | Source of truth for action names and event semantics |
-| `zhihandd` | `0.6.x` | Reference HTTP/SSE service |
-| OpenClaw adapter | `0.6.x` | Published as `@zhihand/openclaw` |
+| `zhihandd` | `0.7.x` | Reference HTTP/SSE service |
+| OpenClaw adapter | `0.7.x` | Published as `@zhihand/openclaw` |
 
 ## Device Runtime
 
@@ -23,7 +23,7 @@ This matrix exists so the public protocol repo, the OpenClaw adapter, and downst
 ### OpenClaw adapter ↔ `zhihandd`
 
 - must use the same action and status names as `control.proto`
-- should stay on the same public core minor line (`0.6.x`)
+- should stay on the same public core minor line (`0.7.x`)
 
 ### Public core ↔ private hosted control plane
 

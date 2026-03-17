@@ -7,7 +7,7 @@ It is a thin plugin layer on top of the shared ZhiHand control-plane contract.
 ## What It Does
 
 - registers one OpenClaw host instance with the deployment control plane
-- creates QR-based pairing sessions for the Android app
+- creates QR-based pairing sessions for the ZhiHand mobile app
 - stores pairing state under the OpenClaw state directory
 - fetches the latest uploaded phone screen snapshot
 - sends control commands and waits for command ACK status
@@ -174,7 +174,7 @@ Deployment requirements for the native runtime path:
 
 Recommended first public release:
 
-- Android app
+- mobile app
 - hosted `pair.zhihand.com` and `api.zhihand.com`
 - npm-published OpenClaw plugin
 
@@ -193,6 +193,12 @@ control-plane contract instead of growing this package into a multi-host shell.
 - QR URL
 
 Open the QR URL in a browser to display the actual scannable QR page.
+
+The current hosted control path is:
+
+- HTTP requests for pairing, uploads, acknowledgements, and control writes
+- SSE downlink for prompt, reply, and command events
+- per-device profile snapshots so the host can adapt behavior by runtime family
 
 ## Tools
 
@@ -230,12 +236,12 @@ Coordinate rules:
 - When a keyboard is visible and the goal is to submit search, send, or confirm
   text, prefer `enter` over clicking the IME action button.
 - `input_text` supports `mode`:
-  - `auto`: current default, resolved on Android as `paste`
+  - `auto`: current default, resolved on the mobile runtime as `paste`
   - `paste`: clipboard-first plus HID paste shortcut
   - `type`: raw HID keyboard typing, reserved for sensitive fields or when paste fails
 - `input_text` also supports `submit=true` to send Enter immediately after the
   text input completes.
-- `auto` and `paste` overwrite the Android system clipboard as part of the
+- `auto` and `paste` overwrite the mobile runtime clipboard as part of the
   reliability trade-off. Use `type` for sensitive fields or when clipboard
   mutation is not acceptable.
 
@@ -257,8 +263,8 @@ host-side recovery path and does not change the public QR claim flow.
 1. The host registers itself against the control plane.
 2. The plugin creates a pairing session and pair URL.
 3. The pair URL is the canonical QR landing page; browsers render a scannable
-   HTML page, while the Android app resolves the same URL in JSON mode.
-4. The Android app scans the QR code and claims the pairing session.
+   HTML page, while the mobile app resolves the same URL in JSON mode.
+4. The mobile app scans the QR code and claims the pairing session.
 5. The control plane returns a long-lived mobile credential.
 6. OpenClaw can then use `zhihand_status`, `zhihand_screen_read`, and
    `zhihand_control`.
@@ -270,8 +276,8 @@ host-side recovery path and does not change the public QR claim flow.
 
 The supported runtime path is:
 
-1. Android app uploads a mobile prompt to the control plane.
-2. Android may also upload prompt attachments before the prompt itself.
+1. The mobile app uploads a prompt to the control plane.
+2. The mobile app may also upload prompt attachments before the prompt itself.
 3. The OpenClaw plugin polls pending prompts.
 4. The plugin downloads any prompt attachments from the control plane.
 5. The plugin prepares multimodal native-agent input:
@@ -287,7 +293,7 @@ The supported runtime path is:
 
 Task cancellation also uses this same path:
 
-6. If Android marks the active prompt as `cancelled`, the plugin aborts the
+6. If the mobile app marks the active prompt as `cancelled`, the plugin aborts the
    in-flight native mobile-agent run.
 7. The final reply for that prompt becomes a system message indicating that the
    user stopped the task.
@@ -297,7 +303,7 @@ Task cancellation also uses this same path:
 `zhihand_screen_read` returns the latest uploaded snapshot, not a live video
 stream.
 
-`start_live_capture` may return a permission-required result until the Android
+`start_live_capture` may return a permission-required result until the mobile app
 app already has an active screen-capture session.
 
 ## Attachment Best Practice
@@ -306,6 +312,6 @@ Preferred handling:
 
 - images and documents remain raw attachments
 - voice notes remain raw audio attachments and are transcribed on the host
-- Android should not treat app-local speech-to-text as the canonical contract
+- The mobile app should not treat app-local speech-to-text as the canonical contract
 - video support is intentionally conservative and should be treated as limited
   context until the deployment adds explicit video understanding
