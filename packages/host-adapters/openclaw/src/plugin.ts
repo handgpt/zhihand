@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomInt } from "node:crypto";
 
 import {
   buildPairingPrompt,
@@ -27,8 +28,7 @@ import {
   runNativeMobileAgent
 } from "./native_mobile_agent.ts";
 import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
-
-type OpenClawPluginApi = any;
+import type { OpenClawPluginApi } from "./openclaw_api.ts";
 
 type PluginConfig = {
   controlPlaneEndpoint?: string;
@@ -88,6 +88,7 @@ const DEFAULT_GATEWAY_RESPONSES_ENDPOINT = "http://127.0.0.1:18789/v1/responses"
 const DEFAULT_MOBILE_AGENT_ID = "zhihand-mobile";
 const PROMPT_RELAY_IDLE_MS = 1_500;
 const PROMPT_RELAY_ERROR_MS = 3_000;
+const PROMPT_RELAY_MAX_ERROR_MS = 30_000;
 const PROMPT_RELAY_ACTIVE_BATCH = 4;
 const PROMPT_CANCEL_POLL_MS = 500;
 const CONTROL_SETTLE_MS = 2_000;
@@ -420,6 +421,7 @@ async function runPromptRelayLoop(
   api: OpenClawPluginApi,
   isStopped: () => boolean
 ): Promise<void> {
+  let consecutiveFailures = 0;
   api.logger.info?.(
     `ZhiHand prompt relay loop ready for ${resolveControlPlaneEndpoint(api)} via ${resolveGatewayResponsesEndpoint(api)} (${resolveMobileAgentId(api)})`
   );
@@ -431,6 +433,7 @@ async function runPromptRelayLoop(
         continue;
       }
       lastRelayIdleReason = "";
+      consecutiveFailures = 0;
 
       const prompts = await listPendingPrompts(
         { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
@@ -441,6 +444,7 @@ async function runPromptRelayLoop(
         }
       );
       if (prompts.length === 0) {
+        consecutiveFailures = 0;
         await sleep(PROMPT_RELAY_IDLE_MS);
         continue;
       }
@@ -461,8 +465,13 @@ async function runPromptRelayLoop(
         }
       }
     } catch (error) {
+      consecutiveFailures += 1;
+      const delayMs = Math.min(
+        PROMPT_RELAY_MAX_ERROR_MS,
+        PROMPT_RELAY_ERROR_MS * Math.max(1, 2 ** (consecutiveFailures - 1))
+      );
       api.logger.warn?.(`ZhiHand prompt relay delayed: ${errorMessage(error)}`);
-      await sleep(PROMPT_RELAY_ERROR_MS);
+      await sleep(delayMs);
     }
   }
 }
@@ -922,8 +931,10 @@ async function loadState(stateDir: string): Promise<StoredPluginState> {
 
 async function saveState(stateDir: string, state: StoredPluginState): Promise<void> {
   const filePath = resolveStatePath(stateDir);
+  const tempPath = `${filePath}.tmp-${process.pid}-${randomInt(1_000_000)}`;
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await fs.rename(tempPath, filePath);
 }
 
 function resolveStatePath(stateDir: string): string {

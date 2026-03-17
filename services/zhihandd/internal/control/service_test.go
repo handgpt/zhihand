@@ -6,12 +6,12 @@ import (
 )
 
 func TestExecuteActionPublishesEvent(t *testing.T) {
-	service := NewService("zhihandd", "test", "zhihand.control.v1")
+	service := NewService(Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
 	events, cancel := service.Subscribe([]string{TopicAction})
 	defer cancel()
 
 	resp, err := service.ExecuteAction(Action{
-		Type:   "tool.invoke",
+		Type:   ActionTypeToolInvoke,
 		Source: "adapter://test",
 		Target: "runtime://device",
 		Parameters: map[string]any{
@@ -21,7 +21,7 @@ func TestExecuteActionPublishesEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteAction returned error: %v", err)
 	}
-	if resp.Status != "ACTION_STATUS_ACCEPTED" {
+	if resp.Status != ActionStatusAccepted {
 		t.Fatalf("expected accepted status, got %q", resp.Status)
 	}
 
@@ -36,7 +36,7 @@ func TestExecuteActionPublishesEvent(t *testing.T) {
 		if event.ActionEvent.Action.RequestID != resp.RequestID {
 			t.Fatalf("expected request id %q, got %q", resp.RequestID, event.ActionEvent.Action.RequestID)
 		}
-		if event.ActionEvent.Status != "ACTION_STATUS_COMPLETED" {
+		if event.ActionEvent.Status != ActionStatusCompleted {
 			t.Fatalf("expected completed action event, got %q", event.ActionEvent.Status)
 		}
 	case <-time.After(2 * time.Second):
@@ -45,7 +45,7 @@ func TestExecuteActionPublishesEvent(t *testing.T) {
 }
 
 func TestListEventsFiltersAndLimit(t *testing.T) {
-	service := NewService("zhihandd", "test", "zhihand.control.v1")
+	service := NewService(Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
 	service.PublishHeartbeat("adapter://one")
 	service.PublishHeartbeat("adapter://two")
 
@@ -62,28 +62,58 @@ func TestListEventsFiltersAndLimit(t *testing.T) {
 }
 
 func TestUnsupportedActionReturnsError(t *testing.T) {
-	service := NewService("zhihandd", "test", "zhihand.control.v1")
+	service := NewService(Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
 
 	if _, err := service.ExecuteAction(Action{
-		Type:   "unsupported.action",
+		Type:   ActionType("unsupported.action"),
 		Source: "adapter://test",
 	}); err == nil {
 		t.Fatalf("expected error for unsupported action")
 	}
 }
 
-func TestSlowSubscriberIsDroppedInsteadOfSilentlyMissingEvents(t *testing.T) {
-	service := NewService("zhihandd", "test", "zhihand.control.v1")
-	_, cancel := service.Subscribe([]string{TopicHeartbeat})
+func TestSlowSubscriberDropsOldestEventButStaysSubscribed(t *testing.T) {
+	service := NewService(Options{
+		ServiceName:          "zhihandd",
+		Version:              "test",
+		ProtocolVersion:      "zhihand.control.v1",
+		SubscriberBufferSize: 2,
+	})
+	events, cancel := service.Subscribe([]string{TopicHeartbeat})
 	defer cancel()
 
-	for i := 0; i < 32; i++ {
+	for i := 0; i < 8; i++ {
 		service.PublishHeartbeat("adapter://slow")
 	}
 
 	service.mu.RLock()
-	defer service.mu.RUnlock()
-	if len(service.subscribers) != 0 {
-		t.Fatalf("expected slow subscriber to be removed, got %d active subscribers", len(service.subscribers))
+	activeSubscribers := len(service.subscribers)
+	service.mu.RUnlock()
+	if activeSubscribers != 1 {
+		t.Fatalf("expected slow subscriber to remain active, got %d subscribers", activeSubscribers)
+	}
+
+	select {
+	case <-events:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected buffered event after overflow")
+	}
+}
+
+func TestEventRetentionLimitCapsInMemoryHistory(t *testing.T) {
+	service := NewService(Options{
+		ServiceName:         "zhihandd",
+		Version:             "test",
+		ProtocolVersion:     "zhihand.control.v1",
+		EventRetentionLimit: 3,
+	})
+
+	for i := 0; i < 5; i++ {
+		service.PublishHeartbeat("adapter://cap")
+	}
+
+	events := service.ListEvents([]string{TopicHeartbeat}, 0)
+	if len(events) != 3 {
+		t.Fatalf("expected retained heartbeat events to be capped at 3, got %d", len(events))
 	}
 }

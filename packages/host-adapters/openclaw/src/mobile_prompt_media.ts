@@ -12,8 +12,7 @@ import type {
   OpenResponsesInputContent,
   OpenResponsesInputItem
 } from "./native_mobile_agent.ts";
-
-type OpenClawPluginApi = any;
+import type { OpenClawPluginApi } from "./openclaw_api.ts";
 
 type PairingLike = {
   credentialId: string;

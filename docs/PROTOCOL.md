@@ -81,6 +81,12 @@ Near-term protocol work should include:
 3. Testing compatibility between core and at least one external runtime.
 4. Documenting any intentionally unsupported behavior.
 
+Near-term implementation note:
+
+- `zhihandd` currently exposes a reference HTTP/JSON + SSE surface.
+- That surface uses the protobuf enum names as JSON strings, matching protobuf JSON conventions.
+- A first-class gRPC listener is still planned, not shipped in this repository yet.
+
 ## Current Transport Shim
 
 The current Phase 1 implementation still uses a deployment-level HTTP/JSON shim
@@ -96,6 +102,11 @@ Rules:
   the final stable cross-repo contract
 - new shared semantics should land in the public protocol before they become
   permanent cross-repo assumptions
+
+The public reference service follows the same rule:
+
+- enum-shaped values in HTTP JSON should use the `control.proto` enum names
+- the reference service must not invent a second incompatible action taxonomy
 
 ## Non-Goals
 

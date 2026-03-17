@@ -2,6 +2,8 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
+当前公共核心版本：`0.6.0`
+
 智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
 你可以把它理解成三部分协同工作：
@@ -93,9 +95,19 @@ openclaw plugins install @zhihand/openclaw
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [ACTIONS.md](./docs/ACTIONS.md)
 - [PROTOCOL.md](./docs/PROTOCOL.md)
+- [COMPATIBILITY.md](./docs/COMPATIBILITY.md)
+- [SECURITY.md](./docs/SECURITY.md)
 - [REPOSITORY.md](./docs/REPOSITORY.md)
 - [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
 - [ROADMAP.zh-CN.md](./ROADMAP.zh-CN.md)
+
+当前这个公共参考服务已实现的是：
+
+- HTTP JSON + SSE
+- 可选 Bearer Token 鉴权
+- 有上限的内存事件保留
+
+它目前还没有真正公开的 gRPC listener。
 
 ## 公开发布规则
 

@@ -31,17 +31,45 @@ func NewMux(cfg config.Config, service *control.Service) *http.ServeMux {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", api.handleHealthz)
-	mux.HandleFunc("/v1/server/info", api.handleServerInfo)
-	mux.HandleFunc("/v1/capabilities", api.handleCapabilities)
-	mux.HandleFunc("/v1/actions/execute", api.handleExecuteAction)
-	mux.HandleFunc("/v1/events", api.handleEvents)
-	mux.HandleFunc("/v1/events/stream", api.handleEventStream)
+	mux.HandleFunc("/v1/server/info", api.protected(api.handleServerInfo))
+	mux.HandleFunc("/v1/capabilities", api.protected(api.handleCapabilities))
+	mux.HandleFunc("/v1/actions/execute", api.protected(api.handleExecuteAction))
+	mux.HandleFunc("/v1/events", api.protected(api.handleEvents))
+	mux.HandleFunc("/v1/events/stream", api.protected(api.handleEventStream))
 	return mux
+}
+
+func (api *API) protected(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !api.authorizeRequest(w, r) {
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (api *API) authorizeRequest(w http.ResponseWriter, r *http.Request) bool {
+	expected := strings.TrimSpace(api.cfg.AuthToken)
+	if expected == "" {
+		return true
+	}
+	got := strings.TrimSpace(r.Header.Get("Authorization"))
+	if got == "" {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="zhihandd"`)
+		writeError(w, http.StatusUnauthorized, errors.New("missing bearer token"))
+		return false
+	}
+	if got != "Bearer "+expected {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="zhihandd"`)
+		writeError(w, http.StatusUnauthorized, errors.New("invalid bearer token"))
+		return false
+	}
+	return true
 }
 
 func (api *API) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+		methodNotAllowed(w, r.Method, http.MethodGet)
 		return
 	}
 
@@ -52,14 +80,13 @@ func (api *API) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"version":          info.Version,
 		"protocol_version": info.ProtocolVersion,
 		"http_addr":        api.cfg.HTTPAddr,
-		"grpc_addr":        api.cfg.GRPCAddr,
 		"now":              time.Now().UTC(),
 	})
 }
 
 func (api *API) handleServerInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+		methodNotAllowed(w, r.Method, http.MethodGet)
 		return
 	}
 
@@ -68,7 +95,7 @@ func (api *API) handleServerInfo(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+		methodNotAllowed(w, r.Method, http.MethodGet)
 		return
 	}
 
@@ -79,7 +106,7 @@ func (api *API) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) handleExecuteAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
+		methodNotAllowed(w, r.Method, http.MethodPost)
 		return
 	}
 
@@ -100,7 +127,7 @@ func (api *API) handleExecuteAction(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+		methodNotAllowed(w, r.Method, http.MethodGet)
 		return
 	}
 
@@ -121,7 +148,7 @@ func (api *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+		methodNotAllowed(w, r.Method, http.MethodGet)
 		return
 	}
 
@@ -195,7 +222,6 @@ func decodeJSON(r *http.Request, target any) error {
 	defer r.Body.Close()
 
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
@@ -211,9 +237,13 @@ func decodeJSON(r *http.Request, target any) error {
 	return nil
 }
 
-func methodNotAllowed(w http.ResponseWriter, allowed ...string) {
+func methodNotAllowed(w http.ResponseWriter, method string, allowed ...string) {
 	w.Header().Set("Allow", strings.Join(allowed, ", "))
-	writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method %s is not allowed", strings.Join(allowed, ", ")))
+	writeError(
+		w,
+		http.StatusMethodNotAllowed,
+		fmt.Errorf("method %s is not allowed; allowed methods: %s", method, strings.Join(allowed, ", ")),
+	)
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {

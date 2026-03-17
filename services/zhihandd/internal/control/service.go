@@ -15,6 +15,9 @@ const (
 	TopicAction     = "action"
 	TopicCapability = "capability"
 	TopicHeartbeat  = "heartbeat"
+
+	DefaultEventRetentionLimit = 512
+	DefaultSubscriberBuffer    = 16
 )
 
 var (
@@ -22,44 +25,93 @@ var (
 	ErrUnsupportedAction = errors.New("unsupported action")
 )
 
-var supportedActionAliases = map[string]string{
-	"ACTION_TYPE_SESSION_START":      "ACTION_TYPE_SESSION_START",
-	"SESSION_START":                  "ACTION_TYPE_SESSION_START",
-	"session.start":                  "ACTION_TYPE_SESSION_START",
-	"session_start":                  "ACTION_TYPE_SESSION_START",
-	"ACTION_TYPE_SESSION_STOP":       "ACTION_TYPE_SESSION_STOP",
-	"SESSION_STOP":                   "ACTION_TYPE_SESSION_STOP",
-	"session.stop":                   "ACTION_TYPE_SESSION_STOP",
-	"session_stop":                   "ACTION_TYPE_SESSION_STOP",
-	"ACTION_TYPE_DEVICE_CONNECT":     "ACTION_TYPE_DEVICE_CONNECT",
-	"DEVICE_CONNECT":                 "ACTION_TYPE_DEVICE_CONNECT",
-	"device.connect":                 "ACTION_TYPE_DEVICE_CONNECT",
-	"device_connect":                 "ACTION_TYPE_DEVICE_CONNECT",
-	"ACTION_TYPE_DEVICE_DISCONNECT":  "ACTION_TYPE_DEVICE_DISCONNECT",
-	"DEVICE_DISCONNECT":              "ACTION_TYPE_DEVICE_DISCONNECT",
-	"device.disconnect":              "ACTION_TYPE_DEVICE_DISCONNECT",
-	"device_disconnect":              "ACTION_TYPE_DEVICE_DISCONNECT",
-	"ACTION_TYPE_STATE_SYNC":         "ACTION_TYPE_STATE_SYNC",
-	"STATE_SYNC":                     "ACTION_TYPE_STATE_SYNC",
-	"state.sync":                     "ACTION_TYPE_STATE_SYNC",
-	"state_sync":                     "ACTION_TYPE_STATE_SYNC",
-	"ACTION_TYPE_TOOL_INVOKE":        "ACTION_TYPE_TOOL_INVOKE",
-	"TOOL_INVOKE":                    "ACTION_TYPE_TOOL_INVOKE",
-	"tool.invoke":                    "ACTION_TYPE_TOOL_INVOKE",
-	"tool_invoke":                    "ACTION_TYPE_TOOL_INVOKE",
-	"ACTION_TYPE_CAPABILITY_REFRESH": "ACTION_TYPE_CAPABILITY_REFRESH",
-	"CAPABILITY_REFRESH":             "ACTION_TYPE_CAPABILITY_REFRESH",
-	"capability.refresh":             "ACTION_TYPE_CAPABILITY_REFRESH",
-	"capability_refresh":             "ACTION_TYPE_CAPABILITY_REFRESH",
+type ActionType string
+type ActionStatus string
+type CapabilityState string
+type ErrorCode string
+
+const (
+	ActionTypeSessionStart      ActionType = "ACTION_TYPE_SESSION_START"
+	ActionTypeSessionStop       ActionType = "ACTION_TYPE_SESSION_STOP"
+	ActionTypeDeviceConnect     ActionType = "ACTION_TYPE_DEVICE_CONNECT"
+	ActionTypeDeviceDisconnect  ActionType = "ACTION_TYPE_DEVICE_DISCONNECT"
+	ActionTypeStateSync         ActionType = "ACTION_TYPE_STATE_SYNC"
+	ActionTypeToolInvoke        ActionType = "ACTION_TYPE_TOOL_INVOKE"
+	ActionTypeCapabilityRefresh ActionType = "ACTION_TYPE_CAPABILITY_REFRESH"
+)
+
+const (
+	ActionStatusRequested ActionStatus = "ACTION_STATUS_REQUESTED"
+	ActionStatusAccepted  ActionStatus = "ACTION_STATUS_ACCEPTED"
+	ActionStatusRunning   ActionStatus = "ACTION_STATUS_RUNNING"
+	ActionStatusCompleted ActionStatus = "ACTION_STATUS_COMPLETED"
+	ActionStatusFailed    ActionStatus = "ACTION_STATUS_FAILED"
+	ActionStatusCancelled ActionStatus = "ACTION_STATUS_CANCELLED"
+)
+
+const (
+	CapabilityStateAdded   CapabilityState = "CAPABILITY_STATE_ADDED"
+	CapabilityStateUpdated CapabilityState = "CAPABILITY_STATE_UPDATED"
+	CapabilityStateRemoved CapabilityState = "CAPABILITY_STATE_REMOVED"
+)
+
+const (
+	ErrorCodeValidation  ErrorCode = "ERROR_CODE_VALIDATION"
+	ErrorCodeUnsupported ErrorCode = "ERROR_CODE_UNSUPPORTED"
+	ErrorCodePermission  ErrorCode = "ERROR_CODE_PERMISSION"
+	ErrorCodeExecution   ErrorCode = "ERROR_CODE_EXECUTION"
+	ErrorCodeTimeout     ErrorCode = "ERROR_CODE_TIMEOUT"
+	ErrorCodeTransport   ErrorCode = "ERROR_CODE_TRANSPORT"
+)
+
+var supportedActionAliases = map[string]ActionType{
+	string(ActionTypeSessionStart):      ActionTypeSessionStart,
+	"SESSION_START":                     ActionTypeSessionStart,
+	"session.start":                     ActionTypeSessionStart,
+	"session_start":                     ActionTypeSessionStart,
+	string(ActionTypeSessionStop):       ActionTypeSessionStop,
+	"SESSION_STOP":                      ActionTypeSessionStop,
+	"session.stop":                      ActionTypeSessionStop,
+	"session_stop":                      ActionTypeSessionStop,
+	string(ActionTypeDeviceConnect):     ActionTypeDeviceConnect,
+	"DEVICE_CONNECT":                    ActionTypeDeviceConnect,
+	"device.connect":                    ActionTypeDeviceConnect,
+	"device_connect":                    ActionTypeDeviceConnect,
+	string(ActionTypeDeviceDisconnect):  ActionTypeDeviceDisconnect,
+	"DEVICE_DISCONNECT":                 ActionTypeDeviceDisconnect,
+	"device.disconnect":                 ActionTypeDeviceDisconnect,
+	"device_disconnect":                 ActionTypeDeviceDisconnect,
+	string(ActionTypeStateSync):         ActionTypeStateSync,
+	"STATE_SYNC":                        ActionTypeStateSync,
+	"state.sync":                        ActionTypeStateSync,
+	"state_sync":                        ActionTypeStateSync,
+	string(ActionTypeToolInvoke):        ActionTypeToolInvoke,
+	"TOOL_INVOKE":                       ActionTypeToolInvoke,
+	"tool.invoke":                       ActionTypeToolInvoke,
+	"tool_invoke":                       ActionTypeToolInvoke,
+	string(ActionTypeCapabilityRefresh): ActionTypeCapabilityRefresh,
+	"CAPABILITY_REFRESH":                ActionTypeCapabilityRefresh,
+	"capability.refresh":                ActionTypeCapabilityRefresh,
+	"capability_refresh":                ActionTypeCapabilityRefresh,
+}
+
+type Options struct {
+	ServiceName          string
+	Version              string
+	ProtocolVersion      string
+	EventRetentionLimit  int
+	SubscriberBufferSize int
 }
 
 type Service struct {
-	mu           sync.RWMutex
-	info         ServerInfo
-	capabilities []Capability
-	events       []Event
-	subscribers  map[int]subscriber
-	nextSubID    int
+	mu                   sync.RWMutex
+	info                 ServerInfo
+	capabilities         []Capability
+	events               []Event
+	subscribers          map[int]subscriber
+	nextSubID            int
+	eventRetentionLimit  int
+	subscriberBufferSize int
 }
 
 type subscriber struct {
@@ -78,13 +130,13 @@ type Capability struct {
 	ID               string         `json:"id"`
 	DisplayName      string         `json:"display_name"`
 	Version          string         `json:"version"`
-	SupportedActions []string       `json:"supported_actions"`
+	SupportedActions []ActionType   `json:"supported_actions"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
 }
 
 type Action struct {
 	RequestID   string         `json:"request_id"`
-	Type        string         `json:"type"`
+	Type        ActionType     `json:"type"`
 	Source      string         `json:"source"`
 	Target      string         `json:"target,omitempty"`
 	Parameters  map[string]any `json:"parameters,omitempty"`
@@ -93,13 +145,13 @@ type Action struct {
 
 type ExecuteActionResponse struct {
 	RequestID string         `json:"request_id"`
-	Status    string         `json:"status"`
+	Status    ActionStatus   `json:"status"`
 	Result    map[string]any `json:"result,omitempty"`
 	Error     *ErrorDetail   `json:"error,omitempty"`
 }
 
 type ErrorDetail struct {
-	Code     string         `json:"code"`
+	Code     ErrorCode      `json:"code"`
 	Message  string         `json:"message"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
@@ -115,14 +167,14 @@ type Event struct {
 
 type ActionEvent struct {
 	Action   Action         `json:"action"`
-	Status   string         `json:"status"`
+	Status   ActionStatus   `json:"status"`
 	Progress map[string]any `json:"progress,omitempty"`
 	Error    *ErrorDetail   `json:"error,omitempty"`
 }
 
 type CapabilityEvent struct {
-	Capability Capability `json:"capability"`
-	State      string     `json:"state"`
+	Capability Capability      `json:"capability"`
+	State      CapabilityState `json:"state"`
 }
 
 type HeartbeatEvent struct {
@@ -130,19 +182,29 @@ type HeartbeatEvent struct {
 	SentAt time.Time `json:"sent_at"`
 }
 
-func NewService(serviceName string, version string, protocolVersion string) *Service {
-	if strings.TrimSpace(serviceName) == "" {
+func NewService(options Options) *Service {
+	serviceName := strings.TrimSpace(options.ServiceName)
+	if serviceName == "" {
 		serviceName = "zhihandd"
 	}
-	if strings.TrimSpace(version) == "" {
-		version = "0.1.0-dev"
+	version := strings.TrimSpace(options.Version)
+	if version == "" {
+		version = "0.6.0-dev"
 	}
-	if strings.TrimSpace(protocolVersion) == "" {
+	protocolVersion := strings.TrimSpace(options.ProtocolVersion)
+	if protocolVersion == "" {
 		protocolVersion = "zhihand.control.v1"
+	}
+	eventRetentionLimit := options.EventRetentionLimit
+	if eventRetentionLimit <= 0 {
+		eventRetentionLimit = DefaultEventRetentionLimit
+	}
+	subscriberBufferSize := options.SubscriberBufferSize
+	if subscriberBufferSize <= 0 {
+		subscriberBufferSize = DefaultSubscriberBuffer
 	}
 
 	capabilities := defaultCapabilities()
-
 	service := &Service{
 		info: ServerInfo{
 			ServiceName:     serviceName,
@@ -150,9 +212,11 @@ func NewService(serviceName string, version string, protocolVersion string) *Ser
 			ProtocolVersion: protocolVersion,
 			Capabilities:    cloneCapabilities(capabilities),
 		},
-		capabilities: cloneCapabilities(capabilities),
-		events:       make([]Event, 0, len(capabilities)+8),
-		subscribers:  make(map[int]subscriber),
+		capabilities:         cloneCapabilities(capabilities),
+		events:               make([]Event, 0, maxInt(len(capabilities)+8, eventRetentionLimit)),
+		subscribers:          make(map[int]subscriber),
+		eventRetentionLimit:  eventRetentionLimit,
+		subscriberBufferSize: subscriberBufferSize,
 	}
 
 	for _, capability := range capabilities {
@@ -162,7 +226,7 @@ func NewService(serviceName string, version string, protocolVersion string) *Ser
 			OccurredAt: time.Now().UTC(),
 			CapabilityEvent: &CapabilityEvent{
 				Capability: capability,
-				State:      "CAPABILITY_STATE_ADDED",
+				State:      CapabilityStateAdded,
 			},
 		})
 	}
@@ -186,11 +250,10 @@ func (s *Service) ListCapabilities() []Capability {
 }
 
 func (s *Service) ExecuteAction(action Action) (ExecuteActionResponse, error) {
-	canonicalType, err := canonicalActionType(action.Type)
+	canonicalType, err := canonicalActionType(string(action.Type))
 	if err != nil {
 		return ExecuteActionResponse{}, err
 	}
-
 	if strings.TrimSpace(action.Source) == "" {
 		return ExecuteActionResponse{}, fmt.Errorf("%w: source is required", ErrInvalidInput)
 	}
@@ -209,7 +272,7 @@ func (s *Service) ExecuteAction(action Action) (ExecuteActionResponse, error) {
 
 	response := ExecuteActionResponse{
 		RequestID: action.RequestID,
-		Status:    "ACTION_STATUS_ACCEPTED",
+		Status:    ActionStatusAccepted,
 		Result: map[string]any{
 			"accepted":        true,
 			"handled_by":      "zhihandd",
@@ -220,14 +283,13 @@ func (s *Service) ExecuteAction(action Action) (ExecuteActionResponse, error) {
 			"parameter_count": len(action.Parameters),
 		},
 	}
-
 	event := Event{
 		EventID:    newID("evt"),
 		Topic:      TopicAction,
 		OccurredAt: now,
 		ActionEvent: &ActionEvent{
 			Action: action,
-			Status: "ACTION_STATUS_COMPLETED",
+			Status: ActionStatusCompleted,
 			Progress: map[string]any{
 				"phase": "completed",
 			},
@@ -237,7 +299,6 @@ func (s *Service) ExecuteAction(action Action) (ExecuteActionResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.appendEventLocked(event)
-
 	return response, nil
 }
 
@@ -267,7 +328,7 @@ func (s *Service) Subscribe(topics []string) (<-chan Event, func()) {
 	subID := s.nextSubID
 	s.nextSubID++
 
-	ch := make(chan Event, 16)
+	ch := make(chan Event, s.subscriberBufferSize)
 	s.subscribers[subID] = subscriber{
 		topics: makeTopicFilter(topics),
 		ch:     ch,
@@ -281,7 +342,6 @@ func (s *Service) Subscribe(topics []string) (<-chan Event, func()) {
 		if !ok {
 			return
 		}
-
 		delete(s.subscribers, subID)
 		close(sub.ch)
 	}
@@ -293,14 +353,14 @@ func (s *Service) PublishHeartbeat(source string) Event {
 	if strings.TrimSpace(source) == "" {
 		source = "zhihandd"
 	}
-
+	now := time.Now().UTC()
 	event := Event{
 		EventID:    newID("evt"),
 		Topic:      TopicHeartbeat,
-		OccurredAt: time.Now().UTC(),
+		OccurredAt: now,
 		HeartbeatEvent: &HeartbeatEvent{
 			Source: source,
-			SentAt: time.Now().UTC(),
+			SentAt: now,
 		},
 	}
 
@@ -311,17 +371,38 @@ func (s *Service) PublishHeartbeat(source string) Event {
 }
 
 func (s *Service) appendEventLocked(event Event) {
-	s.events = append(s.events, cloneEvent(event))
-	for id, sub := range s.subscribers {
+	s.events = appendBoundedEvent(s.events, cloneEvent(event), s.eventRetentionLimit)
+	for _, sub := range s.subscribers {
 		if !matchesTopic(sub.topics, event.Topic) {
 			continue
 		}
+		enqueueSubscriberEvent(sub.ch, cloneEvent(event))
+	}
+}
 
+func appendBoundedEvent(events []Event, event Event, limit int) []Event {
+	if limit <= 0 {
+		return append(events, event)
+	}
+	if len(events) >= limit {
+		copy(events, events[1:])
+		events[len(events)-1] = event
+		return events
+	}
+	return append(events, event)
+}
+
+func enqueueSubscriberEvent(ch chan Event, event Event) {
+	select {
+	case ch <- event:
+	default:
 		select {
-		case sub.ch <- cloneEvent(event):
+		case <-ch:
 		default:
-			close(sub.ch)
-			delete(s.subscribers, id)
+		}
+		select {
+		case ch <- event:
+		default:
 		}
 	}
 }
@@ -332,17 +413,17 @@ func defaultCapabilities() []Capability {
 			ID:               "capability.discovery",
 			DisplayName:      "Capability Discovery",
 			Version:          "v1",
-			SupportedActions: []string{"ACTION_TYPE_CAPABILITY_REFRESH"},
+			SupportedActions: []ActionType{ActionTypeCapabilityRefresh},
 			Metadata: map[string]any{
 				"kind":      "registry",
-				"transport": []string{"http", "sse", "grpc"},
+				"transport": []string{"http", "sse"},
 			},
 		},
 		{
 			ID:               "control.session",
 			DisplayName:      "Session Control",
 			Version:          "v1",
-			SupportedActions: []string{"ACTION_TYPE_SESSION_START", "ACTION_TYPE_SESSION_STOP"},
+			SupportedActions: []ActionType{ActionTypeSessionStart, ActionTypeSessionStop},
 			Metadata: map[string]any{
 				"kind": "control",
 			},
@@ -351,7 +432,7 @@ func defaultCapabilities() []Capability {
 			ID:               "device.runtime",
 			DisplayName:      "Device Runtime Bridge",
 			Version:          "v1",
-			SupportedActions: []string{"ACTION_TYPE_DEVICE_CONNECT", "ACTION_TYPE_DEVICE_DISCONNECT", "ACTION_TYPE_STATE_SYNC"},
+			SupportedActions: []ActionType{ActionTypeDeviceConnect, ActionTypeDeviceDisconnect, ActionTypeStateSync},
 			Metadata: map[string]any{
 				"kind": "device",
 			},
@@ -360,7 +441,7 @@ func defaultCapabilities() []Capability {
 			ID:               "tool.invoke",
 			DisplayName:      "Tool Invocation",
 			Version:          "v1",
-			SupportedActions: []string{"ACTION_TYPE_TOOL_INVOKE"},
+			SupportedActions: []ActionType{ActionTypeToolInvoke},
 			Metadata: map[string]any{
 				"kind": "tool",
 			},
@@ -368,7 +449,7 @@ func defaultCapabilities() []Capability {
 	}
 }
 
-func canonicalActionType(value string) (string, error) {
+func canonicalActionType(value string) (ActionType, error) {
 	key := strings.TrimSpace(value)
 	if key == "" {
 		return "", fmt.Errorf("%w: action type is required", ErrInvalidInput)
@@ -402,7 +483,6 @@ func matchesTopic(filter map[string]struct{}, topic string) bool {
 	if len(filter) == 0 {
 		return true
 	}
-
 	_, ok := filter[strings.ToLower(strings.TrimSpace(topic))]
 	return ok
 }
@@ -481,9 +561,26 @@ func cloneMap(input map[string]any) map[string]any {
 
 	cloned := make(map[string]any, len(input))
 	for key, value := range input {
-		cloned[key] = value
+		cloned[key] = cloneValue(value)
 	}
 	return cloned
+}
+
+func cloneValue(input any) any {
+	switch typed := input.(type) {
+	case map[string]any:
+		return cloneMap(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for i, value := range typed {
+			cloned[i] = cloneValue(value)
+		}
+		return cloned
+	case []string:
+		return slices.Clone(typed)
+	default:
+		return typed
+	}
 }
 
 func newID(prefix string) string {
@@ -506,4 +603,11 @@ func randomID(prefix string) (string, error) {
 
 func fallbackID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UTC().UnixNano())
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -12,8 +12,8 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
-	service := control.NewService("zhihandd", "test", "zhihand.control.v1")
-	mux := NewMux(config.Config{HTTPAddr: ":8787", GRPCAddr: ":9797"}, service)
+	service := control.NewService(control.Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
+	mux := NewMux(config.Config{HTTPAddr: ":8787"}, service)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -25,8 +25,8 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestExecuteActionAndListEvents(t *testing.T) {
-	service := control.NewService("zhihandd", "test", "zhihand.control.v1")
-	mux := NewMux(config.Config{HTTPAddr: ":8787", GRPCAddr: ":9797"}, service)
+	service := control.NewService(control.Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
+	mux := NewMux(config.Config{HTTPAddr: ":8787"}, service)
 
 	body, err := json.Marshal(map[string]any{
 		"action": map[string]any{
@@ -70,5 +70,51 @@ func TestExecuteActionAndListEvents(t *testing.T) {
 	}
 	if payload.Items[0].ActionEvent == nil {
 		t.Fatalf("expected action event payload")
+	}
+}
+
+func TestProtectedRoutesRequireBearerTokenWhenConfigured(t *testing.T) {
+	service := control.NewService(control.Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
+	mux := NewMux(config.Config{HTTPAddr: ":8787", AuthToken: "secret"}, service)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/server/info", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without bearer token, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/server/info", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with bearer token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestExecuteActionAllowsUnknownForwardCompatibleFields(t *testing.T) {
+	service := control.NewService(control.Options{ServiceName: "zhihandd", Version: "test", ProtocolVersion: "zhihand.control.v1"})
+	mux := NewMux(config.Config{HTTPAddr: ":8787"}, service)
+
+	body, err := json.Marshal(map[string]any{
+		"action": map[string]any{
+			"type":   "tool.invoke",
+			"source": "adapter://openclaw",
+			"unknown_future_field": map[string]any{
+				"enabled": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/actions/execute", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for forward-compatible payload, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

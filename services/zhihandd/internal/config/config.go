@@ -1,22 +1,28 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"strings"
+)
 
 type Config struct {
 	HTTPAddr        string
-	GRPCAddr        string
 	ServiceName     string
 	Version         string
 	ProtocolVersion string
+	AuthToken       string
+	EventLimit      int
 }
 
 func FromEnv() Config {
 	return Config{
 		HTTPAddr:        envOrDefault("ZHIHAND_HTTP_ADDR", ":8787"),
-		GRPCAddr:        envOrDefault("ZHIHAND_GRPC_ADDR", ":9797"),
 		ServiceName:     envOrDefault("ZHIHAND_SERVICE_NAME", "zhihandd"),
-		Version:         envOrDefault("ZHIHAND_VERSION", "0.1.0-dev"),
+		Version:         envOrDefault("ZHIHAND_VERSION", "0.6.0-dev"),
 		ProtocolVersion: envOrDefault("ZHIHAND_PROTOCOL_VERSION", "zhihand.control.v1"),
+		AuthToken:       strings.TrimSpace(os.Getenv("ZHIHAND_AUTH_TOKEN")),
+		EventLimit:      envOrDefaultInt("ZHIHAND_EVENT_LIMIT", 512),
 	}
 }
 
@@ -27,4 +33,16 @@ func envOrDefault(key, fallback string) string {
 	}
 
 	return value
+}
+
+func envOrDefaultInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

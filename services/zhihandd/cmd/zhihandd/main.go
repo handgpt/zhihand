@@ -17,7 +17,12 @@ import (
 func main() {
 	cfg := config.FromEnv()
 	logger := log.New(os.Stdout, "zhihandd ", log.LstdFlags|log.Lmsgprefix)
-	service := control.NewService(cfg.ServiceName, cfg.Version, cfg.ProtocolVersion)
+	service := control.NewService(control.Options{
+		ServiceName:         cfg.ServiceName,
+		Version:             cfg.Version,
+		ProtocolVersion:     cfg.ProtocolVersion,
+		EventRetentionLimit: cfg.EventLimit,
+	})
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
@@ -26,14 +31,13 @@ func main() {
 
 	go func() {
 		logger.Printf(
-			"starting zhihandd http=%s grpc=%s service=%s version=%s protocol=%s",
+			"starting zhihandd http=%s service=%s version=%s protocol=%s auth=%t",
 			cfg.HTTPAddr,
-			cfg.GRPCAddr,
 			cfg.ServiceName,
 			cfg.Version,
 			cfg.ProtocolVersion,
+			cfg.AuthToken != "",
 		)
-		logger.Printf("gRPC listener wiring is still pending; HTTP control surface is active")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("server failed: %v", err)
 		}

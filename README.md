@@ -2,6 +2,8 @@
 
 ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
+Current public core version: `0.6.0`
+
 In practice, ZhiHand brings three parts together:
 
 - `Brain`
@@ -93,9 +95,19 @@ If you are integrating or extending ZhiHand, these docs are the main reference:
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [ACTIONS.md](./docs/ACTIONS.md)
 - [PROTOCOL.md](./docs/PROTOCOL.md)
+- [COMPATIBILITY.md](./docs/COMPATIBILITY.md)
+- [SECURITY.md](./docs/SECURITY.md)
 - [REPOSITORY.md](./docs/REPOSITORY.md)
 - [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
 - [ROADMAP.md](./ROADMAP.md)
+
+The public reference service in this repo currently ships:
+
+- HTTP JSON + SSE
+- optional bearer-token auth
+- bounded in-memory event retention
+
+It does not yet ship a real gRPC listener.
 
 ## Publishing Rule
 

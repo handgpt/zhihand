@@ -27,6 +27,11 @@ The public core should stay neutral across host environments and runtime impleme
 - coordinating action execution
 - demonstrating the intended server-side model for the public protocol
 
+Current implementation status:
+
+- implemented today: HTTP JSON endpoints, SSE event streaming, bounded in-memory event retention, optional bearer-token protection
+- not implemented yet: a public gRPC listener backed by generated proto bindings
+
 ### 3. Host Adapters
 
 Host adapters translate host-specific events and APIs into the ZhiHand control model.
@@ -104,6 +109,22 @@ The public repo should define portable contracts. Deployment-specific services a
 - one canonical action taxonomy
 - one capability and lifecycle model
 - a first end-to-end host-adapter integration
+
+## Implemented vs Planned
+
+### Implemented in this repository
+
+- `control.proto` as the public protocol definition
+- `zhihandd` as a reference HTTP/SSE control surface
+- OpenClaw as the first public host adapter
+- explicit separation between the public core and private deployment services
+
+### Planned, not yet shipped here
+
+- generated proto bindings checked into the public repo
+- a real gRPC listener in `zhihandd`
+- persistent event storage behind an interface
+- richer compatibility negotiation beyond the current reference model
 
 ## Risks
 

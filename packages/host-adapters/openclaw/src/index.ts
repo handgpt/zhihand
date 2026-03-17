@@ -319,7 +319,8 @@ export type ZhiHandControlCommandInput =
 export type FetchLike = typeof fetch;
 
 const ZHIHAND_OPENCLAW_USER_AGENT =
-  "ZhiHand-OpenClaw/0.5.0 (+https://zhihand.com)";
+  "ZhiHand-OpenClaw/0.6.0 (+https://zhihand.com)";
+let nextCommandMessageCounter = 0;
 
 type PromptQueueResponse = {
   items: MobilePromptRecord[];
@@ -340,7 +341,7 @@ type ReplyRecordResponse = {
 export function createManifest(): OpenClawPluginManifest {
   return {
     name: "zhihand",
-    version: "0.5.0",
+    version: "0.6.0",
     description: "ZhiHand control-plane and runtime adapter for OpenClaw",
     capabilities: [
       "control.execute",
@@ -352,6 +353,11 @@ export function createManifest(): OpenClawPluginManifest {
       "mobile.chat"
     ]
   };
+}
+
+function nextCommandMessageID(): number {
+  nextCommandMessageCounter = (nextCommandMessageCounter + 1) % 1000;
+  return (Date.now() * 1000) + nextCommandMessageCounter;
 }
 
 export function resolveEndpoint(config: ZhiHandPluginConfig): string {
@@ -607,7 +613,7 @@ export async function enqueueCommand(
       body: JSON.stringify({
         command: {
           ...input.command,
-          message_id: input.command.messageId ?? Date.now()
+          message_id: input.command.messageId ?? nextCommandMessageID()
         }
       }),
       headers: {

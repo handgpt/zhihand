@@ -6,8 +6,8 @@ This directory now contains a minimal runnable implementation. It establishes:
 
 - the service entrypoint
 - environment-driven configuration
-- an HTTP control surface that mirrors the shared protocol model
-- an in-memory event bus for action, capability, and heartbeat events
+- an authenticated HTTP control surface that mirrors the shared protocol model
+- an in-memory bounded event bus for action, capability, and heartbeat events
 
 ## Goals
 
@@ -26,7 +26,7 @@ This directory now contains a minimal runnable implementation. It establishes:
 - `internal/http/routes.go`
   HTTP routes for control, capability, and event APIs
 
-## HTTP Endpoints
+## Implemented Today
 
 - `GET /healthz`
 - `GET /v1/server/info`
@@ -34,10 +34,16 @@ This directory now contains a minimal runnable implementation. It establishes:
 - `POST /v1/actions/execute`
 - `GET /v1/events`
 - `GET /v1/events/stream`
+- Optional bearer-token protection through `ZHIHAND_AUTH_TOKEN`
+- Bounded event retention through `ZHIHAND_EVENT_LIMIT`
 
-## Next Steps
+## Not Implemented Yet
 
-1. Add generated proto bindings and a real gRPC listener.
-2. Replace the in-memory execution path with routed handlers.
-3. Persist action and event history behind an interface.
-4. Add integration tests against at least one host adapter.
+- A public gRPC listener
+- Persistent storage for actions and events
+- Routed execution backends beyond the in-memory reference path
+
+## Notes
+
+- The HTTP JSON surface uses `control.proto` enum names as strings, matching protobuf JSON conventions.
+- `zhihandd` is a public reference service, not the private hosted production control plane.
