@@ -1,83 +1,86 @@
 # Distribution
 
-This document describes the recommended public release shape for ZhiHand.
+This page explains how ZhiHand is meant to be delivered to real users.
 
-## Recommended Release Shape
+## The Product Shape
 
-Publish ZhiHand in three parts:
+ZhiHand is easiest to use when it is delivered in three parts:
 
-1. Android app
-2. hosted control plane
-3. OpenClaw plugin package
+1. **Android app**
+2. **Hosted ZhiHand control plane**
+3. **OpenClaw plugin**
 
-Do not make the OpenClaw plugin the only product surface.
+That means a new user does not need to self-host anything on day one.
 
-## OpenClaw Distribution
+## What Most Users Install
 
-Primary release path:
+### 1. Android app
 
-- install the published npm package with the official OpenClaw plugin installer
+The app is where the user:
 
-Release install command:
+- scans the pairing QR code
+- connects `ZhiHand Device`
+- grants screen sharing when needed
+- sends requests, voice notes, and attachments
+
+### 2. OpenClaw plugin
+
+The normal install command is:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-Development fallback:
+This is the main public install path.
 
-- install the plugin from a local checkout when developing the adapter itself
-
-Development install command:
+Local-path install is only for plugin development:
 
 ```bash
 openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
+## First-Run User Flow
+
+1. Install the Android app.
+2. Install the OpenClaw plugin.
+3. Restart or reload OpenClaw if needed.
+4. Run `/zhihand pair`.
+5. Open the QR URL in a browser.
+6. Scan it from the Android app.
+7. Connect `ZhiHand Device`.
+8. Turn on `Eye` when you want ZhiHand to read the screen.
+9. Start sending requests from the phone or from OpenClaw.
+
+## What Runs Where
+
+- **Android app**
+  Handles pairing, screen sharing, attachments, and device-side execution.
+- **Hosted control plane**
+  Stores pairing state, prompts, replies, commands, and attachments.
+- **OpenClaw plugin**
+  Connects OpenClaw to the control plane and exposes `zhihand_*` tools.
+
+## Hosted By Default
+
+The recommended first release is hosted by default:
+
+- the Android app uses the official hosted endpoints
+- the OpenClaw plugin points to the official hosted control plane
+- self-hosting is optional, not required for first use
+
+## Discovery
+
 Recommended discovery paths:
 
-- the package README
+- this repository README
+- the plugin README
+- npm package page
 - OpenClawDir or another community plugin directory
-- future external catalogs if the OpenClaw deployment uses them
 
-Do not assume a first-party plugin store UI is available everywhere.
+Do not assume users have a built-in plugin-store UI inside every OpenClaw deployment.
 
-## Hosted Vs Self-Hosted
+## For Advanced Users
 
-Recommended first release:
+Advanced users can still self-host by overriding the control-plane endpoint.
 
-- Android app uses the official hosted pairing and control-plane endpoints
-- OpenClaw plugin defaults to the official hosted control plane
-- users do not self-host the server on first install
-
-Advanced self-hosting remains possible by overriding the control-plane endpoint.
-
-## Other Host Runtimes
-
-For non-OpenClaw "claw-like" hosts:
-
-- keep the public control-plane contract stable
-- expose thin host adapters instead of copying the whole OpenClaw plugin
-- do not couple the public contract to OpenClaw-only runtime details
-
-## User Flow
-
-1. Install the ZhiHand Android app.
-2. Install the OpenClaw plugin.
-3. Restart or reload OpenClaw if required by the host.
-4. Run `/zhihand pair`.
-5. Scan the QR code from the Android app.
-6. Connect `ZhiHand Device`.
-7. When needed, connect `Eye` by granting screen sharing.
-8. Start sending requests from the Android app or from OpenClaw.
-
-## Module Boundary
-
-The OpenClaw plugin should stay thin:
-
-- pairing
-- control-plane polling
-- `zhihand_*` tools
-- native OpenClaw agent relay
-
-The plugin should not become its own planner or a second control plane.
+That is an advanced deployment path, not the default onboarding path.

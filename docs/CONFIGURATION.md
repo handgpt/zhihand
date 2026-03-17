@@ -1,57 +1,95 @@
-# Public Configuration Surfaces
+# Configuration
 
-This document records the public, publishable configuration surfaces that other
-repos and deployments are expected to consume.
+This page explains what most users need to configure, and what advanced users can override.
 
-It is intentionally safe to open source.
+It is intentionally safe to publish.
 
-Do not place any of the following in this repository:
+## Most Users
 
-- real tokens, passwords, cookies, or API keys
-- private server hostnames or SSH targets
-- internal-only filesystem paths from a specific deployment
-- per-user credentials or operator notes
+If you use the hosted defaults, most users only need two things:
 
-## Public Hostnames
+1. install the Android app
+2. install the OpenClaw plugin
 
-The public model assumes these host categories:
+The normal install command is:
 
-- `pair.zhihand.com`
-  QR landing and mobile claim bootstrap
-- `api.zhihand.com`
-  deployment-specific control-plane base URL
-- `<edge-id>.edge.zhihand.com`
-  opaque per-host endpoint identity
+```bash
+openclaw plugins install @zhihand/openclaw
+```
 
-Only the hostname categories belong here.
-Concrete deployment values and secrets belong in deployment-specific docs.
+Then run:
 
-## OpenClaw Host Adapter Config
+```text
+/zhihand pair
+```
 
-The public OpenClaw plugin accepts the following config object under
-`plugins.entries.openclaw.config`:
+For the normal hosted setup, the plugin already defaults to:
+
+- pairing on `https://pair.zhihand.com`
+- control-plane traffic on `https://api.zhihand.com`
+- app download URL `https://zhihand.com/download`
+
+## What the User Sees
+
+### In OpenClaw
+
+The plugin provides:
+
+- `/zhihand pair`
+- `/zhihand status`
+- `/zhihand unpair`
+
+### In the Android app
+
+The app is expected to:
+
+- scan the pairing QR code
+- claim the pairing session
+- keep the paired credential locally
+- upload screen snapshots when screen sharing is active
+- upload prompts and attachments
+- poll commands and execute device-side actions
+
+## Advanced OpenClaw Configuration
+
+Advanced or self-hosted users can configure the plugin under:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw": {
+        "enabled": true,
+        "config": {}
+      }
+    }
+  }
+}
+```
+
+Supported public config fields:
 
 - `controlPlaneEndpoint`
-  Base URL for the deployment control plane.
+  Base URL of the ZhiHand control plane.
   Default: `https://api.zhihand.com`
 - `originListener`
   Optional public origin metadata for the host
 - `displayName`
-  Human-friendly name shown in pairing state
+  Human-readable name shown during pairing
 - `stableIdentity`
-  Stable plugin identity used to reuse the same `edge-id` across restarts
+  Stable plugin identity so the same host can keep the same `edge-id`
 - `pairingTTLSeconds`
-  Pairing QR lifetime in seconds, minimum `30`
+  QR lifetime in seconds
 - `appDownloadURL`
-  Link shown to users when pairing is generated
+  App link shown with pairing output
 - `gatewayResponsesEndpoint`
-  Local OpenClaw `POST /v1/responses` endpoint used by the thin plugin relay
+  Local OpenClaw `POST /v1/responses` endpoint
 - `gatewayAuthToken`
-  Gateway bearer token used for the local OpenClaw `POST /v1/responses` call
+  Local OpenClaw bearer token for the thin relay
 - `mobileAgentId`
-  Dedicated OpenClaw agent id for ZhiHand mobile prompts
+  Dedicated OpenClaw agent id for mobile prompts
 - `requestedScopes`
-  Requested scopes embedded into the pairing descriptor
+  Scope list embedded into the pairing descriptor
 
 Public-safe example:
 
@@ -70,31 +108,32 @@ Public-safe example:
 }
 ```
 
-Hosted defaults:
+## Recommended Hosted Defaults
+
+The public plugin defaults to:
 
 - `controlPlaneEndpoint`: `https://api.zhihand.com`
 - `pairingTTLSeconds`: `600`
 - `appDownloadURL`: `https://zhihand.com/download`
 - `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
 - `mobileAgentId`: `zhihand-mobile`
-- `requestedScopes`: recommended ZhiHand defaults
 
-The public plugin defaults to the official hosted control plane.
-Self-hosted deployments should override the control-plane endpoint explicitly.
+These defaults are recommended for the hosted public path.
 
 ## OpenClaw Runtime Best Practice
 
-The public ZhiHand plugin should stay thin.
+The plugin should stay thin.
 
-Preferred runtime split:
+Recommended split:
 
-- plugin: pairing, polling, control-plane transport, and `zhihand_*` tools
-- OpenClaw agent/runtime: prompt reasoning, tool orchestration, and final reply
+- **plugin**
+  pairing, control-plane transport, polling, `zhihand_*` tools
+- **OpenClaw agent**
+  reasoning, tool orchestration, final reply
 
-Do **not** treat plugin-side planner loops or direct `codex exec` flows as the
-public contract. Those are implementation detours, not the intended architecture.
+Do not treat plugin-side planner loops or direct `codex exec` flows as the public contract.
 
-Recommended dedicated agent example:
+Recommended dedicated agent shape:
 
 ```json
 {
@@ -112,40 +151,16 @@ Recommended dedicated agent example:
 }
 ```
 
-Why:
+## OpenClaw Tools
 
-- OpenClaw plugin docs define agent tools as the normal LLM integration point
-- OpenClaw CLI backend docs define `codex-cli/*` as text-only fallback paths
-  with tools disabled
-- a native `POST /v1/responses` relay keeps policy, auditing, and tool scoping
-  inside OpenClaw
+The adapter exposes:
 
-Deployment requirements for this best practice:
+- `zhihand_pair`
+- `zhihand_status`
+- `zhihand_screen_read`
+- `zhihand_control`
 
-- `gateway.http.endpoints.responses.enabled = true`
-- the plugin receives a local gateway bearer token
-- the dedicated ZhiHand mobile agent uses a tool-capable provider model such as
-  `openai-codex/gpt-5.4`
-- `zhihand_*` tools are registered as optional and allowlisted only for the
-  dedicated mobile agent
-- if these prerequisites are missing, the relay stays disabled and the plugin
-  logs the configuration error during startup
-
-## OpenClaw Adapter Commands And Tools
-
-The public OpenClaw adapter exposes:
-
-- slash commands
-  - `/zhihand pair`
-  - `/zhihand status`
-  - `/zhihand unpair`
-- tools
-  - `zhihand_pair`
-  - `zhihand_status`
-  - `zhihand_screen_read`
-  - `zhihand_control`
-
-`zhihand_control` currently accepts these action values:
+`zhihand_control` currently supports:
 
 - `click`
 - `long_click`
@@ -161,150 +176,57 @@ The public OpenClaw adapter exposes:
 - `start_live_capture`
 - `stop_live_capture`
 
-The public mobile prompt path may also include prompt attachments:
+## Prompt Attachments
+
+The mobile prompt path can include:
 
 - images
 - audio notes
 - documents
-- limited video attachments plus optional preview images
+- limited video attachments
 
-Coordinate best practice:
+Recommended practice:
 
-- `click`, `long_click`, and `move_to` use `xRatio` and `yRatio` in `[0,1]`
-  based on the latest `zhihand_screen_read` image.
-- `swipe` uses `x1Ratio`, `y1Ratio`, `x2Ratio`, and `y2Ratio` in `[0,1]`.
-- `move` uses `dxRatio` and `dyRatio` in `[-1,1]` for relative pointer moves.
-- Public callers should not send raw screenshot pixel coordinates.
-- `zhihand_screen_read` should fail if the latest snapshot is stale, rather
-  than letting the agent plan clicks from an old frame.
-- If the Android keyboard is visible and the next step is to submit search,
-  send, or confirm the current text, prefer `enter` over clicking the IME
-  action button.
-- `input_text` accepts `mode`:
-  - `auto`: current default, resolved on Android as paste-first
-  - `paste`: clipboard-first plus HID paste shortcut
-  - `type`: raw HID keyboard typing for sensitive fields or paste-rejected inputs
-- `input_text` accepts `submit=true` to send Enter immediately after the text
-  input succeeds.
-- `auto` and `paste` overwrite the Android clipboard as part of the
-  reliability trade-off. Prefer `type` for sensitive text or when clipboard
-  mutation is not acceptable.
+- send images and documents as attachments
+- send voice as raw audio attachments
+- let the OpenClaw host perform transcription
+- do not make app-local speech-to-text the primary public contract
 
-Attachment best practice:
+## Pairing URL Behavior
 
-- send images and documents as raw prompt attachments
-- send voice notes as raw audio attachments
-- let the OpenClaw host transcribe audio before the dedicated mobile agent run
-- avoid app-local speech-to-text as the primary public contract
-- treat video as limited context unless a future deployment adds explicit
-  video understanding
-
-## Distribution Best Practice
-
-Recommended first public release shape:
-
-- Android app
-- official hosted control plane
-- npm-published OpenClaw plugin package
-
-Current OpenClaw install path:
-
-```bash
-openclaw plugins install @zhihand/openclaw
-```
-
-Local development fallback:
-
-```bash
-openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
-```
-
-Recommended discovery paths:
-
-- package README
-- OpenClawDir or another community plugin directory
-- external catalogs where supported
-
-For update manifests, artifact hosting, and rollout channels, see [UPDATES.md](./UPDATES.md).
-
-Do not assume every OpenClaw deployment has a first-party plugin store UI.
-
-## Pairing Descriptor Fields
-
-The QR landing flow publishes a descriptor with these public fields:
-
-- `v`
-- `mode`
-- `control_plane_host`
-- `edge_id`
-- `edge_host`
-- `pair_session_id`
-- `pair_token`
-- `expires_at`
-- `requested_scopes`
-
-The descriptor is intentionally transport bootstrap data.
-It is not a long-term credential.
-
-`GET https://pair.zhihand.com/pair?d=<base64url>` has two public modes:
+`https://pair.zhihand.com/pair?d=<base64url>` supports two modes:
 
 - browser mode
-  - default response
-  - returns a human-facing HTML landing page with an embeddable QR code
+  - default
+  - returns an HTML QR landing page
 - machine mode
   - requested with `Accept: application/json` or `?format=json`
-  - returns the raw `pairing` descriptor JSON that the Android app claims
+  - returns the raw pairing descriptor JSON
 
-Public-safe expectation:
+The normal user-facing flow is:
 
-- OpenClaw shows or links to the canonical `pair.zhihand.com/pair?...` URL
-- the Android app camera scans that QR code
-- the Android app resolves the descriptor in JSON mode before claim
+1. OpenClaw returns a QR URL
+2. a browser shows the QR page
+3. the Android app scans it
+4. the app resolves the descriptor in JSON mode and claims it
 
-## Android Public Expectations
+## BLE Lease
 
-The public integration model expects the Android app to:
+ZhiHand Device uses a BLE lease so only one active nearby client controls the hardware at a time.
 
-- scan a QR code or open a pairing URL
-- resolve the pairing descriptor from `pair.zhihand.com` with
-  `Accept: application/json`
-- claim the pairing session against the deployment control plane
-- persist the returned long-term credential locally
-- upload prompt attachments through the control plane when the user sends
-  images, files, or voice notes
-- poll paired-host commands through the control plane
-- upload the latest screen snapshot through the control plane when capture is active
+Public UUIDs:
 
-Recommended Android prompt UX:
+- service: `0x1815`
+- command characteristic: `0x2A56`
+- lease characteristic: `0xFF02`
 
-- when the text composer is empty, show a `+` entry point for attachments
-- support image, file, and voice-note attachments on the same prompt path
-- record voice locally and upload it as an audio attachment
-- let the OpenClaw host decide how to transcribe or interpret those inputs
-
-The OpenClaw host adapter may later recover to a newer claimed pairing session
-for the same `edge_id` if the local adapter state falls behind the active phone
-claim. This recovery is host-side state reconciliation; it does not replace the
-QR claim flow or mobile credential issuance.
-
-## BLE Lease Contract
-
-The Android app and ZhiHand hardware use a BLE lease contract so nearby devices
-can compete safely for a single hardware session.
-
-Public constants currently in use:
-
-- command service UUID: `0x1815`
-- command characteristic UUID: `0x2A56`
-- lease characteristic UUID: `0xFF02`
-
-Public lease operations:
+Public operations:
 
 - `claim`
 - `renew`
 - `release`
 
-Public lease states/results:
+Public results:
 
 - `free`
 - `leased`
@@ -313,38 +235,19 @@ Public lease states/results:
 - `busy`
 - `expired`
 
-## Screen-Capture Constraint
+## Screen Capture
 
-Remote screen reading depends on the Android app already holding a valid local
-screen-capture session.
+Remote screen reading depends on the Android app already holding an active local screen-sharing session.
 
-The public model does **not** assume that a remote command can silently grant
-`MediaProjection` permission on Android.
+The public model does not assume silent bypass of Android `MediaProjection` consent.
 
-In practice:
+## Public Safety Rule
 
-- `zhihand_screen_read` returns the latest uploaded snapshot
-- `zhihand.start_live_capture` may return a permission-required result until the
-  user has activated capture in the app
+Do not place the following in this repository:
 
-## Public State Artifacts
-
-The OpenClaw plugin uses these state-relative artifacts inside the OpenClaw
-state directory:
-
-- `plugins/openclaw/state.json`
-- `plugins/openclaw/latest-screen.jpg`
-
-This repository intentionally does not document deployment-specific absolute
-paths.
-
-## Publishing Rule
-
-If a configuration item contains any of these, it does not belong in this
-public repository:
-
-- a secret value
-- a private infrastructure address
-- an operator account
-- a deployment password
-- a token file path that only makes sense on one machine
+- real tokens
+- real passwords
+- real API keys
+- private SSH targets
+- operator credentials
+- machine-specific internal paths

@@ -2,93 +2,102 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-`智手®（ZhiHand）` 是智手®项目的公共核心仓库。
+智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
-它负责共享协议、action model、架构说明、参考服务骨架以及可供多个宿主环境复用的宿主适配层参考代码。
+你可以把它理解成三部分协同工作：
 
-这个仓库**不会**按名称列出任何私有实现仓库。
+- `Brain`
+  OpenClaw 接收你的请求，并决定下一步该做什么。
+- `Eye`
+  Android App 在你授权后共享当前屏幕。
+- `Hand`
+  智手®设备把真正的输入动作发给手机。
 
-## 公共范围
+## 普通用户怎么用
 
-这个仓库的目标是定义并稳定公共共享层：
+大多数用户只需要这条流程：
 
-- 协议契约
-- action 语义
-- 集成边界
-- 宿主适配层模型
-- 参考服务行为
+1. 安装 Android App
+2. 安装 OpenClaw 插件
+3. 在 OpenClaw 里执行 `/zhihand pair`
+4. 用 App 扫码
+5. 连接 `ZhiHand Device`
+6. 需要读屏时再打开 `Eye`
+7. 开始直接向 OpenClaw 提需求
 
-可能接入这套共享模型的宿主环境包括：
+如果你使用官方托管默认值，首次使用时不需要先自建服务端。
 
-- OpenClaw
-- Codex
-- Claude Code
-- 其他支持插件或工具适配的宿主运行时
+## 快速开始
 
-## 仓库结构
+### OpenClaw 用户
 
-```text
-zhihand/
-  docs/
-  proto/
-  services/
-  packages/
-    host-adapters/
+安装插件：
+
+```bash
+openclaw plugins install @zhihand/openclaw
 ```
 
-## 本仓库包含什么
+按你的 OpenClaw 环境要求重启或重新加载后，执行：
 
-- `docs/`
-  公共架构、协议、仓库策略和运行时边界文档。
-- `proto/`
-  版本化协议定义。`proto/zhihand/control/v1/control.proto` 是公共控制契约的 source of truth。
-- `services/`
-  参考服务骨架，包括 `zhihandd`。
-- `packages/`
-  公共宿主适配层包和参考适配器代码。
+```text
+/zhihand pair
+```
 
-## 职责
+浏览器打开返回的二维码链接，再用 Android App 扫码。
 
-这个仓库需要回答以下问题：
+### Android 用户
 
-- 智手®（ZhiHand）的公共架构是什么？
-- 共享控制模型中有哪些消息和 action？
-- `zhihandd` 作为参考控制面服务代表什么？
-- 宿主适配层应如何把宿主特有事件映射到共享模型？
-- 移动端、设备端、Web 端应如何接入而不重定义协议语义？
+1. 打开智手® App
+2. 点击 `Scan`
+3. 扫描 OpenClaw 提供的二维码
+4. 连接 `ZhiHand Device`
+5. 当你希望智手®看屏幕时，再点开 `Eye`
 
-这个仓库不应变成私有产品基础设施或平台专属应用代码的容器。
+## 这三部分分别在做什么
 
-当前 OpenClaw 插件已发布为 npm 包，可直接通过 `openclaw plugins install @zhihand/openclaw` 安装；本地路径安装只保留给开发调试。
+- **Android App**
+  负责接收用户输入、上传屏幕快照、执行设备侧动作
+- **智手® server**
+  负责保存配对关系、提示词、回复、命令和附件
+- **OpenClaw 插件**
+  负责把 OpenClaw 接到智手®控制面，并暴露 `zhihand_*` 工具
 
-## 当前阶段
+## 这个仓库里有什么
 
-当前重点是 Phase 1：
+这个仓库是智手®的公共核心仓库，主要包含：
 
-1. 稳定 `control.proto`
-2. 实现第一个可用的 `zhihandd` 控制面
-3. 建立公共宿主适配层边界，首先从 OpenClaw 开始
-4. 让这套共享模型可扩展到 Codex、Claude Code 等后续宿主环境
-5. 保持公共核心不受私有部署细节污染
+- 公共说明文档
+- 公共协议与动作模型
+- OpenClaw 宿主适配器
+- 参考服务边界
 
-## 文档索引
+它不包含私有部署密钥，也不包含私有产品基础设施。
 
-- [ROADMAP.md](./ROADMAP.md)
-- [ROADMAP.zh-CN.md](./ROADMAP.zh-CN.md)
+## 下一步看什么
+
+- [DISTRIBUTION.zh-CN.md](./docs/DISTRIBUTION.zh-CN.md)
+  从用户角度解释如何安装和开始使用
+- [CONFIGURATION.zh-CN.md](./docs/CONFIGURATION.zh-CN.md)
+  大多数用户需要什么，进阶用户还能改什么
+- [UPDATES.zh-CN.md](./docs/UPDATES.zh-CN.md)
+  App 与设备更新如何探测和发布
+
+## 面向开发者的文档
+
+如果你是要集成或扩展智手®，这些文档更重要：
+
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [ACTIONS.md](./docs/ACTIONS.md)
-- [CONFIGURATION.md](./docs/CONFIGURATION.md)
-- [CONFIGURATION.zh-CN.md](./docs/CONFIGURATION.zh-CN.md)
 - [PROTOCOL.md](./docs/PROTOCOL.md)
 - [REPOSITORY.md](./docs/REPOSITORY.md)
 - [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
-- [PRODUCTION.md](./PRODUCTION.md)
-- [PRODUCTION.zh-CN.md](./PRODUCTION.zh-CN.md)
+- [ROADMAP.zh-CN.md](./ROADMAP.zh-CN.md)
 
-## 工作规则
+## 公开发布规则
 
-- `control.proto` 是公共协议层的 source of truth。
-- 共享语义属于这里。
-- 带有 secret 的部署逻辑、产品私有基础设施不属于这里。
-- 平台原生实现应放在公共核心之外，除非它是一个公共参考适配器。
-- 本仓库中的文档必须保持可公开发布。
+本仓库中的文档必须始终保持可公开发布：
+
+- 不写真实 token
+- 不写私有主机名
+- 不写运维凭据
+- 不写只对某次部署有意义的内部备注

@@ -1,24 +1,31 @@
-# 智手®（ZhiHand）发布方式
+# 智手®（ZhiHand）如何发布
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-本文档定义智手®（ZhiHand）对外发布的推荐形态。
+这份文档从用户角度解释：智手®应该如何交付给真实用户。
 
-## 推荐发布形态
+## 推荐的产品形态
 
-智手®（ZhiHand）建议拆成 3 部分发布：
+智手®最适合拆成 3 部分交付：
 
-1. Android app
-2. 托管 control plane
-3. OpenClaw 插件包
+1. **Android App**
+2. **官方托管控制面**
+3. **OpenClaw 插件**
 
-不要把 OpenClaw 插件当成唯一产品形态。
+这样用户第一次使用时，不需要先自建服务端。
 
-## OpenClaw 分发方式
+## 用户实际需要安装什么
 
-当前正式主路径：
+### 1. Android App
 
-- 通过 npm 包，使用官方 OpenClaw 插件安装命令安装
+用户通过 App 完成：
+
+- 扫配对二维码
+- 连接 `ZhiHand Device`
+- 在需要时打开屏幕共享
+- 发送文本、语音和附件
+
+### 2. OpenClaw 插件
 
 正式安装命令：
 
@@ -26,60 +33,56 @@
 openclaw plugins install @zhihand/openclaw
 ```
 
-本地开发 fallback：
+这是面向普通用户的主要安装方式。
 
-- 只有在开发插件本体时，才建议从本地 checkout 直接安装
-
-本地开发安装命令：
+本地路径安装只保留给插件开发调试：
 
 ```bash
 openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
-推荐发现入口：
+## 用户第一次使用的流程
 
-- 插件 README
-- OpenClawDir 或其他社区插件目录
-- 如果宿主支持，再补 external catalog
-
-不要假设所有 OpenClaw 部署都自带一套官方插件商店界面。
-
-## 托管模式与自托管
-
-第一阶段推荐：
-
-- Android app 默认使用官方托管 pairing / control-plane
-- OpenClaw 插件默认指向官方托管 control plane
-- 用户首次使用不需要自建 server
-
-后续如需自托管，再通过配置覆盖 control-plane endpoint。
-
-## 其他宿主
-
-对于非 OpenClaw 的“claw 类”宿主：
-
-- 保持公共 control-plane contract 稳定
-- 为各宿主提供薄适配器
-- 不要把公共协议绑死在 OpenClaw 私有运行时细节上
-
-## 用户流程
-
-1. 安装智手® Android app
+1. 安装 Android App
 2. 安装 OpenClaw 插件
-3. 根据宿主要求重启或重新加载 OpenClaw
+3. 按需要重启或重新加载 OpenClaw
 4. 执行 `/zhihand pair`
-5. 在 Android app 中扫码
-6. 连接 `ZhiHand Device`
-7. 需要读屏时，再接通 `Eye`
-8. 后续即可从 Android app 或 OpenClaw 发起任务
+5. 在浏览器打开返回的二维码链接
+6. 用 Android App 扫码
+7. 连接 `ZhiHand Device`
+8. 当需要读屏时，再打开 `Eye`
+9. 后续即可从手机或 OpenClaw 发起任务
 
-## 模块边界
+## 三部分分别在哪里运行
 
-OpenClaw 插件应保持为薄层：
+- **Android App**
+  负责配对、读屏、附件输入和设备侧执行
+- **官方托管控制面**
+  负责保存配对状态、提示词、回复、命令和附件
+- **OpenClaw 插件**
+  负责把 OpenClaw 接到控制面，并暴露 `zhihand_*` 工具
 
-- pairing
-- control-plane polling
-- `zhihand_*` tools
-- native OpenClaw agent relay
+## 默认推荐托管模式
 
-不要让插件重新长成一套 planner 或第二个 control plane。
+第一阶段推荐直接使用官方托管默认值：
+
+- Android App 默认连接官方托管地址
+- OpenClaw 插件默认连接官方托管控制面
+- 用户首次使用不需要先自建 server
+
+## 用户如何发现它
+
+推荐的发现入口：
+
+- 仓库 README
+- 插件 README
+- npm 包页面
+- OpenClawDir 或其他社区插件目录
+
+不要假设所有 OpenClaw 部署都自带“插件商店界面”。
+
+## 进阶用户
+
+如果你是进阶用户，也可以覆盖 control-plane endpoint 做自托管。
+
+但那是进阶部署路径，不应该成为默认 onboarding。

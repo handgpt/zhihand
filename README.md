@@ -1,97 +1,103 @@
 # ZhiHand
 
-`ZhiHand` is the public core repository for the ZhiHand project.
+ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
-It owns the shared protocol, action model, architecture notes, reference service skeletons, and host-adapter reference code that can be used by multiple host environments.
+In practice, ZhiHand brings three parts together:
 
-This repository intentionally does **not** enumerate private implementation repositories by name.
+- `Brain`
+  OpenClaw receives the request and decides what to do.
+- `Eye`
+  The Android app shares the current screen when you allow it.
+- `Hand`
+  ZhiHand Device sends the actual input to the phone.
 
-## Public Scope
+## What Users Do
 
-This repository exists to define and stabilize the public shared layer:
+Most users only need this flow:
 
-- protocol contracts
-- action semantics
-- integration boundaries
-- host-adapter model
-- reference service behavior
+1. Install the Android app.
+2. Install the OpenClaw plugin.
+3. Run `/zhihand pair` in OpenClaw.
+4. Scan the QR code in the app.
+5. Connect `ZhiHand Device`.
+6. Turn on screen sharing when you want ZhiHand to see the screen.
+7. Start asking OpenClaw to help.
 
-Examples of host environments that may integrate with this shared model include:
+If you use the hosted defaults, you do not need to deploy your own server first.
 
-- OpenClaw
-- Codex
-- Claude Code
-- other host runtimes with plugin or tool-adapter support
+## Quick Start
 
-## Repository Layout
+### OpenClaw user
 
-```text
-zhihand/
-  docs/
-  proto/
-  services/
-  packages/
-    host-adapters/
+Install the plugin:
+
+```bash
+openclaw plugins install @zhihand/openclaw
 ```
 
-## What Lives In This Repo
+Then restart or reload OpenClaw if your setup requires it, and run:
 
-- `docs/`
-  Public architecture, protocol, repository, and runtime-boundary documentation.
-- `proto/`
-  Versioned protocol definitions. `proto/zhihand/control/v1/control.proto` is the source of truth for the public control contract.
-- `services/`
-  Reference service skeletons, including `zhihandd`.
-- `packages/`
-  Public host-adapter packages and reference adapter code.
+```text
+/zhihand pair
+```
 
-## Responsibilities
+Open the returned QR URL in a browser and scan it from the Android app.
 
-This repository should answer the following questions:
+### Android user
 
-- What is the public architecture of ZhiHand?
-- What messages and actions exist in the shared control model?
-- What does `zhihandd` represent as a reference control-plane service?
-- How should host adapters map host-specific events into the shared model?
-- How should mobile apps, device runtimes, and web runtimes integrate without redefining protocol semantics?
+1. Open the ZhiHand app.
+2. Tap `Scan`.
+3. Scan the QR code from OpenClaw.
+4. Connect `ZhiHand Device`.
+5. Tap `Eye` when you want ZhiHand to read the screen.
 
-This repository should not become a catch-all for private product infrastructure or platform-specific application code.
+## What Runs Where
 
-## Current Phase
+- **Android app**
+  Captures user input, uploads screen snapshots, and executes device-side actions.
+- **ZhiHand server**
+  Stores pairing state, prompts, replies, commands, and attachments.
+- **OpenClaw plugin**
+  Connects OpenClaw to the ZhiHand control plane and exposes `zhihand_*` tools.
 
-The project is currently focused on Phase 1:
+## What This Repository Contains
 
-1. Stabilize `control.proto`.
-2. Implement the first usable `zhihandd` control surface.
-3. Establish the public host-adapter boundary, starting with OpenClaw.
-4. Keep the shared model extensible for additional host environments such as Codex and Claude Code.
-5. Keep the public core free of private deployment-specific assumptions.
+This repository is the public core for ZhiHand:
 
-## Document Map
+- public docs
+- public protocol and action model
+- the OpenClaw host adapter
+- reference service boundaries
 
-- [ROADMAP.md](./ROADMAP.md)
+It does not include private deployment secrets or private product infrastructure.
+
+## Where To Read Next
+
+- [Distribution](./docs/DISTRIBUTION.md)
+  How users install and start using ZhiHand.
+- [Configuration](./docs/CONFIGURATION.md)
+  What most users need, and what advanced self-hosters can override.
+- [Updates](./docs/UPDATES.md)
+  How app and device updates are detected and delivered.
 - [README.zh-CN.md](./README.zh-CN.md)
+  Chinese version.
+
+## For Developers
+
+If you are integrating or extending ZhiHand, these docs are the main reference:
+
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [ACTIONS.md](./docs/ACTIONS.md)
-- [CONFIGURATION.md](./docs/CONFIGURATION.md)
-- [CONFIGURATION.zh-CN.md](./docs/CONFIGURATION.zh-CN.md)
 - [PROTOCOL.md](./docs/PROTOCOL.md)
 - [REPOSITORY.md](./docs/REPOSITORY.md)
 - [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
-- [PRODUCTION.md](./PRODUCTION.md)
-- [PRODUCTION.zh-CN.md](./PRODUCTION.zh-CN.md)
+- [ROADMAP.md](./ROADMAP.md)
 
-## Working Rules
+## Publishing Rule
 
-- `control.proto` is the public protocol source of truth.
-- Shared semantics belong here.
-- Secret-bearing, deployment-specific, or product-private infrastructure does not belong here.
-- Platform-native implementation should live outside this public core unless it is a public reference adapter.
-- Public documentation in this repository must remain safe to publish.
+Public documentation in this repository must stay safe to publish:
 
-## Near-Term Deliverables
-
-- A documented and versioned public control API
-- A runnable `zhihandd` skeleton with clear service boundaries
-- A first public host-adapter path through OpenClaw
-- A repository and architecture model that stays extensible for future adapters such as Codex and Claude Code
+- no real tokens
+- no private hostnames
+- no operator credentials
+- no deployment-only notes
