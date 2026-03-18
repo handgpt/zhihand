@@ -110,7 +110,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 If you pin package versions in production, install the exact published version and keep the same allowlist:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.1
+openclaw plugins install @zhihand/openclaw@0.9.2
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 

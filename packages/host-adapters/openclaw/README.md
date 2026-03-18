@@ -29,7 +29,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 If you prefer pinned installs for supply-chain stability, install an exact published version:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.1
+openclaw plugins install @zhihand/openclaw@0.9.2
 ```
 
 Development fallback from a local checkout:

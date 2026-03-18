@@ -416,9 +416,7 @@ async function fetchLatestPackageVersion(): Promise<string> {
 }
 
 function resolveRegistryOrigin(): string {
-  const fromEnv = normalizeNullableString(process.env.npm_config_registry)
-    ?? normalizeNullableString(process.env.NPM_CONFIG_REGISTRY);
-  return stripTrailingSlash(fromEnv ?? DEFAULT_NPM_REGISTRY_ORIGIN);
+  return stripTrailingSlash(DEFAULT_NPM_REGISTRY_ORIGIN);
 }
 
 function parseRegistryPayload(rawBody: string): NpmRegistryPackageRecord {
