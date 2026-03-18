@@ -109,12 +109,20 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
-如果你在生产环境里希望固定依赖版本，也可以显式安装某个发布版本，再保留同样的 allowlist：
+如果你在生产环境里希望固定依赖版本，并且这是首次安装，或者你已经删除现有扩展目录准备重装，也可以显式安装某个发布版本，再保留同样的 allowlist：
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.2
+openclaw plugins install @zhihand/openclaw@0.9.3
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
 插件默认会在启动时检查 npm 是否有新发布版本。
 如果要安装最新发布版本，可以执行 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
+
+推荐直接在宿主机 shell 执行：
+
+```bash
+openclaw plugins update openclaw
+```
+
+对于已经安装的插件升级，请使用 `openclaw plugins update openclaw`。固定版本的 `openclaw plugins install @zhihand/openclaw@<version>` 属于创建式安装，只适用于首次安装或删除后重装。

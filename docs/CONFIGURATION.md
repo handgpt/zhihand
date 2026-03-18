@@ -142,6 +142,14 @@ This is recommended because OpenClaw warns when `plugins.allow` is empty for non
 By default, the plugin also checks npm for a newer published version during startup.
 Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.
 
+Recommended host-side update command:
+
+```bash
+openclaw plugins update openclaw
+```
+
+Reserve `openclaw plugins install @zhihand/openclaw@<version>` for a first install or for a reinstall after deleting the existing extension directory. For an installed plugin, upgrade with `openclaw plugins update openclaw`.
+
 ## Recommended Hosted Defaults
 
 The public plugin defaults to:

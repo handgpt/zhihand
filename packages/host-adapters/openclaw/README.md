@@ -26,10 +26,10 @@ Then explicitly trust the plugin id:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
-If you prefer pinned installs for supply-chain stability, install an exact published version:
+If you prefer pinned installs for supply-chain stability on a first install, or after deleting the existing extension directory for a reinstall, install an exact published version:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.2
+openclaw plugins install @zhihand/openclaw@0.9.3
 ```
 
 Development fallback from a local checkout:
@@ -240,6 +240,14 @@ Plugin update behavior:
 - `/zhihand update check` forces a fresh version lookup and prints the result
 - `/zhihand update` prints the recommended host-side update command
 - the preferred host-side update command is `openclaw plugins update openclaw`
+
+Recommended host-side update command:
+
+```bash
+openclaw plugins update openclaw
+```
+
+For an installed plugin, upgrade with `openclaw plugins update openclaw`. Reserve `openclaw plugins install @zhihand/openclaw@<version>` for a first install or a reinstall after removal.
 
 The current hosted control path is:
 

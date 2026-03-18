@@ -2,7 +2,7 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前公共核心版本：`0.9.2`
+当前公共核心版本：`0.9.3`
 
 智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
@@ -55,6 +55,14 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 
 插件默认会在启动时检查 npm 是否有新的已发布版本。
 可以执行 `/zhihand update check` 查看最新发布版本，或执行 `/zhihand update` 输出推荐的宿主侧更新命令，再重新加载 OpenClaw。
+
+推荐直接在宿主机 shell 执行：
+
+```bash
+openclaw plugins update openclaw
+```
+
+`openclaw plugins install @zhihand/openclaw@<version>` 只适用于首次安装，或者你已经删除现有扩展目录后的重装。对已经安装的插件做升级时，请使用 `openclaw plugins update openclaw`。
 
 ### Android 用户
 

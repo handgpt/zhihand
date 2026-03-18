@@ -66,6 +66,15 @@ export function buildPinnedInstallCommand(version: string): string {
   return `openclaw plugins install ${OPENCLAW_PACKAGE_NAME}@${version}`;
 }
 
+export function formatAvailablePluginUpdateInstruction(version: string): string {
+  return [
+    `ZhiHand plugin ${version} is available.`,
+    `Run this on the host shell: ${buildHostUpdateCommand()}`,
+    `Use this pinned install command only for a first install or after removing the existing extension directory: ${buildPinnedInstallCommand(version)}`,
+    "Then restart the OpenClaw gateway to load plugins."
+  ].join("\n");
+}
+
 export function extractLatestVersionFromRegistryPayload(
   payload: NpmRegistryPackageRecord
 ): string {
@@ -333,12 +342,7 @@ export async function prepareLatestPluginUpdateInstruction(
 
   return {
     status,
-    text: [
-      `ZhiHand plugin ${status.latestVersion} is available.`,
-      `Run this on the host shell: ${buildHostUpdateCommand()}`,
-      `Pinned-version fallback: ${buildPinnedInstallCommand(status.latestVersion)}`,
-      "Then restart the OpenClaw gateway to load plugins."
-    ].join("\n")
+    text: formatAvailablePluginUpdateInstruction(status.latestVersion)
   };
 }
 

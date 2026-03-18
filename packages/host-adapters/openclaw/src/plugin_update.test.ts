@@ -5,6 +5,7 @@ import {
   buildPluginUpdateStatus,
   comparePluginVersions,
   extractLatestVersionFromRegistryPayload,
+  formatAvailablePluginUpdateInstruction,
   formatPluginUpdateDetails,
   formatPluginUpdateSummary,
   normalizeStoredUpdateState
@@ -41,6 +42,14 @@ test("extractLatestVersionFromRegistryPayload prefers dist-tags latest", () => {
     }),
     "0.9.1"
   );
+});
+
+test("formatAvailablePluginUpdateInstruction scopes pinned install to first install", () => {
+  const text = formatAvailablePluginUpdateInstruction("0.9.3");
+
+  assert.match(text, /openclaw plugins update openclaw/);
+  assert.match(text, /only for a first install or after removing the existing extension directory/);
+  assert.match(text, /openclaw plugins install @zhihand\/openclaw@0.9.3/);
 });
 
 test("buildPluginUpdateStatus reports a pending restart after install", () => {

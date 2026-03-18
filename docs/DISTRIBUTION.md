@@ -107,12 +107,20 @@ For ZhiHand, the recommended one-time trust step is:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
-If you pin package versions in production, install the exact published version and keep the same allowlist:
+If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.2
+openclaw plugins install @zhihand/openclaw@0.9.3
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
 The plugin checks npm for published updates during startup by default.
 Use `/zhihand update` to print the recommended host-side update command, then reload OpenClaw.
+
+Recommended host-side update command:
+
+```bash
+openclaw plugins update openclaw
+```
+
+For an installed plugin, use `openclaw plugins update openclaw`. The pinned `openclaw plugins install @zhihand/openclaw@<version>` form is create-only and is intended for a first install or a reinstall after removal.

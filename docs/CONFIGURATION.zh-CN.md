@@ -146,6 +146,14 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 插件默认也会在启动时检查 npm 是否有新的已发布版本。
 可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
 
+推荐直接在宿主机 shell 执行：
+
+```bash
+openclaw plugins update openclaw
+```
+
+`openclaw plugins install @zhihand/openclaw@<version>` 只保留给首次安装，或者删除现有扩展目录后的重装。对于已经安装的插件升级，请使用 `openclaw plugins update openclaw`。
+
 ## 官方托管默认值
 
 公共插件默认使用：
