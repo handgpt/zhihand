@@ -33,7 +33,7 @@ import { OPENCLAW_PACKAGE_VERSION } from "./package_metadata.ts";
 import {
   formatPluginUpdateDetails,
   formatPluginUpdateSummary,
-  installLatestPluginUpdate,
+  prepareLatestPluginUpdateInstruction,
   resolvePluginUpdateStatus
 } from "./plugin_update.ts";
 import {
@@ -714,7 +714,7 @@ async function handleUpdateCommand(
   }
 
   if (action === "install" || action === "apply" || action === "upgrade") {
-    return await installLatestPluginUpdate(api);
+    return await prepareLatestPluginUpdateInstruction(api);
   }
 
   return {

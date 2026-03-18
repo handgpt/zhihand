@@ -140,7 +140,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins.
 
 By default, the plugin also checks npm for a newer published version during startup.
-Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to install the latest published version and then reload OpenClaw.
+Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.
 
 ## Recommended Hosted Defaults
 

@@ -144,7 +144,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning。
 
 插件默认也会在启动时检查 npm 是否有新的已发布版本。
-可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 安装最新发布版本，然后重新加载 OpenClaw。
+可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
 
 ## 官方托管默认值
 

@@ -112,9 +112,9 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 如果你在生产环境里希望固定依赖版本，也可以显式安装某个发布版本，再保留同样的 allowlist：
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.0
+openclaw plugins install @zhihand/openclaw@0.9.1
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
 插件默认会在启动时检查 npm 是否有新发布版本。
-如果要安装最新发布版本，可以执行 `/zhihand update`，然后重新加载 OpenClaw。
+如果要安装最新发布版本，可以执行 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。

@@ -2,7 +2,7 @@
 
 ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
-Current public core version: `0.9.0`
+Current public core version: `0.9.1`
 
 In practice, ZhiHand brings three parts together:
 
@@ -52,7 +52,7 @@ Then restart or reload OpenClaw if your setup requires it, and run:
 Open the returned QR URL in a browser and scan it from the Android app.
 
 The plugin checks npm for published updates during startup by default.
-Run `/zhihand update check` to inspect the latest published version, or `/zhihand update` to install it and then reload OpenClaw.
+Run `/zhihand update check` to inspect the latest published version, or `/zhihand update` to print the recommended host-side update command before restarting OpenClaw.
 
 ### Android user
 

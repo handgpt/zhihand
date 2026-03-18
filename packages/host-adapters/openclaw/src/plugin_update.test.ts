@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildPluginUpdateStatus,
   comparePluginVersions,
+  extractLatestVersionFromRegistryPayload,
   formatPluginUpdateDetails,
   formatPluginUpdateSummary,
   normalizeStoredUpdateState
@@ -30,6 +31,18 @@ test("buildPluginUpdateStatus reports an available update", () => {
   );
 });
 
+test("extractLatestVersionFromRegistryPayload prefers dist-tags latest", () => {
+  assert.equal(
+    extractLatestVersionFromRegistryPayload({
+      "dist-tags": {
+        latest: "0.9.1"
+      },
+      version: "0.9.0"
+    }),
+    "0.9.1"
+  );
+});
+
 test("buildPluginUpdateStatus reports a pending restart after install", () => {
   const status = buildPluginUpdateStatus({
     currentVersion: "0.9.0",
@@ -40,7 +53,7 @@ test("buildPluginUpdateStatus reports a pending restart after install", () => {
   });
 
   assert.equal(status.state, "restart-required");
-  assert.match(formatPluginUpdateDetails(status), /Reload or restart OpenClaw/);
+  assert.match(formatPluginUpdateDetails(status), /Restart the OpenClaw gateway/);
 });
 
 test("buildPluginUpdateStatus honors disabled auto checks", () => {

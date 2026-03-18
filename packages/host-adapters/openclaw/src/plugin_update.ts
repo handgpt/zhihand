@@ -1,19 +1,15 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import fs from "node:fs/promises";
-import path from "node:path";
-
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
 import {
   OPENCLAW_PACKAGE_NAME,
-  OPENCLAW_PACKAGE_ROOT_DIR,
-  OPENCLAW_PACKAGE_VERSION
+  OPENCLAW_PACKAGE_VERSION,
+  OPENCLAW_USER_AGENT
 } from "./package_metadata.ts";
 import { loadState, saveState, type StoredPluginState } from "./state_store.ts";
 
 const DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 24;
-const UPDATE_CHECK_TIMEOUT_MS = 20_000;
-const UPDATE_INSTALL_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_NPM_REGISTRY_ORIGIN = "https://registry.npmjs.org";
+const UPDATE_CHECK_TIMEOUT_MS = 10_000;
+const HOST_UPDATE_COMMAND = "openclaw plugins update openclaw";
 
 export type PluginUpdateState =
   | "available"
@@ -38,18 +34,13 @@ type PluginUpdateCheckOptions = {
   allowDisabled?: boolean;
 };
 
-type UpgradePlan = {
-  command: string;
-  args: string[];
-  cwd?: string;
-  label: string;
-  manualCommand: string;
-};
-
-type PackageLike = {
-  dependencies?: Record<string, unknown>;
-  devDependencies?: Record<string, unknown>;
-  optionalDependencies?: Record<string, unknown>;
+type NpmRegistryPackageRecord = {
+  "dist-tags"?: {
+    latest?: unknown;
+  };
+  version?: unknown;
+  error?: unknown;
+  reason?: unknown;
 };
 
 export function comparePluginVersions(left: string, right: string): number {
@@ -65,6 +56,25 @@ export function comparePluginVersions(left: string, right: string): number {
     }
   }
   return 0;
+}
+
+export function buildHostUpdateCommand(): string {
+  return HOST_UPDATE_COMMAND;
+}
+
+export function buildPinnedInstallCommand(version: string): string {
+  return `openclaw plugins install ${OPENCLAW_PACKAGE_NAME}@${version}`;
+}
+
+export function extractLatestVersionFromRegistryPayload(
+  payload: NpmRegistryPackageRecord
+): string {
+  const latestVersion = normalizeNullableString(payload["dist-tags"]?.latest)
+    ?? normalizeNullableString(payload.version);
+  if (!latestVersion) {
+    throw new Error("npm registry did not return a latest package version.");
+  }
+  return latestVersion;
 }
 
 export function buildPluginUpdateStatus(input: {
@@ -191,7 +201,7 @@ export function formatPluginUpdateSummary(status: PluginUpdateStatus): string {
     case "disabled":
       return "Plugin Update: auto-check disabled";
     case "restart-required":
-      return `Plugin Update: installed on disk (${status.pendingRestartVersion}), reload OpenClaw`;
+      return `Plugin Update: restart required for ${status.pendingRestartVersion}`;
     default:
       return `Plugin Update: ${status.error ?? "not checked yet"}`;
   }
@@ -206,9 +216,9 @@ export function formatPluginUpdateDetails(status: PluginUpdateStatus): string {
   ];
 
   if (status.state === "available") {
-    lines.push("Run /zhihand update to install the latest published version.");
+    lines.push("Run /zhihand update to print the safe host-side update command.");
   } else if (status.state === "restart-required") {
-    lines.push("Reload or restart OpenClaw to start using the installed version.");
+    lines.push("Restart the OpenClaw gateway to load the already-installed plugin version.");
   } else if (status.state === "disabled") {
     lines.push(
       "Automatic checks are disabled by plugins.entries.openclaw.config.updateCheckEnabled."
@@ -271,7 +281,7 @@ export async function resolvePluginUpdateStatus(
     });
     if (options.logAvailable && status.state === "available") {
       api.logger.info?.(
-        `ZhiHand plugin update available: ${status.currentVersion} -> ${status.latestVersion}. Run /zhihand update to install it, then reload OpenClaw.`
+        `ZhiHand plugin update available: ${status.currentVersion} -> ${status.latestVersion}. Run ${buildHostUpdateCommand()} on the host, then restart the gateway.`
       );
     }
     return status;
@@ -293,7 +303,7 @@ export async function resolvePluginUpdateStatus(
   }
 }
 
-export async function installLatestPluginUpdate(
+export async function prepareLatestPluginUpdateInstruction(
   api: OpenClawPluginApi
 ): Promise<{ text: string; status: PluginUpdateStatus }> {
   const status = await resolvePluginUpdateStatus(api, {
@@ -306,7 +316,7 @@ export async function installLatestPluginUpdate(
       status,
       text: [
         `ZhiHand plugin ${status.pendingRestartVersion} is already installed on disk.`,
-        "Reload or restart OpenClaw to start using the new version."
+        "Restart the OpenClaw gateway to load it."
       ].join("\n")
     };
   }
@@ -321,55 +331,13 @@ export async function installLatestPluginUpdate(
     };
   }
 
-  const plan = await resolveUpgradePlan(status.latestVersion);
-  if (!plan) {
-    return {
-      status,
-      text: [
-        `ZhiHand plugin ${status.latestVersion} is available, but this install is not safe to upgrade in place automatically.`,
-        `Manual fallback: ${buildOpenClawInstallCommand(status.latestVersion)}`
-      ].join("\n")
-    };
-  }
-
-  try {
-    await runCommand(plan.command, plan.args, {
-      cwd: plan.cwd,
-      timeoutMs: UPDATE_INSTALL_TIMEOUT_MS
-    });
-  } catch (error) {
-    return {
-      status,
-      text: [
-        `ZhiHand plugin update failed via ${plan.label}: ${errorMessage(error)}`,
-        `Manual fallback: ${plan.manualCommand}`
-      ].join("\n")
-    };
-  }
-
-  const now = new Date().toISOString();
-  const { stateDir, state } = await loadNormalizedPluginState(api);
-  state.update = {
-    ...state.update,
-    latestVersion: status.latestVersion,
-    lastCheckedAt: now,
-    lastInstalledAt: now,
-    pendingRestartVersion: status.latestVersion,
-    lastError: undefined
-  };
-  await saveState(stateDir, state);
-
   return {
-    status: buildPluginUpdateStatus({
-      latestVersion: status.latestVersion,
-      pendingRestartVersion: status.latestVersion,
-      lastCheckedAt: now,
-      checkedFrom: "live",
-      updateCheckEnabled: true
-    }),
+    status,
     text: [
-      `ZhiHand plugin ${status.latestVersion} was installed on disk.`,
-      "Reload or restart OpenClaw to start using the new version."
+      `ZhiHand plugin ${status.latestVersion} is available.`,
+      `Run this on the host shell: ${buildHostUpdateCommand()}`,
+      `Pinned-version fallback: ${buildPinnedInstallCommand(status.latestVersion)}`,
+      "Then restart the OpenClaw gateway to load plugins."
     ].join("\n")
   };
 }
@@ -416,236 +384,57 @@ function resolveUpdateCheckIntervalMs(api: OpenClawPluginApi): number {
 }
 
 async function fetchLatestPackageVersion(): Promise<string> {
-  const result = await runCommand(resolveShellCommand("npm"), [
-    "view",
-    OPENCLAW_PACKAGE_NAME,
-    "version",
-    "dist-tags.latest",
-    "--json"
-  ], { timeoutMs: UPDATE_CHECK_TIMEOUT_MS });
-  return extractLatestVersion(result.stdout);
-}
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
 
-function extractLatestVersion(stdout: string): string {
-  const parsed = JSON.parse(stdout) as
-    | { version?: unknown; "dist-tags.latest"?: unknown }
-    | string;
-
-  if (typeof parsed === "string" && parsed.trim() !== "") {
-    return parsed.trim();
-  }
-
-  if (typeof parsed === "object" && parsed !== null) {
-    const latest = normalizeNullableString(parsed["dist-tags.latest"]);
-    if (latest) {
-      return latest;
-    }
-    const version = normalizeNullableString(parsed.version);
-    if (version) {
-      return version;
-    }
-  }
-
-  throw new Error("npm view did not return a latest package version.");
-}
-
-async function resolveUpgradePlan(targetVersion: string): Promise<UpgradePlan | null> {
-  if (await isLocalSourceCheckout()) {
-    return null;
-  }
-
-  const globalPlan = await resolveGlobalNpmUpgradePlan(targetVersion);
-  if (globalPlan) {
-    return globalPlan;
-  }
-
-  const projectPlan = await resolveProjectNpmUpgradePlan(targetVersion);
-  if (projectPlan) {
-    return projectPlan;
-  }
-
-  return {
-    command: resolveShellCommand("openclaw"),
-    args: ["plugins", "install", `${OPENCLAW_PACKAGE_NAME}@${targetVersion}`],
-    label: "OpenClaw plugin install",
-    manualCommand: buildOpenClawInstallCommand(targetVersion)
-  };
-}
-
-async function resolveGlobalNpmUpgradePlan(targetVersion: string): Promise<UpgradePlan | null> {
   try {
-    const result = await runCommand(resolveShellCommand("npm"), ["root", "--global"], {
-      timeoutMs: UPDATE_CHECK_TIMEOUT_MS
-    });
-    const globalRoot = result.stdout.trim();
-    if (globalRoot === "") {
-      return null;
-    }
-    const packagePath = path.join(globalRoot, ...OPENCLAW_PACKAGE_NAME.split("/"));
-    if (path.resolve(packagePath) !== path.resolve(OPENCLAW_PACKAGE_ROOT_DIR)) {
-      return null;
-    }
-    return {
-      command: resolveShellCommand("npm"),
-      args: ["install", "--global", `${OPENCLAW_PACKAGE_NAME}@${targetVersion}`],
-      cwd: OPENCLAW_PACKAGE_ROOT_DIR,
-      label: "npm global install",
-      manualCommand: `npm install --global ${OPENCLAW_PACKAGE_NAME}@${targetVersion}`
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function resolveProjectNpmUpgradePlan(targetVersion: string): Promise<UpgradePlan | null> {
-  const projectRoot = await findOwningProjectRoot(OPENCLAW_PACKAGE_ROOT_DIR);
-  if (!projectRoot) {
-    return null;
-  }
-  return {
-    command: resolveShellCommand("npm"),
-    args: ["install", `${OPENCLAW_PACKAGE_NAME}@${targetVersion}`],
-    cwd: projectRoot,
-    label: "npm project install",
-    manualCommand: `cd ${shellQuote(projectRoot)} && npm install ${OPENCLAW_PACKAGE_NAME}@${targetVersion}`
-  };
-}
-
-async function findOwningProjectRoot(packageRoot: string): Promise<string | null> {
-  let current = path.dirname(packageRoot);
-  while (true) {
-    const packageJsonPath = path.join(current, "package.json");
-    if (await pathExists(packageJsonPath)) {
-      if (await projectUsesNpm(current)) {
-        try {
-          const pkg = JSON.parse(
-            await fs.readFile(packageJsonPath, "utf8")
-          ) as PackageLike;
-          if (declaresDependency(pkg, OPENCLAW_PACKAGE_NAME)) {
-            return current;
-          }
-        } catch {
-          return null;
-        }
-      } else {
-        return null;
+    const response = await fetch(
+      `${resolveRegistryOrigin()}/${encodeURIComponent(OPENCLAW_PACKAGE_NAME)}`,
+      {
+        headers: {
+          accept: "application/json",
+          "user-agent": OPENCLAW_USER_AGENT
+        },
+        signal: controller.signal
       }
+    );
+
+    const payload = parseRegistryPayload(await response.text());
+    if (!response.ok) {
+      throw new Error(extractRegistryError(payload, response.status));
     }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-}
 
-async function projectUsesNpm(projectRoot: string): Promise<boolean> {
-  if (
-    await pathExists(path.join(projectRoot, "package-lock.json")) ||
-    await pathExists(path.join(projectRoot, "npm-shrinkwrap.json"))
-  ) {
-    return true;
-  }
-
-  if (
-    await pathExists(path.join(projectRoot, "pnpm-lock.yaml")) ||
-    await pathExists(path.join(projectRoot, "yarn.lock")) ||
-    await pathExists(path.join(projectRoot, "bun.lockb"))
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function declaresDependency(pkg: PackageLike, packageName: string): boolean {
-  return [
-    pkg.dependencies,
-    pkg.devDependencies,
-    pkg.optionalDependencies
-  ].some((dependencies) => Boolean(dependencies?.[packageName]));
-}
-
-async function isLocalSourceCheckout(): Promise<boolean> {
-  if (OPENCLAW_PACKAGE_ROOT_DIR.includes(`${path.sep}node_modules${path.sep}`)) {
-    return false;
-  }
-  let current = OPENCLAW_PACKAGE_ROOT_DIR;
-  while (true) {
-    if (await pathExists(path.join(current, ".git"))) {
-      return true;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return false;
-    }
-    current = parent;
-  }
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function runCommand(
-  command: string,
-  args: string[],
-  options: { cwd?: string; timeoutMs: number }
-): Promise<{ stdout: string; stderr: string }> {
-  const child = spawn(command, args, {
-    cwd: options.cwd,
-    shell: process.platform === "win32",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-
-  const stdoutChunks: Buffer[] = [];
-  const stderrChunks: Buffer[] = [];
-  child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
-  child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
-
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGTERM");
-  }, options.timeoutMs);
-
-  try {
-    const result = await Promise.race([
-      once(child, "exit"),
-      once(child, "error").then(([error]) => {
-        throw error;
-      })
-    ]);
-    const [exitCode, signal] = result as [number | null, NodeJS.Signals | null];
-    const stdout = Buffer.concat(stdoutChunks).toString("utf8").trim();
-    const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-    if (timedOut) {
-      throw new Error(`Command ${command} ${args.join(" ")} timed out.`);
-    }
-    if (signal) {
-      throw new Error(`Command ${command} ${args.join(" ")} was terminated by ${signal}.`);
-    }
-    if (exitCode !== 0) {
-      throw new Error(stderr || stdout || `Command ${command} exited with code ${exitCode}.`);
-    }
-    return { stdout, stderr };
+    return extractLatestVersionFromRegistryPayload(payload);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`Command not found: ${command}`);
+    if (isAbortError(error)) {
+      throw new Error("npm registry request timed out.");
     }
     throw error;
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timeout);
   }
 }
 
-function buildOpenClawInstallCommand(targetVersion: string): string {
-  return `openclaw plugins install ${OPENCLAW_PACKAGE_NAME}@${targetVersion}`;
+function resolveRegistryOrigin(): string {
+  const fromEnv = normalizeNullableString(process.env.npm_config_registry)
+    ?? normalizeNullableString(process.env.NPM_CONFIG_REGISTRY);
+  return stripTrailingSlash(fromEnv ?? DEFAULT_NPM_REGISTRY_ORIGIN);
+}
+
+function parseRegistryPayload(rawBody: string): NpmRegistryPackageRecord {
+  try {
+    return JSON.parse(rawBody) as NpmRegistryPackageRecord;
+  } catch {
+    throw new Error("npm registry returned invalid JSON.");
+  }
+}
+
+function extractRegistryError(payload: NpmRegistryPackageRecord, status: number): string {
+  const reason = normalizeNullableString(payload.reason) ?? normalizeNullableString(payload.error);
+  if (reason) {
+    return `npm registry request failed with status ${status}: ${reason}`;
+  }
+  return `npm registry request failed with status ${status}.`;
 }
 
 function parseVersion(version: string): [number, number, number] | null {
@@ -664,14 +453,14 @@ function normalizeNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function resolveShellCommand(command: "npm" | "openclaw"): string {
-  return command;
 }
