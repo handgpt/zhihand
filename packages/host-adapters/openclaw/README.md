@@ -29,7 +29,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 If you prefer pinned installs for supply-chain stability, install an exact published version:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.8.2
+openclaw plugins install @zhihand/openclaw@0.9.0
 ```
 
 Development fallback from a local checkout:
@@ -80,6 +80,8 @@ Supported fields:
 - `gatewayResponsesEndpoint`
 - `gatewayAuthToken`
 - `mobileAgentId`
+- `updateCheckEnabled`
+- `updateCheckIntervalHours`
 - `requestedScopes`
 
 Normal hosted deployments can leave most fields empty.
@@ -152,6 +154,8 @@ Defaults:
 - `appDownloadURL`: `https://zhihand.com/download`
 - `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
 - `mobileAgentId`: `zhihand-mobile`
+- `updateCheckEnabled`: `true`
+- `updateCheckIntervalHours`: `24`
 - `requestedScopes`: recommended ZhiHand defaults
 - `stableIdentity`: auto-generated from hostname
 - `originListener`: optional; the control plane can fill a default host metadata value
@@ -220,6 +224,8 @@ control-plane contract instead of growing this package into a multi-host shell.
 - `/zhihand pair`
 - `/zhihand status`
 - `/zhihand unpair`
+- `/zhihand update`
+- `/zhihand update check`
 
 `/zhihand pair` returns a browser-first pairing summary:
 
@@ -227,6 +233,13 @@ control-plane contract instead of growing this package into a multi-host shell.
 - QR URL
 
 Open the QR URL in a browser to display the actual scannable QR page.
+
+Plugin update behavior:
+
+- on startup, the plugin checks npm for a newer published version by default
+- `/zhihand update check` forces a fresh version lookup and prints the result
+- `/zhihand update` installs the latest published version and asks for an OpenClaw reload
+- linked local checkouts are detected as development installs and are not auto-upgraded in place
 
 The current hosted control path is:
 

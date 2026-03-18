@@ -42,6 +42,16 @@
         "type": "string",
         "default": "zhihand-mobile"
       },
+      "updateCheckEnabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "updateCheckIntervalHours": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 168,
+        "default": 24
+      },
       "requestedScopes": {
         "type": "array",
         "items": {
@@ -94,6 +104,14 @@
     "mobileAgentId": {
       "label": "Mobile Agent Id",
       "help": "Dedicated OpenClaw agent id used for ZhiHand mobile prompts. Leave empty for zhihand-mobile."
+    },
+    "updateCheckEnabled": {
+      "label": "Update Check Enabled",
+      "help": "When true, the plugin checks npm for published updates during startup."
+    },
+    "updateCheckIntervalHours": {
+      "label": "Update Check Interval Hours",
+      "help": "Minimum interval between automatic npm update checks."
     },
     "requestedScopes": {
       "label": "Requested Scopes",

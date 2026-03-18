@@ -57,6 +57,8 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 - `/zhihand pair`
 - `/zhihand status`
 - `/zhihand unpair`
+- `/zhihand update`
+- `/zhihand update check`
 
 ### 在移动端 App 中
 
@@ -108,6 +110,10 @@ App 负责：
   调用本地 OpenClaw 时使用的 Bearer Token
 - `mobileAgentId`
   专门处理手机提示词的 OpenClaw agent id
+- `updateCheckEnabled`
+  是否在启动时自动检查 npm 已发布更新
+- `updateCheckIntervalHours`
+  两次自动 npm 更新检查之间的最小小时数
 - `requestedScopes`
   写进配对描述符的权限申请列表
 
@@ -137,6 +143,9 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 
 这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning。
 
+插件默认也会在启动时检查 npm 是否有新的已发布版本。
+可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 安装最新发布版本，然后重新加载 OpenClaw。
+
 ## 官方托管默认值
 
 公共插件默认使用：
@@ -146,6 +155,8 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 - `appDownloadURL`: `https://zhihand.com/download`
 - `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
 - `mobileAgentId`: `zhihand-mobile`
+- `updateCheckEnabled`: `true`
+- `updateCheckIntervalHours`: `24`
 
 这些默认值就是面向普通用户的官方托管路径。
 

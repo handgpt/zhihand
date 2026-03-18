@@ -19,6 +19,13 @@ export type StoredPairingState = {
 export type StoredPluginState = {
   plugin?: PluginRecord;
   pairing?: StoredPairingState;
+  update?: {
+    lastCheckedAt?: string;
+    latestVersion?: string;
+    lastError?: string;
+    pendingRestartVersion?: string;
+    lastInstalledAt?: string;
+  };
 };
 
 const STATE_RELATIVE_PATH = ["plugins", "openclaw", "state.json"] as const;

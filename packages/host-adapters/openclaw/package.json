@@ -1,6 +1,6 @@
 {
   "name": "@zhihand/openclaw",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "private": false,
   "type": "module",
   "openclaw": {
@@ -37,7 +37,9 @@
     "src/cache_store.ts",
     "src/mobile_prompt_media.ts",
     "src/native_mobile_agent.ts",
+    "src/package_metadata.ts",
     "src/plugin.ts",
+    "src/plugin_update.ts",
     "src/state_store.ts",
     "skills/"
   ],
@@ -45,7 +47,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types src/index.test.ts src/plugin.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts"
+    "test": "node --test --experimental-strip-types src/index.test.ts src/plugin.test.ts src/plugin_update.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

@@ -53,6 +53,8 @@ The plugin provides:
 - `/zhihand pair`
 - `/zhihand status`
 - `/zhihand unpair`
+- `/zhihand update`
+- `/zhihand update check`
 
 ### In the mobile app
 
@@ -104,6 +106,10 @@ Supported public config fields:
   Local OpenClaw bearer token for the thin relay
 - `mobileAgentId`
   Dedicated OpenClaw agent id for mobile prompts
+- `updateCheckEnabled`
+  Enable automatic npm update checks during startup
+- `updateCheckIntervalHours`
+  Minimum number of hours between automatic npm update checks
 - `requestedScopes`
   Scope list embedded into the pairing descriptor
 
@@ -133,6 +139,9 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 
 This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins.
 
+By default, the plugin also checks npm for a newer published version during startup.
+Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to install the latest published version and then reload OpenClaw.
+
 ## Recommended Hosted Defaults
 
 The public plugin defaults to:
@@ -142,6 +151,8 @@ The public plugin defaults to:
 - `appDownloadURL`: `https://zhihand.com/download`
 - `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
 - `mobileAgentId`: `zhihand-mobile`
+- `updateCheckEnabled`: `true`
+- `updateCheckIntervalHours`: `24`
 
 These defaults are recommended for the hosted public path.
 

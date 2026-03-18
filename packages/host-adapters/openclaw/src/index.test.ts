@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { OPENCLAW_USER_AGENT } from "./package_metadata.ts";
 import {
   buildPairingPrompt,
   createPromptReply,
@@ -357,10 +358,7 @@ test("enqueueCommand posts controller-authenticated commands", async () => {
   );
 
   assert.equal(capturedURL, "http://127.0.0.1:8686/v1/credentials/crd_123/commands");
-  assert.equal(
-    capturedHeaders?.get("user-agent"),
-    "ZhiHand-OpenClaw/0.8.2 (+https://zhihand.com)"
-  );
+  assert.equal(capturedHeaders?.get("user-agent"), OPENCLAW_USER_AGENT);
   assert.equal(capturedHeaders?.get("x-zhihand-controller-token"), "ctl_secret");
   assert.match(capturedBody, /receive_home/);
   assert.equal(command.id, "cmd_123");
@@ -440,10 +438,7 @@ test("mobile prompt and reply helpers use credential and controller auth correct
   assert.equal(prompt.id, "prm_123");
   assert.equal(prompts[0]?.status, "processing");
   assert.equal(reply.sequence, 1);
-  assert.equal(
-    calls[0]?.headers.get("user-agent"),
-    "ZhiHand-OpenClaw/0.8.2 (+https://zhihand.com)"
-  );
+  assert.equal(calls[0]?.headers.get("user-agent"), OPENCLAW_USER_AGENT);
   assert.equal(calls[0]?.headers.get("authorization"), "Bearer cred_secret");
   assert.equal(calls[1]?.headers.get("x-zhihand-controller-token"), "ctl_secret");
   assert.equal(calls[2]?.headers.get("x-zhihand-controller-token"), "ctl_secret");
@@ -536,10 +531,7 @@ test("fetchLatestScreenSnapshot returns image metadata, freshness headers, and b
   assert.equal(snapshot.snapshot.sequence, 4);
   assert.equal(snapshot.ageMs, 850);
   assert.equal(snapshot.capturedAt, "2026-03-12T00:00:00Z");
-  assert.equal(
-    capturedHeaders?.get("user-agent"),
-    "ZhiHand-OpenClaw/0.8.2 (+https://zhihand.com)"
-  );
+  assert.equal(capturedHeaders?.get("user-agent"), OPENCLAW_USER_AGENT);
 });
 
 test("createControlCommand maps OpenClaw actions into Android command payloads", () => {

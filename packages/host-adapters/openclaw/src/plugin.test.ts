@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPairingCommandText, resolveGatewayAuthToken } from "./plugin.ts";
+import register, { formatPairingCommandText, resolveGatewayAuthToken } from "./plugin.ts";
 
 test("formatPairingCommandText returns clean browser-first pairing instructions", () => {
   const text = formatPairingCommandText(
@@ -39,4 +39,31 @@ test("resolveGatewayAuthToken requires explicit plugin config", () => {
     }),
     "local-token"
   );
+});
+
+test("register exposes update help in the slash command", async () => {
+  let commandHandler:
+    | ((ctx: { args?: string }) => Promise<{ text: string }>)
+    | undefined;
+
+  register({
+    logger: {},
+    runtime: {
+      state: {
+        resolveStateDir: () => "/tmp"
+      }
+    },
+    pluginConfig: {},
+    registerService: () => {},
+    registerCommand: (command) => {
+      commandHandler = command.handler;
+    },
+    registerTool: () => {}
+  });
+
+  assert.ok(commandHandler);
+  const response = await commandHandler!({ args: "help" });
+
+  assert.match(response.text, /\/zhihand update/);
+  assert.match(response.text, /\/zhihand update check/);
 });

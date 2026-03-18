@@ -29,6 +29,13 @@ import {
 } from "./native_mobile_agent.ts";
 import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
+import { OPENCLAW_PACKAGE_VERSION } from "./package_metadata.ts";
+import {
+  formatPluginUpdateDetails,
+  formatPluginUpdateSummary,
+  installLatestPluginUpdate,
+  resolvePluginUpdateStatus
+} from "./plugin_update.ts";
 import {
   loadState,
   saveState,
@@ -48,6 +55,8 @@ type PluginConfig = {
   gatewayAuthToken?: string;
   mobileAgentId?: string;
   requestedScopes?: string[];
+  updateCheckEnabled?: boolean;
+  updateCheckIntervalHours?: number;
 };
 
 export function formatPairingCommandText(
@@ -92,6 +101,7 @@ let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
 
 export default function register(api: OpenClawPluginApi) {
+  api.registerService(createPluginUpdateService(api));
   api.registerService(createPromptRelayService(api));
 
   api.registerCommand({
@@ -112,13 +122,18 @@ export default function register(api: OpenClawPluginApi) {
       if (action === "unpair" || action === "forget") {
         return await handleUnpairCommand(api);
       }
+      if (action === "update" || action === "upgrade") {
+        return await handleUpdateCommand(api, tokens.slice(1));
+      }
       return {
         text: [
           "ZhiHand commands:",
           "",
           "/zhihand pair",
           "/zhihand status",
-          "/zhihand unpair"
+          "/zhihand unpair",
+          "/zhihand update",
+          "/zhihand update check"
         ].join("\n")
       };
     }
@@ -353,6 +368,18 @@ export default function register(api: OpenClawPluginApi) {
       };
     }
   }, { optional: true });
+}
+
+function createPluginUpdateService(api: OpenClawPluginApi) {
+  return {
+    id: "plugin-update-check",
+    start: async () => {
+      void resolvePluginUpdateStatus(api, { logAvailable: true }).catch((error) => {
+        api.logger.warn?.(`ZhiHand plugin update check failed: ${errorMessage(error)}`);
+      });
+    },
+    stop: async () => {}
+  };
 }
 
 function createPromptRelayService(api: OpenClawPluginApi) {
@@ -670,6 +697,36 @@ async function handleStatusCommand(api: OpenClawPluginApi): Promise<{ text: stri
   };
 }
 
+async function handleUpdateCommand(
+  api: OpenClawPluginApi,
+  args: string[]
+): Promise<{ text: string }> {
+  const action = args[0]?.toLowerCase() ?? "install";
+
+  if (action === "check" || action === "status") {
+    const status = await resolvePluginUpdateStatus(api, {
+      force: true,
+      allowDisabled: true
+    });
+    return {
+      text: formatPluginUpdateDetails(status)
+    };
+  }
+
+  if (action === "install" || action === "apply" || action === "upgrade") {
+    return await installLatestPluginUpdate(api);
+  }
+
+  return {
+    text: [
+      "ZhiHand update commands:",
+      "",
+      "/zhihand update",
+      "/zhihand update check"
+    ].join("\n")
+  };
+}
+
 async function handleUnpairCommand(api: OpenClawPluginApi): Promise<{ text: string }> {
   const stateDir = api.runtime.state.resolveStateDir();
   const state = await loadState(stateDir);
@@ -728,10 +785,14 @@ async function resolveStatus(api: OpenClawPluginApi): Promise<Record<string, unk
   const plugin = await ensurePluginRegistration(api, state);
   const pairing = await refreshPairingSession(api, state);
   const output: Record<string, unknown> = {
+    pluginVersion: OPENCLAW_PACKAGE_VERSION,
     edgeId: plugin.edge_id,
     edgeHost: plugin.edge_host,
     pairingStatus: pairing?.status ?? "unpaired"
   };
+  const pluginUpdate = await resolvePluginUpdateStatus(api);
+  output.pluginUpdate = pluginUpdate;
+  output.pluginUpdateSummary = formatPluginUpdateSummary(pluginUpdate);
 
   if (pairing?.pairUrl) {
     output.pairUrl = pairing.pairUrl;
@@ -950,7 +1011,25 @@ function normalizedPairingTTL(raw?: number): number {
 
 function formatStatusText(status: Record<string, unknown>): string {
   const deviceProfile = (status.deviceProfile as Record<string, unknown> | undefined) ?? null;
+  const pluginUpdate = (status.pluginUpdate as
+    | {
+        latestVersion?: string | null;
+        lastCheckedAt?: string | null;
+        error?: string | null;
+      }
+    | undefined) ?? null;
   return [
+    `Plugin Version: ${stringValue(status.pluginVersion) ?? "n/a"}`,
+    stringValue(status.pluginUpdateSummary) ?? "Plugin Update: not checked yet",
+    pluginUpdate?.latestVersion
+      ? `Latest Plugin Version: ${pluginUpdate.latestVersion}`
+      : `Latest Plugin Version: unknown`,
+    pluginUpdate?.lastCheckedAt
+      ? `Last Plugin Check: ${pluginUpdate.lastCheckedAt}`
+      : `Last Plugin Check: never`,
+    pluginUpdate?.error
+      ? `Plugin Update Error: ${pluginUpdate.error}`
+      : null,
     `Edge Host: ${stringValue(status.edgeHost) ?? "n/a"}`,
     `Pairing: ${stringValue(status.pairingStatus) ?? "n/a"}`,
     `Credential: ${stringValue(status.credentialId) ?? "not paired"}`,
@@ -965,7 +1044,7 @@ function formatStatusText(status: Record<string, unknown>): string {
     status.latestScreenAgeMs != null
       ? `Latest Screen Age: ${status.latestScreenAgeMs} ms`
       : `Latest Screen: ${stringValue(status.latestScreenError) ?? "not available"}`
-  ].join("\n");
+  ].filter((line): line is string => Boolean(line)).join("\n");
 }
 
 function formatSnapshotSummary(snapshot: { snapshot: ScreenSnapshotRecord; ageMs: number | null; capturedAt: string | null }): string {

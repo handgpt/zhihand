@@ -1,0 +1,68 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  buildPluginUpdateStatus,
+  comparePluginVersions,
+  formatPluginUpdateDetails,
+  formatPluginUpdateSummary,
+  normalizeStoredUpdateState
+} from "./plugin_update.ts";
+
+test("comparePluginVersions compares semantic versions numerically", () => {
+  assert.equal(comparePluginVersions("0.9.0", "0.8.9") > 0, true);
+  assert.equal(comparePluginVersions("0.9.0", "0.9.0"), 0);
+  assert.equal(comparePluginVersions("0.9.1", "0.10.0") < 0, true);
+});
+
+test("buildPluginUpdateStatus reports an available update", () => {
+  const status = buildPluginUpdateStatus({
+    currentVersion: "0.9.0",
+    latestVersion: "0.9.1",
+    lastCheckedAt: "2026-03-18T00:00:00Z",
+    checkedFrom: "live"
+  });
+
+  assert.equal(status.state, "available");
+  assert.equal(
+    formatPluginUpdateSummary(status),
+    "Plugin Update: available (0.9.0 -> 0.9.1)"
+  );
+});
+
+test("buildPluginUpdateStatus reports a pending restart after install", () => {
+  const status = buildPluginUpdateStatus({
+    currentVersion: "0.9.0",
+    latestVersion: "0.9.1",
+    pendingRestartVersion: "0.9.1",
+    lastCheckedAt: "2026-03-18T00:00:00Z",
+    checkedFrom: "cache"
+  });
+
+  assert.equal(status.state, "restart-required");
+  assert.match(formatPluginUpdateDetails(status), /Reload or restart OpenClaw/);
+});
+
+test("buildPluginUpdateStatus honors disabled auto checks", () => {
+  const status = buildPluginUpdateStatus({
+    currentVersion: "0.9.0",
+    updateCheckEnabled: false
+  });
+
+  assert.equal(status.state, "disabled");
+  assert.match(formatPluginUpdateDetails(status), /updateCheckEnabled/);
+});
+
+test("normalizeStoredUpdateState clears pending restart once runtime version matches", () => {
+  const normalized = normalizeStoredUpdateState({
+    currentVersion: "0.9.0",
+    update: {
+      latestVersion: "0.9.0",
+      pendingRestartVersion: "0.9.0",
+      lastCheckedAt: "2026-03-18T00:00:00Z"
+    }
+  });
+
+  assert.equal(normalized.changed, true);
+  assert.equal(normalized.update?.pendingRestartVersion, undefined);
+});
