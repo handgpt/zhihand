@@ -189,7 +189,7 @@ func NewService(options Options) *Service {
 	}
 	version := strings.TrimSpace(options.Version)
 	if version == "" {
-		version = "0.7.0-dev"
+		version = "0.8.2-dev"
 	}
 	protocolVersion := strings.TrimSpace(options.ProtocolVersion)
 	if protocolVersion == "" {

@@ -360,7 +360,7 @@ export type ZhiHandControlCommandInput =
 export type FetchLike = typeof fetch;
 
 const ZHIHAND_OPENCLAW_USER_AGENT =
-  "ZhiHand-OpenClaw/0.7.0 (+https://zhihand.com)";
+  "ZhiHand-OpenClaw/0.8.2 (+https://zhihand.com)";
 let nextCommandMessageCounter = 0;
 
 type PromptQueueResponse = {
@@ -382,7 +382,7 @@ type ReplyRecordResponse = {
 export function createManifest(): OpenClawPluginManifest {
   return {
     name: "zhihand",
-    version: "0.7.0",
+    version: "0.8.2",
     description: "ZhiHand control-plane and runtime adapter for OpenClaw",
     capabilities: [
       "control.execute",
