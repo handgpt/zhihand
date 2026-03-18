@@ -88,7 +88,7 @@
     },
     "gatewayAuthToken": {
       "label": "Gateway Auth Token",
-      "help": "Optional override for the local OpenClaw gateway bearer token. If omitted, the plugin uses OPENCLAW_GATEWAY_TOKEN when available.",
+      "help": "Bearer token for the local OpenClaw gateway /v1/responses relay.",
       "sensitive": true
     },
     "mobileAgentId": {

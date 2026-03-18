@@ -935,14 +935,12 @@ function resolveGatewayResponsesEndpoint(api: OpenClawPluginApi): string {
 
 function resolveGatewayAuthToken(api: OpenClawPluginApi): string {
   const configured = resolvePluginConfig(api).gatewayAuthToken?.trim();
-  const envValue = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
-  const token = configured || envValue;
-  if (!token) {
+  if (!configured) {
     throw new Error(
-      "ZhiHand OpenClaw plugin requires gatewayAuthToken or OPENCLAW_GATEWAY_TOKEN for native /v1/responses relay."
+      "ZhiHand OpenClaw plugin requires plugins.entries.openclaw.config.gatewayAuthToken for native /v1/responses relay."
     );
   }
-  return token;
+  return configured;
 }
 
 function resolveMobileAgentId(api: OpenClawPluginApi): string {

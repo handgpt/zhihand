@@ -57,8 +57,7 @@ Normal hosted deployments can leave most fields empty.
 
 Recommended minimum:
 
-- no plugin config at all if `OPENCLAW_GATEWAY_TOKEN` is already available in the host environment
-- otherwise only `gatewayAuthToken`
+- only `gatewayAuthToken`
 
 Example:
 
