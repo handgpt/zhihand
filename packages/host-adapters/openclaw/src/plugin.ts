@@ -1,7 +1,4 @@
-import fs from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
-import { randomInt } from "node:crypto";
 
 import {
   buildPairingPrompt,
@@ -32,6 +29,13 @@ import {
 } from "./native_mobile_agent.ts";
 import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
+import {
+  loadState,
+  saveState,
+  type StoredPairingState,
+  type StoredPluginState
+} from "./state_store.ts";
+import { cacheScreenSnapshot } from "./cache_store.ts";
 
 type PluginConfig = {
   controlPlaneEndpoint?: string;
@@ -44,23 +48,6 @@ type PluginConfig = {
   gatewayAuthToken?: string;
   mobileAgentId?: string;
   requestedScopes?: string[];
-};
-
-type StoredPairingState = {
-  sessionId: string;
-  controllerToken: string;
-  edgeId: string;
-  edgeHost: string;
-  pairUrl: string;
-  qrPayload: string;
-  credentialId?: string;
-  status: string;
-  expiresAt: string;
-};
-
-type StoredPluginState = {
-  plugin?: PluginRecord;
-  pairing?: StoredPairingState;
 };
 
 export function formatPairingCommandText(
@@ -76,8 +63,6 @@ export function formatPairingCommandText(
   ].join("\n");
 }
 
-const STATE_RELATIVE_PATH = ["plugins", "openclaw", "state.json"] as const;
-const SCREEN_CACHE_FILE = ["plugins", "openclaw", "latest-screen.jpg"] as const;
 const DEFAULT_CONTROL_PLANE_ENDPOINT = "https://api.zhihand.com";
 const DEFAULT_DOWNLOAD_URL = "https://zhihand.com/download";
 const DEFAULT_REQUESTED_SCOPES = [
@@ -961,38 +946,6 @@ function normalizedPairingTTL(raw?: number): number {
     return 600;
   }
   return Math.max(30, Math.min(3600, Math.trunc(raw)));
-}
-
-async function loadState(stateDir: string): Promise<StoredPluginState> {
-  const filePath = resolveStatePath(stateDir);
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as StoredPluginState;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return {};
-    }
-    throw error;
-  }
-}
-
-async function saveState(stateDir: string, state: StoredPluginState): Promise<void> {
-  const filePath = resolveStatePath(stateDir);
-  const tempPath = `${filePath}.tmp-${process.pid}-${randomInt(1_000_000)}`;
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, filePath);
-}
-
-function resolveStatePath(stateDir: string): string {
-  return path.join(stateDir, ...STATE_RELATIVE_PATH);
-}
-
-async function cacheScreenSnapshot(api: OpenClawPluginApi, snapshot: ScreenSnapshotRecord): Promise<string> {
-  const screenPath = path.join(api.runtime.state.resolveStateDir(), ...SCREEN_CACHE_FILE);
-  await fs.mkdir(path.dirname(screenPath), { recursive: true });
-  await fs.writeFile(screenPath, Buffer.from(snapshot.frame_base64, "base64"));
-  return screenPath;
 }
 
 function formatStatusText(status: Record<string, unknown>): string {

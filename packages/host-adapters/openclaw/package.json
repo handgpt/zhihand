@@ -34,9 +34,11 @@
     "README.md",
     "openclaw.plugin.json",
     "src/index.ts",
+    "src/cache_store.ts",
     "src/mobile_prompt_media.ts",
     "src/native_mobile_agent.ts",
     "src/plugin.ts",
+    "src/state_store.ts",
     "skills/"
   ],
   "publishConfig": {
