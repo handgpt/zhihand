@@ -37,6 +37,12 @@ Install the plugin:
 openclaw plugins install @zhihand/openclaw
 ```
 
+Then trust the plugin id in OpenClaw:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 Then restart or reload OpenClaw if your setup requires it, and run:
 
 ```text

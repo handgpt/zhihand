@@ -33,6 +33,12 @@
 openclaw plugins install @zhihand/openclaw
 ```
 
+然后把插件 id 加进 OpenClaw 白名单：
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 这是面向普通用户的主要安装方式。
 
 本地路径安装只保留给插件开发调试：
@@ -45,13 +51,14 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 1. 安装 Android App
 2. 安装 OpenClaw 插件
-3. 按需要重启或重新加载 OpenClaw
-4. 执行 `/zhihand pair`
-5. 在浏览器打开返回的二维码链接
-6. 用 Android App 扫码
-7. 连接 `ZhiHand Device`
-8. 当需要读屏时，再打开 `Eye`
-9. 后续即可从手机或 OpenClaw 发起任务
+3. 执行 `openclaw config set plugins.allow '["openclaw"]' --strict-json`
+4. 按需要重启或重新加载 OpenClaw
+5. 执行 `/zhihand pair`
+6. 在浏览器打开返回的二维码链接
+7. 用 Android App 扫码
+8. 连接 `ZhiHand Device`
+9. 当需要读屏时，再打开 `Eye`
+10. 后续即可从手机或 OpenClaw 发起任务
 
 ## 三部分分别在哪里运行
 
@@ -91,3 +98,20 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 如果你是进阶用户，也可以覆盖 control-plane endpoint 做自托管。
 
 但那是进阶部署路径，不应该成为默认 onboarding。
+
+## 推荐的 OpenClaw 信任步骤
+
+当安装的不是 OpenClaw 内置插件时，如果 `plugins.allow` 为空，OpenClaw 会给出 warning。
+
+对智手®来说，推荐在首次安装后执行一次：
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+如果你在生产环境里希望固定依赖版本，也可以显式安装某个发布版本，再保留同样的 allowlist：
+
+```bash
+openclaw plugins install @zhihand/openclaw@0.8.1
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```

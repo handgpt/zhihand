@@ -39,6 +39,12 @@
 openclaw plugins install @zhihand/openclaw
 ```
 
+然后把插件 id 加进 OpenClaw allowlist：
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 按你的 OpenClaw 环境要求重启或重新加载后，执行：
 
 ```text

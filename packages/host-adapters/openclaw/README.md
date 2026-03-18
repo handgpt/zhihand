@@ -20,6 +20,18 @@ Primary release path:
 openclaw plugins install @zhihand/openclaw
 ```
 
+Then explicitly trust the plugin id:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+If you prefer pinned installs for supply-chain stability, install an exact published version:
+
+```bash
+openclaw plugins install @zhihand/openclaw@0.8.1
+```
+
 Development fallback from a local checkout:
 
 ```bash
@@ -33,6 +45,23 @@ Recommended discovery paths after npm publication:
 - external catalogs when the host deployment supports them
 
 Do not assume a first-party plugin store UI is the only distribution path.
+
+## First Run After Install
+
+The shortest safe setup is:
+
+```bash
+openclaw plugins install @zhihand/openclaw
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+Then restart or reload OpenClaw if your deployment requires it.
+
+Why the second step matters:
+
+- OpenClaw warns when `plugins.allow` is empty.
+- An explicit allowlist is the recommended trust boundary for non-bundled plugins.
+- This avoids "discovered plugins may auto-load" warnings on fresh installs.
 
 ## OpenClaw Plugin Config
 
@@ -75,6 +104,12 @@ Example:
     }
   }
 }
+```
+
+CLI equivalent for the allowlist step:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
 Advanced self-host example:

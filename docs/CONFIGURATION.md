@@ -17,6 +17,12 @@ The normal install command is:
 openclaw plugins install @zhihand/openclaw
 ```
 
+Then add the plugin id to the OpenClaw allowlist:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 Then run:
 
 ```text
@@ -106,6 +112,7 @@ Public-safe example:
 ```json
 {
   "plugins": {
+    "allow": ["openclaw"],
     "entries": {
       "openclaw": {
         "enabled": true,
@@ -117,6 +124,14 @@ Public-safe example:
   }
 }
 ```
+
+If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist can be added from the CLI:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins.
 
 ## Recommended Hosted Defaults
 

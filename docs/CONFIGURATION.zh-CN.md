@@ -21,6 +21,12 @@
 openclaw plugins install @zhihand/openclaw
 ```
 
+然后把插件 id 加进 OpenClaw allowlist：
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 然后执行：
 
 ```text
@@ -110,6 +116,7 @@ App 负责：
 ```json
 {
   "plugins": {
+    "allow": ["openclaw"],
     "entries": {
       "openclaw": {
         "enabled": true,
@@ -121,6 +128,14 @@ App 负责：
   }
 }
 ```
+
+如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist：
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning。
 
 ## 官方托管默认值
 

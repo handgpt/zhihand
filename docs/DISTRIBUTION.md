@@ -31,6 +31,12 @@ The normal install command is:
 openclaw plugins install @zhihand/openclaw
 ```
 
+Then add the explicit plugin allowlist entry:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
 This is the main public install path.
 
 Local-path install is only for plugin development:
@@ -43,13 +49,14 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 1. Install the Android app.
 2. Install the OpenClaw plugin.
-3. Restart or reload OpenClaw if needed.
-4. Run `/zhihand pair`.
-5. Open the QR URL in a browser.
-6. Scan it from the mobile app.
-7. Connect `ZhiHand Device`.
-8. Turn on `Eye` when you want ZhiHand to read the screen.
-9. Start sending requests from the phone or from OpenClaw.
+3. Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
+4. Restart or reload OpenClaw if needed.
+5. Run `/zhihand pair`.
+6. Open the QR URL in a browser.
+7. Scan it from the mobile app.
+8. Connect `ZhiHand Device`.
+9. Turn on `Eye` when you want ZhiHand to read the screen.
+10. Start sending requests from the phone or from OpenClaw.
 
 ## What Runs Where
 
@@ -89,3 +96,20 @@ Do not assume users have a built-in plugin-store UI inside every OpenClaw deploy
 Advanced users can still self-host by overriding the control-plane endpoint.
 
 That is an advanced deployment path, not the default onboarding path.
+
+## Recommended OpenClaw Trust Step
+
+OpenClaw warns when a non-bundled plugin is installed but `plugins.allow` is empty.
+
+For ZhiHand, the recommended one-time trust step is:
+
+```bash
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+If you pin package versions in production, install the exact published version and keep the same allowlist:
+
+```bash
+openclaw plugins install @zhihand/openclaw@0.8.1
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
