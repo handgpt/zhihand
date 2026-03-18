@@ -933,7 +933,7 @@ function resolveGatewayResponsesEndpoint(api: OpenClawPluginApi): string {
   );
 }
 
-function resolveGatewayAuthToken(api: OpenClawPluginApi): string {
+export function resolveGatewayAuthToken(api: OpenClawPluginApi): string {
   const configured = resolvePluginConfig(api).gatewayAuthToken?.trim();
   if (!configured) {
     throw new Error(

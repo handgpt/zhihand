@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { formatPairingCommandText } from "./plugin.ts";
+import { formatPairingCommandText, resolveGatewayAuthToken } from "./plugin.ts";
 
 test("formatPairingCommandText returns clean browser-first pairing instructions", () => {
   const text = formatPairingCommandText(
@@ -23,4 +23,20 @@ test("formatPairingCommandText supports tool-oriented next steps", () => {
   );
 
   assert.match(text, /then call zhihand_status\./);
+});
+
+test("resolveGatewayAuthToken requires explicit plugin config", () => {
+  assert.throws(
+    () => resolveGatewayAuthToken({ pluginConfig: {} }),
+    /plugins\.entries\.openclaw\.config\.gatewayAuthToken/
+  );
+
+  assert.equal(
+    resolveGatewayAuthToken({
+      pluginConfig: {
+        gatewayAuthToken: "  local-token  "
+      }
+    }),
+    "local-token"
+  );
 });
