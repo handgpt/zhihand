@@ -1,6 +1,6 @@
 # ZhiHand Compatibility Matrix
 
-Current core release: `0.9.5`
+Current core release: `0.9.6`
 
 This matrix exists so the public protocol repo, the OpenClaw adapter, and downstream runtimes do not drift silently.
 

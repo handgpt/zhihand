@@ -2,7 +2,7 @@
 
 ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
-Current core version: `0.9.5`
+Current core version: `0.9.6`
 
 In practice, ZhiHand brings three parts together:
 
