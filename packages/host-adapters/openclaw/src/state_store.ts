@@ -51,6 +51,6 @@ export async function saveState(stateDir: string, state: StoredPluginState): Pro
   await fs.rename(tempPath, filePath);
 }
 
-function resolveStatePath(stateDir: string): string {
+export function resolveStatePath(stateDir: string): string {
   return path.join(stateDir, ...STATE_RELATIVE_PATH);
 }

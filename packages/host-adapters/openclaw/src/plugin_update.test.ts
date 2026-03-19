@@ -45,11 +45,11 @@ test("extractLatestVersionFromRegistryPayload prefers dist-tags latest", () => {
 });
 
 test("formatAvailablePluginUpdateInstruction scopes pinned install to first install", () => {
-  const text = formatAvailablePluginUpdateInstruction("0.9.3");
+  const text = formatAvailablePluginUpdateInstruction("0.9.4");
 
   assert.match(text, /openclaw plugins update openclaw/);
   assert.match(text, /only for a first install or after removing the existing extension directory/);
-  assert.match(text, /openclaw plugins install @zhihand\/openclaw@0.9.3/);
+  assert.match(text, /openclaw plugins install @zhihand\/openclaw@0.9.4/);
 });
 
 test("buildPluginUpdateStatus reports a pending restart after install", () => {

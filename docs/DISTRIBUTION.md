@@ -110,7 +110,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.3
+openclaw plugins install @zhihand/openclaw@0.9.4
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 

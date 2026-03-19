@@ -112,7 +112,7 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 如果你在生产环境里希望固定依赖版本，并且这是首次安装，或者你已经删除现有扩展目录准备重装，也可以显式安装某个发布版本，再保留同样的 allowlist：
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.3
+openclaw plugins install @zhihand/openclaw@0.9.4
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 

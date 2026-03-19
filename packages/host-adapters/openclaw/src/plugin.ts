@@ -38,6 +38,7 @@ import {
 } from "./plugin_update.ts";
 import {
   loadState,
+  resolveStatePath,
   saveState,
   type StoredPairingState,
   type StoredPluginState
