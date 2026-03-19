@@ -63,6 +63,56 @@ Why the second step matters:
 - An explicit allowlist is the recommended trust boundary for non-bundled plugins.
 - This avoids "discovered plugins may auto-load" warnings on fresh installs.
 
+## What Is Actually Required For This Plugin
+
+Only two setup items are plugin-specific prerequisites:
+
+1. Install and trust the plugin id:
+
+```bash
+openclaw plugins install @zhihand/openclaw
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+2. Configure `plugins.entries.openclaw.config.gatewayAuthToken` when you want the
+   recommended native runtime relay path.
+
+Why `gatewayAuthToken` belongs in the plugin docs:
+
+- the plugin relays paired mobile prompts into the local OpenClaw runtime through
+  the gateway's local `POST /v1/responses` endpoint
+- that relay is implemented by this plugin
+- without `gatewayAuthToken`, the plugin stays loaded, but the prompt relay is
+  disabled and startup logs report the configuration error
+
+Minimal plugin config example:
+
+```json
+{
+  "plugins": {
+    "allow": ["openclaw"],
+    "entries": {
+      "openclaw": {
+        "enabled": true,
+        "config": {
+          "gatewayAuthToken": "set-this-to-your-openclaw-gateway-token"
+        }
+      }
+    }
+  }
+}
+```
+
+What is **not** a plugin prerequisite:
+
+- `gateway.auth.token`
+- `gateway.controlUi.allowedOrigins`
+- browser device pairing / Control UI login
+
+Those belong to the OpenClaw gateway deployment itself. They matter if you want
+to use the OpenClaw web UI, but they are not part of the ZhiHand plugin install
+contract and are intentionally left out of the npm install steps here.
+
 ## OpenClaw Plugin Config
 
 The plugin reads its config from:
