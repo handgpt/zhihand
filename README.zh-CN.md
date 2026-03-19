@@ -2,7 +2,7 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前公共核心版本：`0.9.4`
+当前核心版本：`0.9.5`
 
 智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
@@ -45,6 +45,12 @@ openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+然后把智手®插件工具开放给 OpenClaw agent 运行时：
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 然后把当前 OpenClaw gateway token 写进插件配置：
 
 ```bash
@@ -56,6 +62,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 

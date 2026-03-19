@@ -110,6 +110,25 @@ test("runNativeMobileAgent surfaces response errors", async () => {
   );
 });
 
+test("runNativeMobileAgent explains disabled local responses endpoint", async () => {
+  const fakeFetch: typeof fetch = async () => new Response("Not Found", { status: 404 });
+
+  await assert.rejects(
+    () =>
+      runNativeMobileAgent(
+        {
+          endpoint: "http://127.0.0.1:18789/v1/responses",
+          authToken: "secret",
+          agentId: "zhihand-mobile",
+          user: "zhihand:credential:abc",
+          promptText: "hi"
+        },
+        fakeFetch
+      ),
+    /Enable gateway\.http\.endpoints\.responses\.enabled/
+  );
+});
+
 test("runNativeMobileAgent forwards abort signals to fetch", async () => {
   let capturedSignal: AbortSignal | undefined;
   const controller = new AbortController();

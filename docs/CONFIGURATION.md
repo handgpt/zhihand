@@ -23,6 +23,12 @@ Then add the plugin id to the OpenClaw allowlist:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then enable the ZhiHand plugin tools for agent runs:
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 Then set the plugin relay token from the current OpenClaw gateway token:
 
 ```bash
@@ -149,10 +155,12 @@ If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist an
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, and ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present.
+This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, optional plugin tools stay unavailable until `tools.allow` includes `openclaw`, ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present, and the local OpenClaw `POST /v1/responses` route returns `404` until `gateway.http.endpoints.responses.enabled` is turned on.
 
 By default, the plugin also checks npm for a newer published version during startup.
 Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.

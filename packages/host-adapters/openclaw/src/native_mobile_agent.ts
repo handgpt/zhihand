@@ -96,9 +96,13 @@ export async function runNativeMobileAgent(
 
   const payload = (await response.json().catch(() => ({}))) as OpenResponsesResponse;
   if (!response.ok) {
+    const openResponsesNotEnabled =
+      response.status === 404 && /\/v1\/responses(?:$|[/?#])/.test(config.endpoint);
     const message =
       payload.error?.message?.trim() ||
-      `OpenClaw /v1/responses returned ${response.status}.`;
+      (openResponsesNotEnabled
+        ? "OpenClaw /v1/responses returned 404. Enable gateway.http.endpoints.responses.enabled in OpenClaw and restart the gateway."
+        : `OpenClaw /v1/responses returned ${response.status}.`);
     throw new Error(message);
   }
 

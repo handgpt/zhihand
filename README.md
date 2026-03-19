@@ -2,7 +2,7 @@
 
 ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
 
-Current public core version: `0.9.4`
+Current core version: `0.9.5`
 
 In practice, ZhiHand brings three parts together:
 
@@ -43,6 +43,12 @@ Then trust the plugin id in OpenClaw:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then allow the ZhiHand plugin tools in the OpenClaw agent runtime:
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 Then point the plugin at the current OpenClaw gateway token:
 
 ```bash
@@ -54,6 +60,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 

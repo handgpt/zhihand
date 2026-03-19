@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import register, { formatPairingCommandText, resolveGatewayAuthToken } from "./plugin.ts";
+import register, {
+  formatPairingCommandText,
+  hasZhiHandToolBinding,
+  resolveGatewayAuthToken
+} from "./plugin.ts";
 
 test("formatPairingCommandText returns clean browser-first pairing instructions", () => {
   const text = formatPairingCommandText(
@@ -38,6 +42,51 @@ test("resolveGatewayAuthToken requires explicit plugin config", () => {
       }
     }),
     "local-token"
+  );
+});
+
+test("hasZhiHandToolBinding recognizes global and agent-scoped tool allowlists", () => {
+  assert.equal(
+    hasZhiHandToolBinding(
+      {
+        tools: {
+          allow: ["openclaw"]
+        }
+      },
+      "zhihand-mobile"
+    ),
+    true
+  );
+
+  assert.equal(
+    hasZhiHandToolBinding(
+      {
+        agents: {
+          list: [
+            {
+              id: "zhihand-mobile",
+              tools: {
+                allow: ["zhihand_control"]
+              }
+            }
+          ]
+        }
+      },
+      "zhihand-mobile"
+    ),
+    true
+  );
+
+  assert.equal(
+    hasZhiHandToolBinding(
+      {
+        plugins: {
+          allow: ["openclaw"]
+        }
+      },
+      "zhihand-mobile"
+    ),
+    false
   );
 });
 

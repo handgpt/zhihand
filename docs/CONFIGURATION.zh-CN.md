@@ -27,6 +27,12 @@ openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+然后把智手®插件工具开放给 OpenClaw agent 运行时：
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 然后把当前 OpenClaw gateway token 写进插件配置：
 
 ```bash
@@ -153,10 +159,12 @@ App 负责：
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；而如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`。
+这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；如果 `tools.allow` 没有包含 `openclaw`，智手®的可选插件工具不会暴露给 agent；如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`；而如果没有打开 `gateway.http.endpoints.responses.enabled`，本地 OpenClaw `POST /v1/responses` 会返回 `404`。
 
 插件默认也会在启动时检查 npm 是否有新的已发布版本。
 可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。

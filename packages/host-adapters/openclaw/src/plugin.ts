@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
 import {
   buildPairingPrompt,
@@ -91,6 +93,14 @@ const PROMPT_CANCEL_POLL_MS = 500;
 const CONTROL_SETTLE_MS = 2_000;
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
 const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
+const ZHIHAND_OPTIONAL_TOOL_KEYS = new Set([
+  "openclaw",
+  "group:plugins",
+  "zhihand_pair",
+  "zhihand_status",
+  "zhihand_screen_read",
+  "zhihand_control"
+]);
 
 type PromptRelayRuntime = {
   stopped: boolean;
@@ -100,6 +110,22 @@ type PromptRelayRuntime = {
 
 let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
+
+type OpenClawToolPolicyConfig = {
+  allow?: unknown;
+};
+
+type OpenClawAgentConfig = {
+  id?: unknown;
+  tools?: OpenClawToolPolicyConfig;
+};
+
+type OpenClawConfigFile = {
+  tools?: OpenClawToolPolicyConfig;
+  agents?: {
+    list?: OpenClawAgentConfig[];
+  };
+};
 
 export default function register(api: OpenClawPluginApi) {
   api.registerService(createPluginUpdateService(api));
@@ -425,6 +451,7 @@ function ensurePromptRelayStarted(api: OpenClawPluginApi) {
     api.logger.error?.(`ZhiHand prompt relay disabled: ${errorMessage(error)}`);
     return;
   }
+  warnIfToolBindingsMissing(api);
   runtime.stopped = false;
   api.logger.info?.("ZhiHand prompt relay starting.");
   runtime.loopPromise = runPromptRelayLoop(api, () => runtime.stopped)
@@ -993,6 +1020,52 @@ export function resolveGatewayAuthToken(api: OpenClawPluginApi): string {
 function resolveMobileAgentId(api: OpenClawPluginApi): string {
   const agentId = resolvePluginConfig(api).mobileAgentId?.trim();
   return agentId || DEFAULT_MOBILE_AGENT_ID;
+}
+
+export function hasZhiHandToolBinding(config: unknown, agentId: string): boolean {
+  if (!config || typeof config !== "object") {
+    return false;
+  }
+  const typed = config as OpenClawConfigFile;
+  const agents = Array.isArray(typed.agents?.list) ? typed.agents?.list : [];
+  const agentPolicy = agents?.find((entry) => typeof entry?.id === "string" && entry.id === agentId)?.tools;
+  if (allowlistEnablesZhiHand(agentPolicy?.allow)) {
+    return true;
+  }
+  return allowlistEnablesZhiHand(typed.tools?.allow);
+}
+
+function warnIfToolBindingsMissing(api: OpenClawPluginApi): void {
+  const config = tryLoadOpenClawConfig();
+  if (!config) {
+    return;
+  }
+  const agentId = resolveMobileAgentId(api);
+  if (hasZhiHandToolBinding(config, agentId)) {
+    return;
+  }
+  api.logger.warn?.(
+    `ZhiHand optional tools are not enabled for OpenClaw agent "${agentId}". Add tools.allow ["openclaw"] or an agents.list entry with tools.allow ["openclaw"]. Without this, mobile chat can reply but cannot use zhihand_status or zhihand_control.`
+  );
+}
+
+function tryLoadOpenClawConfig(): OpenClawConfigFile | null {
+  const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+  try {
+    return JSON.parse(fs.readFileSync(configPath, "utf8")) as OpenClawConfigFile;
+  } catch {
+    return null;
+  }
+}
+
+function allowlistEnablesZhiHand(allowlist: unknown): boolean {
+  if (!Array.isArray(allowlist)) {
+    return false;
+  }
+  return allowlist.some(
+    (entry) =>
+      typeof entry === "string" && ZHIHAND_OPTIONAL_TOOL_KEYS.has(entry.trim().toLowerCase())
+  );
 }
 
 function buildMobileAgentUser(pairing: StoredPairingState): string {

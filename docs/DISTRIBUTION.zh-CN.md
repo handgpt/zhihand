@@ -39,6 +39,12 @@ openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+然后把智手®插件工具开放给 OpenClaw agent 运行时：
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 然后把当前 OpenClaw gateway token 写进插件配置：
 
 ```bash
@@ -66,14 +72,16 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 1. 安装 Android App
 2. 安装 OpenClaw 插件
 3. 执行 `openclaw config set plugins.allow '["openclaw"]' --strict-json`
-4. 把 `plugins.entries.openclaw.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
-5. 按需要重启或重新加载 OpenClaw
-6. 执行 `/zhihand pair`
-7. 在浏览器打开返回的二维码链接
-8. 用 Android App 扫码
-9. 连接 `ZhiHand Device`
-10. 当需要读屏时，再打开 `Eye`
-11. 后续即可从手机或 OpenClaw 发起任务
+4. 执行 `openclaw config set tools.allow '["openclaw"]' --strict-json`
+5. 把 `plugins.entries.openclaw.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
+6. 打开 `gateway.http.endpoints.responses.enabled`
+7. 按需要重启或重新加载 OpenClaw
+8. 执行 `/zhihand pair`
+9. 在浏览器打开返回的二维码链接
+10. 用 Android App 扫码
+11. 连接 `ZhiHand Device`
+12. 当需要读屏时，再打开 `Eye`
+13. 后续即可从手机或 OpenClaw 发起任务
 
 ## 三部分分别在哪里运行
 
@@ -122,6 +130,7 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
 如果插件日志里出现 `ZhiHand prompt relay disabled ... gatewayAuthToken`，还要把插件 relay token 配上：
@@ -130,11 +139,18 @@ openclaw config set plugins.allow '["openclaw"]' --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
+还需要打开插件 relay 会调用的本地 OpenResponses 端点：
+
+```bash
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
+```
+
 如果你在生产环境里希望固定依赖版本，并且这是首次安装，或者你已经删除现有扩展目录准备重装，也可以显式安装某个发布版本，再保留同样的 allowlist：
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.4
+openclaw plugins install @zhihand/openclaw@<version>
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
 插件默认会在启动时检查 npm 是否有新发布版本。

@@ -19,6 +19,7 @@ The shortest working setup on a fresh OpenClaw host is:
 ```bash
 openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -27,6 +28,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
@@ -34,7 +36,9 @@ Then restart or reload OpenClaw if your deployment requires it.
 
 Why these steps matter:
 
-- `plugins.allow` avoids the fresh-install warning about discovered plugins auto-loading.
+- `plugins.allow` trusts the plugin id so OpenClaw will load the extension without the fresh-install warning.
+- `tools.allow` enables ZhiHand's optional plugin tools for the agent runtime. Without it, mobile chat can answer text but cannot call `zhihand_status` or `zhihand_control`.
+- `gateway.http.endpoints.responses.enabled` turns on the local OpenClaw `POST /v1/responses` route. Without it, the plugin can load and pair, but mobile prompts fail with `OpenClaw /v1/responses returned 404`.
 - `gatewayAuthToken` is required for the plugin's native relay into the local OpenClaw `POST /v1/responses` endpoint.
 - without `gatewayAuthToken`, the plugin loads but logs `ZhiHand prompt relay disabled... gatewayAuthToken` and mobile prompts do not reach the local runtime.
 
@@ -47,7 +51,7 @@ openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gate
 If you prefer pinned installs for supply-chain stability on a first install, or after deleting the existing extension directory for a reinstall, install an exact published version:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.4
+openclaw plugins install @zhihand/openclaw@<version>
 ```
 
 Development fallback from a local checkout:
@@ -70,6 +74,10 @@ These warnings are normal during setup and tell you what is still missing:
 
 - `plugins.allow is empty`
   Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
+- `ZhiHand optional tools are not enabled for OpenClaw agent`
+  Run `openclaw config set tools.allow '["openclaw"]' --strict-json`, or add `tools.allow: ["openclaw"]` to the dedicated mobile agent in `agents.list`.
+- `OpenClaw /v1/responses returned 404`
+  Run `openclaw config set gateway.http.endpoints.responses.enabled true --strict-json`, then restart the gateway.
 - `ZhiHand prompt relay disabled ... gatewayAuthToken`
   Set `plugins.entries.openclaw.config.gatewayAuthToken` to your current OpenClaw gateway token.
 
@@ -157,6 +165,7 @@ CLI equivalent for the allowlist and plugin token steps:
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 

@@ -37,6 +37,12 @@ Then add the explicit plugin allowlist entry:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then enable the ZhiHand plugin tools for agent runs:
+
+```bash
+openclaw config set tools.allow '["openclaw"]' --strict-json
+```
+
 Then point the plugin at the current OpenClaw gateway token:
 
 ```bash
@@ -64,14 +70,16 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 1. Install the Android app.
 2. Install the OpenClaw plugin.
 3. Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
-4. Set `plugins.entries.openclaw.config.gatewayAuthToken` to the current OpenClaw gateway token.
-5. Restart or reload OpenClaw if needed.
-6. Run `/zhihand pair`.
-7. Open the QR URL in a browser.
-8. Scan it from the mobile app.
-9. Connect `ZhiHand Device`.
-10. Turn on `Eye` when you want ZhiHand to read the screen.
-11. Start sending requests from the phone or from OpenClaw.
+4. Run `openclaw config set tools.allow '["openclaw"]' --strict-json`.
+5. Set `plugins.entries.openclaw.config.gatewayAuthToken` to the current OpenClaw gateway token.
+6. Enable `gateway.http.endpoints.responses.enabled`.
+7. Restart or reload OpenClaw if needed.
+8. Run `/zhihand pair`.
+9. Open the QR URL in a browser.
+10. Scan it from the mobile app.
+11. Connect `ZhiHand Device`.
+12. Turn on `Eye` when you want ZhiHand to read the screen.
+13. Start sending requests from the phone or from OpenClaw.
 
 ## What Runs Where
 
@@ -120,6 +128,7 @@ For ZhiHand, the recommended one-time trust step is:
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
 If the plugin logs `ZhiHand prompt relay disabled ... gatewayAuthToken`, set the plugin relay token too:
@@ -128,11 +137,18 @@ If the plugin logs `ZhiHand prompt relay disabled ... gatewayAuthToken`, set the
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
+And enable the local OpenResponses endpoint that the plugin relays into:
+
+```bash
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
+```
+
 If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@0.9.4
+openclaw plugins install @zhihand/openclaw@<version>
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
 The plugin checks npm for published updates during startup by default.
