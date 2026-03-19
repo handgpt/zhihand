@@ -263,6 +263,34 @@ Deployment requirements for the native runtime path:
 - if these native-runtime prerequisites are missing, the prompt relay stays
   disabled and logs the configuration error during startup
 
+## OpenAI Computer Tool Status
+
+`openai-codex/gpt-5.4` is still the recommended model for the ZhiHand mobile
+agent, but the current OpenClaw relay path does **not** expose OpenAI's native
+`tools: [{ "type": "computer" }]` workflow.
+
+Current behavior:
+
+- ZhiHand sends mobile prompts into local OpenClaw `POST /v1/responses`
+- OpenClaw's hosted-tool surface currently accepts **function tools** only
+- the mobile agent therefore uses `zhihand_screen_read` and `zhihand_control`,
+  not OpenAI `computer_call` / `computer_call_output`
+
+Implication:
+
+- you can use `openai-codex/gpt-5.4` for better reasoning and screenshot
+  understanding
+- you cannot assume OpenClaw will automatically switch to OpenAI's native
+  computer tool loop
+
+Using the GA OpenAI computer tool would require either:
+
+- upstream OpenClaw support for `computer` / `computer_call_output`, or
+- a separate direct-to-OpenAI harness that bypasses local OpenClaw `/v1/responses`
+
+That direct harness is intentionally **not** the public ZhiHand/OpenClaw
+contract today.
+
 ## Release Shape
 
 Recommended first public release:

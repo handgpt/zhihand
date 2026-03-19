@@ -222,6 +222,25 @@ openclaw plugins update openclaw
 }
 ```
 
+## OpenAI Computer Tool 现状
+
+当前推荐给 ZhiHand 移动端 agent 的模型仍然是 `openai-codex/gpt-5.4`，但
+这条 OpenClaw relay 路径 **并没有** 接入 OpenAI GA 版的 `computer` 工具。
+
+当前公开集成契约是：
+
+- 本地 relay 走 OpenClaw 的 `POST /v1/responses`
+- OpenClaw 在这个面上目前只接收托管的 **function tools**
+- 所以移动端 agent 走的是 `zhihand_screen_read` 和 `zhihand_control`
+
+不要把这理解成已经启用了原生的 OpenAI `computer_call` /
+`computer_call_output`。如果要使用 OpenAI GA 版 computer tool，需要：
+
+- 上游 OpenClaw 先支持该工具类型，或
+- 另做一条绕过本地 OpenClaw `/v1/responses` 的直连 OpenAI harness
+
+而这条直连 harness 当前 **不是** ZhiHand/OpenClaw 插件的公开契约。
+
 ## OpenClaw 工具
 
 适配器当前暴露：

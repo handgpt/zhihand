@@ -452,6 +452,9 @@ function ensurePromptRelayStarted(api: OpenClawPluginApi) {
     return;
   }
   warnIfToolBindingsMissing(api);
+  api.logger.info?.(
+    "ZhiHand mobile relay uses OpenClaw /v1/responses with function tools only. OpenAI computer tool semantics are not wired through this integration; keep using zhihand_screen_read and zhihand_control."
+  );
   runtime.stopped = false;
   api.logger.info?.("ZhiHand prompt relay starting.");
   runtime.loopPromise = runPromptRelayLoop(api, () => runtime.stopped)

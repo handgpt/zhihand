@@ -218,6 +218,23 @@ Recommended dedicated agent shape:
 }
 ```
 
+## OpenAI Computer Tool Status
+
+The recommended ZhiHand mobile model is still `openai-codex/gpt-5.4`, but the
+current OpenClaw relay path does **not** expose the GA OpenAI computer tool.
+
+Current integration contract:
+
+- local relay goes through OpenClaw `POST /v1/responses`
+- OpenClaw currently accepts hosted **function tools** on that surface
+- the mobile agent therefore operates through `zhihand_screen_read` and
+  `zhihand_control`
+
+Do not assume this means native OpenAI `computer_call` /
+`computer_call_output` support is active. To use the GA OpenAI computer tool,
+you would need upstream OpenClaw support for that tool type or a separate
+direct-to-OpenAI harness outside the current public ZhiHand plugin contract.
+
 ## OpenClaw Tools
 
 The adapter exposes:
