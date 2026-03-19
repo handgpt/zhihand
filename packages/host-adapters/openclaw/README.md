@@ -12,18 +12,36 @@ It is a thin plugin layer on top of the shared ZhiHand control-plane contract.
 - fetches the latest uploaded phone screen snapshot
 - sends control commands and waits for command ACK status
 
-## Recommended Install
+## Install And First Run
 
-Primary release path:
+The shortest working setup on a fresh OpenClaw host is:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
+openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
-Then explicitly trust the plugin id:
+Then restart or reload OpenClaw if your deployment requires it.
+
+Why these steps matter:
+
+- `plugins.allow` avoids the fresh-install warning about discovered plugins auto-loading.
+- `gatewayAuthToken` is required for the plugin's native relay into the local OpenClaw `POST /v1/responses` endpoint.
+- without `gatewayAuthToken`, the plugin loads but logs `ZhiHand prompt relay disabled... gatewayAuthToken` and mobile prompts do not reach the local runtime.
+
+If you already know your gateway token, you can set it directly:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 If you prefer pinned installs for supply-chain stability on a first install, or after deleting the existing extension directory for a reinstall, install an exact published version:
@@ -46,44 +64,20 @@ Recommended discovery paths after npm publication:
 
 Do not assume a first-party plugin store UI is the only distribution path.
 
-## First Run After Install
+## Expected Warnings
 
-The shortest safe setup is:
+These warnings are normal during setup and tell you what is still missing:
 
-```bash
-openclaw plugins install @zhihand/openclaw
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-```
+- `plugins.allow is empty`
+  Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
+- `ZhiHand prompt relay disabled ... gatewayAuthToken`
+  Set `plugins.entries.openclaw.config.gatewayAuthToken` to your current OpenClaw gateway token.
 
-Then restart or reload OpenClaw if your deployment requires it.
+These are OpenClaw deployment warnings, not ZhiHand plugin install failures:
 
-Why the second step matters:
-
-- OpenClaw warns when `plugins.allow` is empty.
-- An explicit allowlist is the recommended trust boundary for non-bundled plugins.
-- This avoids "discovered plugins may auto-load" warnings on fresh installs.
-
-## What Is Actually Required For This Plugin
-
-Only two setup items are plugin-specific prerequisites:
-
-1. Install and trust the plugin id:
-
-```bash
-openclaw plugins install @zhihand/openclaw
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-```
-
-2. Configure `plugins.entries.openclaw.config.gatewayAuthToken` when you want the
-   recommended native runtime relay path.
-
-Why `gatewayAuthToken` belongs in the plugin docs:
-
-- the plugin relays paired mobile prompts into the local OpenClaw runtime through
-  the gateway's local `POST /v1/responses` endpoint
-- that relay is implemented by this plugin
-- without `gatewayAuthToken`, the plugin stays loaded, but the prompt relay is
-  disabled and startup logs report the configuration error
+- `gateway.trusted_proxies_missing`
+- `origin not allowed`
+- Control UI browser pairing prompts
 
 Minimal plugin config example:
 
@@ -105,13 +99,14 @@ Minimal plugin config example:
 
 What is **not** a plugin prerequisite:
 
-- `gateway.auth.token`
+- Control UI auth mode choices such as password vs token
 - `gateway.controlUi.allowedOrigins`
 - browser device pairing / Control UI login
 
-Those belong to the OpenClaw gateway deployment itself. They matter if you want
-to use the OpenClaw web UI, but they are not part of the ZhiHand plugin install
-contract and are intentionally left out of the npm install steps here.
+Those belong to the OpenClaw gateway deployment itself. ZhiHand only needs the
+current gateway token value for `plugins.entries.openclaw.config.gatewayAuthToken`;
+it does not require you to set up the Control UI, browser pairing, or allowed
+origins before the plugin can load and relay prompts.
 
 ## OpenClaw Plugin Config
 
@@ -158,10 +153,11 @@ Example:
 }
 ```
 
-CLI equivalent for the allowlist step:
+CLI equivalent for the allowlist and plugin token steps:
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 Advanced self-host example:

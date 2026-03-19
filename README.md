@@ -43,6 +43,20 @@ Then trust the plugin id in OpenClaw:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then point the plugin at the current OpenClaw gateway token:
+
+```bash
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
 Then restart or reload OpenClaw if your setup requires it, and run:
 
 ```text

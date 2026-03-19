@@ -45,6 +45,20 @@ openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+然后把当前 OpenClaw gateway token 写进插件配置：
+
+```bash
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
 按你的 OpenClaw 环境要求重启或重新加载后，执行：
 
 ```text

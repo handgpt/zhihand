@@ -27,6 +27,20 @@ openclaw plugins install @zhihand/openclaw
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+然后把当前 OpenClaw gateway token 写进插件配置：
+
+```bash
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
 然后执行：
 
 ```text
@@ -135,13 +149,14 @@ App 负责：
 }
 ```
 
-如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist：
+如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist 和插件 relay token：
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning。
+这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；而如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`。
 
 插件默认也会在启动时检查 npm 是否有新的已发布版本。
 可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。

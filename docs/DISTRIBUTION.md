@@ -37,6 +37,20 @@ Then add the explicit plugin allowlist entry:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then point the plugin at the current OpenClaw gateway token:
+
+```bash
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
 This is the main public install path.
 
 Local-path install is only for plugin development:
@@ -50,13 +64,14 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 1. Install the Android app.
 2. Install the OpenClaw plugin.
 3. Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
-4. Restart or reload OpenClaw if needed.
-5. Run `/zhihand pair`.
-6. Open the QR URL in a browser.
-7. Scan it from the mobile app.
-8. Connect `ZhiHand Device`.
-9. Turn on `Eye` when you want ZhiHand to read the screen.
-10. Start sending requests from the phone or from OpenClaw.
+4. Set `plugins.entries.openclaw.config.gatewayAuthToken` to the current OpenClaw gateway token.
+5. Restart or reload OpenClaw if needed.
+6. Run `/zhihand pair`.
+7. Open the QR URL in a browser.
+8. Scan it from the mobile app.
+9. Connect `ZhiHand Device`.
+10. Turn on `Eye` when you want ZhiHand to read the screen.
+11. Start sending requests from the phone or from OpenClaw.
 
 ## What Runs Where
 
@@ -105,6 +120,12 @@ For ZhiHand, the recommended one-time trust step is:
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+```
+
+If the plugin logs `ZhiHand prompt relay disabled ... gatewayAuthToken`, set the plugin relay token too:
+
+```bash
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:

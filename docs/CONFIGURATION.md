@@ -23,6 +23,20 @@ Then add the plugin id to the OpenClaw allowlist:
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 ```
 
+Then set the plugin relay token from the current OpenClaw gateway token:
+
+```bash
+openclaw doctor --generate-gateway-token
+export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
+print(config['gateway']['auth']['token'])
+PY
+)"
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
 Then run:
 
 ```text
@@ -131,13 +145,14 @@ Public-safe example:
 }
 ```
 
-If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist can be added from the CLI:
+If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist and plugin relay token can be set from the CLI:
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins.
+This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, and ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present.
 
 By default, the plugin also checks npm for a newer published version during startup.
 Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.
