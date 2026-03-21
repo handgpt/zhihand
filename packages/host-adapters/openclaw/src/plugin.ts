@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
 
 import {
   buildPairingPrompt,
@@ -31,6 +29,7 @@ import {
 } from "./native_mobile_agent.ts";
 import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
+import { tryLoadOpenClawConfig, type OpenClawConfigFile } from "./openclaw_config.ts";
 import { OPENCLAW_PACKAGE_VERSION } from "./package_metadata.ts";
 import {
   formatPluginUpdateDetails,
@@ -110,22 +109,6 @@ type PromptRelayRuntime = {
 
 let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
-
-type OpenClawToolPolicyConfig = {
-  allow?: unknown;
-};
-
-type OpenClawAgentConfig = {
-  id?: unknown;
-  tools?: OpenClawToolPolicyConfig;
-};
-
-type OpenClawConfigFile = {
-  tools?: OpenClawToolPolicyConfig;
-  agents?: {
-    list?: OpenClawAgentConfig[];
-  };
-};
 
 export default function register(api: OpenClawPluginApi) {
   api.registerService(createPluginUpdateService(api));
@@ -1064,15 +1047,6 @@ function warnIfToolBindingsMissing(api: OpenClawPluginApi): void {
   api.logger.warn?.(
     `ZhiHand optional tools are not enabled for OpenClaw agent "${agentId}". Add tools.allow ["openclaw"] or an agents.list entry with tools.allow ["openclaw"]. Without this, mobile chat can reply but cannot use zhihand_status or zhihand_control.`
   );
-}
-
-function tryLoadOpenClawConfig(): OpenClawConfigFile | null {
-  const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
-  try {
-    return JSON.parse(fs.readFileSync(configPath, "utf8")) as OpenClawConfigFile;
-  } catch {
-    return null;
-  }
 }
 
 function allowlistEnablesZhiHand(allowlist: unknown): boolean {
