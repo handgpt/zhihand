@@ -1,6 +1,6 @@
 {
   "name": "@zhihand/openclaw",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "private": false,
   "type": "module",
   "openclaw": {
@@ -37,6 +37,7 @@
     "src/cache_store.ts",
     "src/mobile_prompt_media.ts",
     "src/native_mobile_agent.ts",
+    "src/openclaw_config.ts",
     "src/package_metadata.ts",
     "src/plugin.ts",
     "src/plugin_update.ts",
