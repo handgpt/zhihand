@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import register, {
   formatPairingCommandText,
   hasZhiHandToolBinding,
+  reconcilePairingState,
   resolveGatewayAuthToken
 } from "./plugin.ts";
 
@@ -115,4 +119,210 @@ test("register exposes update help in the slash command", async () => {
 
   assert.match(response.text, /\/zhihand update/);
   assert.match(response.text, /\/zhihand update check/);
+});
+
+test("reconcilePairingState upgrades stale pending local pairing from active pairing", async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "zhihand-openclaw-state-"));
+  const statePath = path.join(stateDir, "plugins", "openclaw", "state.json");
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(
+    statePath,
+    JSON.stringify(
+      {
+        pairing: {
+          sessionId: "prs_pending",
+          controllerToken: "ctl_123",
+          edgeId: "edge_123",
+          edgeHost: "edge_123.edge.zhihand.com",
+          pairUrl: "https://pair.example.com",
+          qrPayload: "qr",
+          status: "pending",
+          expiresAt: "2026-03-21T00:00:00Z"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/pairing/sessions/prs_pending")) {
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "prs_pending",
+            edge_id: "edge_123",
+            edge_host: "edge_123.edge.zhihand.com",
+            pair_url: "https://pair.example.com",
+            qr_payload: "qr",
+            status: "pending",
+            expires_at: "2026-03-21T00:00:00Z"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    if (url.endsWith("/v1/plugins/edge_123/active-pairing")) {
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "prs_pending",
+            edge_id: "edge_123",
+            edge_host: "edge_123.edge.zhihand.com",
+            pair_url: "https://pair.example.com",
+            qr_payload: "qr",
+            status: "claimed",
+            expires_at: "2026-03-21T00:00:00Z",
+            credential_id: "crd_123",
+            controller_token: "ctl_123"
+          },
+          controller_token: "ctl_123"
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const reconciled = await reconcilePairingState({
+      logger: {},
+      runtime: {
+        state: {
+          resolveStateDir: () => stateDir
+        }
+      },
+      pluginConfig: {
+        controlPlaneEndpoint: "https://api.zhihand.com"
+      }
+    } as any);
+
+    assert.equal(reconciled?.status, "claimed");
+    assert.equal(reconciled?.credentialId, "crd_123");
+
+    const saved = JSON.parse(await fs.readFile(statePath, "utf8"));
+    assert.equal(saved.pairing.status, "claimed");
+    assert.equal(saved.pairing.credentialId, "crd_123");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("reconcilePairingState stores controller token returned by the claimed session", async () => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "zhihand-openclaw-state-"));
+  const statePath = path.join(stateDir, "plugins", "openclaw", "state.json");
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(
+    statePath,
+    JSON.stringify(
+      {
+        pairing: {
+          sessionId: "prs_claimed",
+          controllerToken: "",
+          edgeId: "edge_123",
+          edgeHost: "edge_123.edge.zhihand.com",
+          pairUrl: "https://pair.example.com",
+          qrPayload: "qr",
+          status: "pending",
+          expiresAt: "2026-03-21T00:00:00Z"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/pairing/sessions/prs_claimed")) {
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "prs_claimed",
+            edge_id: "edge_123",
+            edge_host: "edge_123.edge.zhihand.com",
+            pair_url: "https://pair.example.com",
+            qr_payload: "qr",
+            status: "claimed",
+            expires_at: "2026-03-21T00:00:00Z",
+            credential_id: "crd_123",
+            controller_token: "ctl_123"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    if (url.endsWith("/v1/plugins/edge_123/active-pairing")) {
+      return new Response(
+        JSON.stringify({
+          session: {
+            id: "prs_claimed",
+            edge_id: "edge_123",
+            edge_host: "edge_123.edge.zhihand.com",
+            pair_url: "https://pair.example.com",
+            qr_payload: "qr",
+            status: "claimed",
+            expires_at: "2026-03-21T00:00:00Z",
+            credential_id: "crd_123",
+            controller_token: "ctl_123"
+          },
+          controller_token: "ctl_123"
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const reconciled = await reconcilePairingState({
+      logger: {},
+      runtime: {
+        state: {
+          resolveStateDir: () => stateDir
+        }
+      },
+      pluginConfig: {
+        controlPlaneEndpoint: "https://api.zhihand.com"
+      }
+    } as any);
+
+    assert.equal(reconciled?.status, "claimed");
+    assert.equal(reconciled?.credentialId, "crd_123");
+    assert.equal(reconciled?.controllerToken, "ctl_123");
+
+    const saved = JSON.parse(await fs.readFile(statePath, "utf8"));
+    assert.equal(saved.pairing.status, "claimed");
+    assert.equal(saved.pairing.credentialId, "crd_123");
+    assert.equal(saved.pairing.controllerToken, "ctl_123");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(stateDir, { recursive: true, force: true });
+  }
 });

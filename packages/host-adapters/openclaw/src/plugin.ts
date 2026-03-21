@@ -428,6 +428,17 @@ function createPromptRelayService(api: OpenClawPluginApi) {
   };
 }
 
+export async function reconcilePairingState(
+  api: OpenClawPluginApi
+): Promise<StoredPairingState | null> {
+  const stateDir = api.runtime.state.resolveStateDir();
+  const state = await loadState(stateDir);
+  if (!state.pairing) {
+    return null;
+  }
+  return await refreshPairingSession(api, state);
+}
+
 function getPromptRelayRuntime(): PromptRelayRuntime {
   const registry = globalThis as typeof globalThis & {
     [RELAY_RUNTIME_KEY]?: PromptRelayRuntime;
@@ -630,12 +641,10 @@ async function getClaimedPairingForRelay(api: OpenClawPluginApi): Promise<Stored
   const stateDir = api.runtime.state.resolveStateDir();
   const statePath = resolveStatePath(stateDir);
   const state = await loadState(stateDir);
-  if (!state.pairing || !state.pairing.controllerToken) {
+  if (!state.pairing) {
     logRelayIdleOnce(
       api,
-      state.pairing
-        ? `ZhiHand prompt relay waiting for a claimed pairing in ${statePath}.`
-        : `ZhiHand prompt relay waiting for local pairing state in ${statePath}.`
+      `ZhiHand prompt relay waiting for local pairing state in ${statePath}.`
     );
     return null;
   }
@@ -921,6 +930,7 @@ async function refreshPairingSession(
   );
   state.pairing = {
     ...pairing,
+    controllerToken: session.controller_token ?? pairing.controllerToken,
     edgeId: session.edge_id,
     edgeHost: session.edge_host,
     pairUrl: session.pair_url,
@@ -929,7 +939,11 @@ async function refreshPairingSession(
     status: session.status,
     expiresAt: session.expires_at
   };
-  if (state.pairing.status === "claimed" && state.pairing.controllerToken && state.pairing.edgeId) {
+  if (
+    state.pairing.controllerToken &&
+    state.pairing.edgeId &&
+    (state.pairing.status === "claimed" || !state.pairing.credentialId)
+  ) {
     const recovered = await tryRecoverLatestClaimedPairing(api, state.pairing);
     if (recovered) {
       state.pairing = recovered;
