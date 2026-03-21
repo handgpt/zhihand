@@ -7,6 +7,7 @@ import path from "node:path";
 import register, {
   formatPairingCommandText,
   hasZhiHandToolBinding,
+  isGatewayResponsesReadyStatus,
   reconcilePairingState,
   resolveGatewayAuthToken
 } from "./plugin.ts";
@@ -92,6 +93,16 @@ test("hasZhiHandToolBinding recognizes global and agent-scoped tool allowlists",
     ),
     false
   );
+});
+
+test("isGatewayResponsesReadyStatus treats schema/auth failures differently from route failures", () => {
+  assert.equal(isGatewayResponsesReadyStatus(200), true);
+  assert.equal(isGatewayResponsesReadyStatus(400), true);
+  assert.equal(isGatewayResponsesReadyStatus(422), true);
+  assert.equal(isGatewayResponsesReadyStatus(401), false);
+  assert.equal(isGatewayResponsesReadyStatus(403), false);
+  assert.equal(isGatewayResponsesReadyStatus(404), false);
+  assert.equal(isGatewayResponsesReadyStatus(500), false);
 });
 
 test("register exposes update help in the slash command", async () => {

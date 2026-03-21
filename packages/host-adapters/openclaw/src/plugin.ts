@@ -12,6 +12,7 @@ import {
   getPairingSession,
   getLatestClaimedPairingSession,
   registerPlugin,
+  updateBrainStatus,
   type ControlPlaneStreamEvent,
   type DeviceProfileRecord,
   type MobilePromptRecord,
@@ -89,6 +90,7 @@ const PROMPT_RELAY_IDLE_MS = 1_500;
 const PROMPT_RELAY_ERROR_MS = 3_000;
 const PROMPT_RELAY_MAX_ERROR_MS = 30_000;
 const PROMPT_CANCEL_POLL_MS = 500;
+const BRAIN_STATUS_HEARTBEAT_MS = 15_000;
 const CONTROL_SETTLE_MS = 2_000;
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
 const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
@@ -107,8 +109,15 @@ type PromptRelayRuntime = {
   streamAbortController: AbortController | null;
 };
 
+type ReportedBrainStatusState = {
+  pairing: StoredPairingState;
+  pluginOnline: boolean;
+  reportedAtMs: number;
+};
+
 let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
+let lastReportedBrainStatus: ReportedBrainStatusState | null = null;
 
 export default function register(api: OpenClawPluginApi) {
   api.registerService(createPluginUpdateService(api));
@@ -483,29 +492,48 @@ async function runPromptRelayLoop(
     try {
       const active = await getClaimedPairingForRelay(api);
       if (!active) {
+        await reportBrainOfflineIfNeeded(api);
         await sleep(PROMPT_RELAY_IDLE_MS);
         continue;
       }
+      await ensureGatewayResponsesReady(api);
       lastRelayIdleReason = "";
       consecutiveFailures = 0;
       const runtime = getPromptRelayRuntime();
-      runtime.streamAbortController = new AbortController();
-      await collectCredentialEvents(
-        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
-        {
-          credentialId: active.credentialId,
-          controllerToken: active.controllerToken,
-          topics: ["prompts"],
-          signal: runtime.streamAbortController.signal
-        },
-        async (event) => {
-          if (isStopped()) {
-            return;
+      const streamAbortController = new AbortController();
+      runtime.streamAbortController = streamAbortController;
+      let heartbeatPromise: Promise<void> | null = null;
+      let streamEstablished = false;
+      try {
+        await collectCredentialEvents(
+          { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+          {
+            credentialId: active.credentialId,
+            controllerToken: active.controllerToken,
+            topics: ["prompts"],
+            signal: streamAbortController.signal,
+            onOpen: () => {
+              streamEstablished = true;
+              heartbeatPromise = runBrainStatusHeartbeat(api, active, streamAbortController.signal);
+            }
+          },
+          async (event) => {
+            if (isStopped()) {
+              return;
+            }
+            await handleRelayStreamEvent(api, active, event);
           }
-          await handleRelayStreamEvent(api, active, event);
+        );
+      } finally {
+        streamAbortController.abort();
+        runtime.streamAbortController = null;
+        if (heartbeatPromise) {
+          await heartbeatPromise.catch(() => undefined);
         }
-      );
-      runtime.streamAbortController = null;
+        if (streamEstablished) {
+          await reportBrainStatus(api, active, false, true);
+        }
+      }
     } catch (error) {
       if (isStopped() && isAbortError(error)) {
         return;
@@ -520,6 +548,78 @@ async function runPromptRelayLoop(
       await sleep(delayMs);
     }
   }
+
+  await reportBrainOfflineIfNeeded(api);
+}
+
+async function runBrainStatusHeartbeat(
+  api: OpenClawPluginApi,
+  pairing: StoredPairingState,
+  signal: AbortSignal
+): Promise<void> {
+  await reportBrainStatus(api, pairing, true, true);
+  while (!signal.aborted) {
+    await sleep(BRAIN_STATUS_HEARTBEAT_MS);
+    if (signal.aborted) {
+      break;
+    }
+    await reportBrainStatus(api, pairing, true, true);
+  }
+}
+
+function samePairingIdentity(left: StoredPairingState, right: StoredPairingState): boolean {
+  return (
+    left.credentialId === right.credentialId &&
+    left.controllerToken === right.controllerToken &&
+    left.edgeId === right.edgeId
+  );
+}
+
+async function reportBrainStatus(
+  api: OpenClawPluginApi,
+  pairing: StoredPairingState,
+  pluginOnline: boolean,
+  force: boolean = false
+): Promise<void> {
+  const lastReported = lastReportedBrainStatus;
+  const now = Date.now();
+  const sameIdentity = lastReported ? samePairingIdentity(lastReported.pairing, pairing) : false;
+  const sameState = sameIdentity && lastReported?.pluginOnline === pluginOnline;
+  if (pluginOnline && lastReported?.pluginOnline && !sameIdentity) {
+    await reportBrainStatus(api, lastReported.pairing, false, true);
+  }
+  if (!force && sameState) {
+    return;
+  }
+  if (
+    pluginOnline &&
+    sameState &&
+    lastReported &&
+    now-lastReported.reportedAtMs < BRAIN_STATUS_HEARTBEAT_MS
+  ) {
+    return;
+  }
+  await updateBrainStatus(
+    { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+    {
+      credentialId: pairing.credentialId,
+      controllerToken: pairing.controllerToken,
+      pluginOnline
+    }
+  );
+  lastReportedBrainStatus = {
+    pairing,
+    pluginOnline,
+    reportedAtMs: now
+  };
+}
+
+async function reportBrainOfflineIfNeeded(api: OpenClawPluginApi): Promise<void> {
+  const lastReported = lastReportedBrainStatus;
+  if (!lastReported || !lastReported.pluginOnline) {
+    return;
+  }
+  await reportBrainStatus(api, lastReported.pairing, false, true);
 }
 
 async function handleRelayStreamEvent(
@@ -1044,6 +1144,46 @@ export function hasZhiHandToolBinding(config: unknown, agentId: string): boolean
     return true;
   }
   return allowlistEnablesZhiHand(typed.tools?.allow);
+}
+
+export function isGatewayResponsesReadyStatus(status: number): boolean {
+  return (status >= 200 && status < 300) || status === 400 || status === 405 || status === 422;
+}
+
+async function ensureGatewayResponsesReady(api: OpenClawPluginApi): Promise<void> {
+  const endpoint = resolveGatewayResponsesEndpoint(api);
+  const authToken = resolveGatewayAuthToken(api);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        "content-type": "application/json"
+      },
+      body: "{}"
+    });
+  } catch (error) {
+    throw new Error(
+      `ZhiHand local relay preflight failed for ${endpoint}: ${errorMessage(error)}`
+    );
+  }
+  if (isGatewayResponsesReadyStatus(response.status)) {
+    return;
+  }
+  if (response.status === 404) {
+    throw new Error(
+      "OpenClaw /v1/responses returned 404 during relay preflight. Enable gateway.http.endpoints.responses.enabled and restart the gateway."
+    );
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(
+      "OpenClaw /v1/responses rejected the configured gatewayAuthToken during relay preflight."
+    );
+  }
+  throw new Error(
+    `OpenClaw /v1/responses returned ${response.status} during relay preflight.`
+  );
 }
 
 function warnIfToolBindingsMissing(api: OpenClawPluginApi): void {

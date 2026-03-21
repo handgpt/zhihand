@@ -230,6 +230,14 @@ export type DeviceProfileRecord = {
   attributes: Record<string, unknown>;
 };
 
+export type BrainStatusRecord = {
+  credential_id: string;
+  edge_id: string;
+  edge_host: string;
+  plugin_online: boolean;
+  checked_at?: string;
+};
+
 export type ControlPlaneStreamEvent = {
   id: string;
   topic: string;
@@ -242,6 +250,7 @@ export type ControlPlaneStreamEvent = {
   prompt?: MobilePromptRecord;
   reply?: MobileReplyRecord;
   device_profile?: DeviceProfileRecord;
+  brain_status?: BrainStatusRecord;
 };
 
 export type ListPendingPromptsInput = {
@@ -307,6 +316,13 @@ export type CollectCredentialEventsInput = {
   topics: string[];
   afterSequence?: number;
   signal?: AbortSignal;
+  onOpen?: () => Promise<void> | void;
+};
+
+export type UpdateBrainStatusInput = {
+  credentialId: string;
+  controllerToken: string;
+  pluginOnline: boolean;
 };
 
 export type GetCommandInput = {
@@ -812,6 +828,29 @@ export async function getDeviceProfile(
   return payload.profile;
 }
 
+export async function updateBrainStatus(
+  config: ZhiHandPluginConfig,
+  input: UpdateBrainStatusInput,
+  fetchImpl: FetchLike = fetch
+): Promise<BrainStatusRecord> {
+  const payload = await requestJSON<{ brain_status: BrainStatusRecord }>({
+    baseURL: resolveControlPlaneEndpoint(config),
+    fetchImpl,
+    timeoutMs: config.timeoutMs,
+    path: `/v1/credentials/${encodeURIComponent(input.credentialId)}/brain-status`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({
+        plugin_online: input.pluginOnline
+      }),
+      headers: {
+        "x-zhihand-controller-token": input.controllerToken
+      }
+    }
+  });
+  return payload.brain_status;
+}
+
 export async function collectCredentialEvents(
   config: ZhiHandPluginConfig,
   input: CollectCredentialEventsInput,
@@ -855,6 +894,10 @@ export async function collectCredentialEvents(
   }
   if (!response.body) {
     throw new Error("Event stream returned an empty body.");
+  }
+
+  if (input.onOpen) {
+    await input.onOpen();
   }
 
   const reader = response.body.getReader();
