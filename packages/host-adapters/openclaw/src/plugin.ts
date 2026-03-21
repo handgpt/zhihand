@@ -396,6 +396,17 @@ function createPromptRelayService(api: OpenClawPluginApi) {
   return {
     id: "mobile-prompt-relay",
     start: async () => {
+      void reconcilePairingState(api)
+        .then((pairing) => {
+          if (pairing?.status === "claimed" && pairing.credentialId) {
+            api.logger.info?.(
+              `ZhiHand prompt relay reconciled pairing ${pairing.sessionId} -> ${pairing.credentialId} during startup.`
+            );
+          }
+        })
+        .catch((error) => {
+          api.logger.warn?.(`ZhiHand startup pairing reconcile failed: ${errorMessage(error)}`);
+        });
       ensurePromptRelayStarted(api);
     },
     stop: async () => {
