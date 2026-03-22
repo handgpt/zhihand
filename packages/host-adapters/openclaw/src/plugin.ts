@@ -557,13 +557,13 @@ async function runBrainStatusHeartbeat(
   pairing: StoredPairingState,
   signal: AbortSignal
 ): Promise<void> {
-  await reportBrainStatus(api, pairing, true, true);
+  await reportBrainStatusSafely(api, pairing, true, true);
   while (!signal.aborted) {
     await sleep(BRAIN_STATUS_HEARTBEAT_MS);
     if (signal.aborted) {
       break;
     }
-    await reportBrainStatus(api, pairing, true, true);
+    await reportBrainStatusSafely(api, pairing, true, true);
   }
 }
 
@@ -619,7 +619,22 @@ async function reportBrainOfflineIfNeeded(api: OpenClawPluginApi): Promise<void>
   if (!lastReported || !lastReported.pluginOnline) {
     return;
   }
-  await reportBrainStatus(api, lastReported.pairing, false, true);
+  await reportBrainStatusSafely(api, lastReported.pairing, false, true);
+}
+
+async function reportBrainStatusSafely(
+  api: OpenClawPluginApi,
+  pairing: StoredPairingState,
+  pluginOnline: boolean,
+  force: boolean = false
+): Promise<void> {
+  try {
+    await reportBrainStatus(api, pairing, pluginOnline, force);
+  } catch (error) {
+    api.logger.warn?.(
+      `ZhiHand brain heartbeat ${pluginOnline ? "online" : "offline"} update failed: ${errorMessage(error)}`
+    );
+  }
 }
 
 async function handleRelayStreamEvent(
