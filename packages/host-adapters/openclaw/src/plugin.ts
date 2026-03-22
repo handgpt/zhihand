@@ -91,6 +91,7 @@ const PROMPT_RELAY_ERROR_MS = 3_000;
 const PROMPT_RELAY_MAX_ERROR_MS = 30_000;
 const PROMPT_CANCEL_POLL_MS = 500;
 const BRAIN_STATUS_HEARTBEAT_MS = 15_000;
+const PAIRING_RECONCILE_POLL_MS = 3_000;
 const CONTROL_SETTLE_MS = 2_000;
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
 const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
@@ -114,6 +115,11 @@ type ReportedBrainStatusState = {
   pluginOnline: boolean;
   reportedAtMs: number;
 };
+
+type ActivePairingTransition =
+  | { kind: "keep" }
+  | { kind: "stop"; reason: string }
+  | { kind: "switch"; next: StoredPairingState; reason: string };
 
 let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
@@ -503,6 +509,7 @@ async function runPromptRelayLoop(
       const streamAbortController = new AbortController();
       runtime.streamAbortController = streamAbortController;
       let heartbeatPromise: Promise<void> | null = null;
+      let pairingReconcilePromise: Promise<void> | null = null;
       let streamEstablished = false;
       try {
         await collectCredentialEvents(
@@ -515,6 +522,12 @@ async function runPromptRelayLoop(
             onOpen: () => {
               streamEstablished = true;
               heartbeatPromise = runBrainStatusHeartbeat(api, active, streamAbortController.signal);
+              pairingReconcilePromise = watchActivePairingReconcile(
+                api,
+                active,
+                streamAbortController.signal,
+                streamAbortController
+              );
             }
           },
           async (event) => {
@@ -529,6 +542,9 @@ async function runPromptRelayLoop(
         runtime.streamAbortController = null;
         if (heartbeatPromise) {
           await heartbeatPromise.catch(() => undefined);
+        }
+        if (pairingReconcilePromise) {
+          await pairingReconcilePromise.catch(() => undefined);
         }
         if (streamEstablished) {
           await reportBrainStatus(api, active, false, true);
@@ -564,6 +580,55 @@ async function runBrainStatusHeartbeat(
       break;
     }
     await reportBrainStatusSafely(api, pairing, true, true);
+  }
+}
+
+export function resolveActivePairingTransition(
+  active: StoredPairingState,
+  latest: StoredPairingState | null
+): ActivePairingTransition {
+  if (!latest) {
+    return {
+      kind: "stop",
+      reason: "pairing state was cleared"
+    };
+  }
+  if (latest.status !== "claimed" || !latest.credentialId || !latest.controllerToken) {
+    return { kind: "keep" };
+  }
+  if (samePairingIdentity(active, latest)) {
+    return { kind: "keep" };
+  }
+  return {
+    kind: "switch",
+    next: latest,
+    reason: `pairing advanced to ${latest.sessionId}/${latest.credentialId}`
+  };
+}
+
+async function watchActivePairingReconcile(
+  api: OpenClawPluginApi,
+  active: StoredPairingState,
+  signal: AbortSignal,
+  abortController: AbortController
+): Promise<void> {
+  while (!signal.aborted) {
+    await sleep(PAIRING_RECONCILE_POLL_MS);
+    if (signal.aborted) {
+      break;
+    }
+    try {
+      const latest = await reconcilePairingState(api);
+      const transition = resolveActivePairingTransition(active, latest);
+      if (transition.kind === "keep") {
+        continue;
+      }
+      api.logger.info?.(`ZhiHand prompt relay ${transition.reason}; restarting relay stream.`);
+      abortController.abort();
+      return;
+    } catch (error) {
+      api.logger.warn?.(`ZhiHand pairing reconcile watcher failed: ${errorMessage(error)}`);
+    }
   }
 }
 
@@ -880,6 +945,7 @@ async function handleUnpairCommand(api: OpenClawPluginApi): Promise<{ text: stri
   const stateDir = api.runtime.state.resolveStateDir();
   const state = await loadState(stateDir);
   await saveState(stateDir, { plugin: state.plugin });
+  getPromptRelayRuntime().streamAbortController?.abort();
   return {
     text: "ZhiHand pairing state cleared. Generate a new QR with /zhihand pair when needed."
   };

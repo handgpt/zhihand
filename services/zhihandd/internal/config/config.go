@@ -19,7 +19,7 @@ func FromEnv() Config {
 	return Config{
 		HTTPAddr:        envOrDefault("ZHIHAND_HTTP_ADDR", ":8787"),
 		ServiceName:     envOrDefault("ZHIHAND_SERVICE_NAME", "zhihandd"),
-		Version:         envOrDefault("ZHIHAND_VERSION", "0.9.10-dev"),
+		Version:         envOrDefault("ZHIHAND_VERSION", "0.9.14-dev"),
 		ProtocolVersion: envOrDefault("ZHIHAND_PROTOCOL_VERSION", "zhihand.control.v1"),
 		AuthToken:       strings.TrimSpace(os.Getenv("ZHIHAND_AUTH_TOKEN")),
 		EventLimit:      envOrDefaultInt("ZHIHAND_EVENT_LIMIT", 512),

@@ -9,6 +9,7 @@ import register, {
   hasZhiHandToolBinding,
   isGatewayResponsesReadyStatus,
   reconcilePairingState,
+  resolveActivePairingTransition,
   resolveGatewayAuthToken
 } from "./plugin.ts";
 
@@ -335,5 +336,83 @@ test("reconcilePairingState stores controller token returned by the claimed sess
   } finally {
     globalThis.fetch = originalFetch;
     await fs.rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveActivePairingTransition keeps the current relay for pending replacement sessions", () => {
+  const active = {
+    sessionId: "prs_old",
+    controllerToken: "ctl_old",
+    edgeId: "edge_123",
+    edgeHost: "edge_123.edge.zhihand.com",
+    pairUrl: "https://pair.example.com/old",
+    qrPayload: "old",
+    credentialId: "crd_old",
+    status: "claimed",
+    expiresAt: "2026-03-22T00:00:00Z"
+  };
+  const latest = {
+    sessionId: "prs_new",
+    controllerToken: "ctl_new",
+    edgeId: "edge_123",
+    edgeHost: "edge_123.edge.zhihand.com",
+    pairUrl: "https://pair.example.com/new",
+    qrPayload: "new",
+    status: "pending",
+    expiresAt: "2026-03-22T00:00:00Z"
+  };
+
+  assert.deepEqual(resolveActivePairingTransition(active, latest), { kind: "keep" });
+});
+
+test("resolveActivePairingTransition switches when a newer claimed credential appears", () => {
+  const active = {
+    sessionId: "prs_old",
+    controllerToken: "ctl_old",
+    edgeId: "edge_123",
+    edgeHost: "edge_123.edge.zhihand.com",
+    pairUrl: "https://pair.example.com/old",
+    qrPayload: "old",
+    credentialId: "crd_old",
+    status: "claimed",
+    expiresAt: "2026-03-22T00:00:00Z"
+  };
+  const latest = {
+    sessionId: "prs_new",
+    controllerToken: "ctl_new",
+    edgeId: "edge_123",
+    edgeHost: "edge_123.edge.zhihand.com",
+    pairUrl: "https://pair.example.com/new",
+    qrPayload: "new",
+    credentialId: "crd_new",
+    status: "claimed",
+    expiresAt: "2026-03-22T00:00:00Z"
+  };
+
+  const transition = resolveActivePairingTransition(active, latest);
+  assert.equal(transition.kind, "switch");
+  if (transition.kind === "switch") {
+    assert.equal(transition.next.credentialId, "crd_new");
+    assert.match(transition.reason, /pairing advanced/);
+  }
+});
+
+test("resolveActivePairingTransition stops when pairing state is cleared", () => {
+  const active = {
+    sessionId: "prs_old",
+    controllerToken: "ctl_old",
+    edgeId: "edge_123",
+    edgeHost: "edge_123.edge.zhihand.com",
+    pairUrl: "https://pair.example.com/old",
+    qrPayload: "old",
+    credentialId: "crd_old",
+    status: "claimed",
+    expiresAt: "2026-03-22T00:00:00Z"
+  };
+
+  const transition = resolveActivePairingTransition(active, null);
+  assert.equal(transition.kind, "stop");
+  if (transition.kind === "stop") {
+    assert.match(transition.reason, /cleared/);
   }
 });
