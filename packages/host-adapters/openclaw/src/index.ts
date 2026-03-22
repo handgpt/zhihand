@@ -325,6 +325,12 @@ export type UpdateBrainStatusInput = {
   pluginOnline: boolean;
 };
 
+export type RevokeCredentialInput = {
+  credentialId: string;
+  controllerToken: string;
+  reason?: string;
+};
+
 export type GetCommandInput = {
   credentialId: string;
   controllerToken: string;
@@ -849,6 +855,26 @@ export async function updateBrainStatus(
     }
   });
   return payload.brain_status;
+}
+
+export async function revokeCredential(
+  config: ZhiHandPluginConfig,
+  input: RevokeCredentialInput,
+  fetchImpl: FetchLike = fetch
+): Promise<void> {
+  await requestJSON<{ credential: { credential_id?: string } }>({
+    baseURL: resolveControlPlaneEndpoint(config),
+    fetchImpl,
+    timeoutMs: config.timeoutMs,
+    path: `/v1/credentials/${encodeURIComponent(input.credentialId)}/revoke`,
+    init: {
+      method: "POST",
+      body: JSON.stringify({
+        controller_token: input.controllerToken,
+        reason: input.reason
+      })
+    }
+  });
 }
 
 export async function collectCredentialEvents(

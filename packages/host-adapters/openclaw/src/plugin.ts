@@ -12,6 +12,7 @@ import {
   getPairingSession,
   getLatestClaimedPairingSession,
   registerPlugin,
+  revokeCredential,
   updateBrainStatus,
   type ControlPlaneStreamEvent,
   type DeviceProfileRecord,
@@ -944,6 +945,21 @@ async function handleUpdateCommand(
 async function handleUnpairCommand(api: OpenClawPluginApi): Promise<{ text: string }> {
   const stateDir = api.runtime.state.resolveStateDir();
   const state = await loadState(stateDir);
+  const pairing = state.pairing;
+  if (pairing?.status === "claimed" && pairing.credentialId && pairing.controllerToken) {
+    try {
+      await revokeCredential(
+        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+        {
+          credentialId: pairing.credentialId,
+          controllerToken: pairing.controllerToken,
+          reason: "unpaired by OpenClaw host"
+        }
+      );
+    } catch (error) {
+      api.runtime.log.warn(`Failed to revoke ZhiHand credential before unpair: ${formatError(error)}`);
+    }
+  }
   await saveState(stateDir, { plugin: state.plugin });
   getPromptRelayRuntime().streamAbortController?.abort();
   return {
