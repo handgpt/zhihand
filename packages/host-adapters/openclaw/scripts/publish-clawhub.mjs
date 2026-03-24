@@ -87,6 +87,7 @@ const packPath = path.join(packageRoot, packFilename);
 const tempRoot = mkdtempSync(path.join(os.tmpdir(), "zhihand-clawhub-publish-"));
 const extractRoot = path.join(tempRoot, "extract");
 const stagedRoot = path.join(extractRoot, "package");
+let publishExitCode = 1;
 const publishArgs = [
   "package",
   "publish",
@@ -134,11 +135,13 @@ try {
     }
     throw publishResult.error;
   }
-  process.exit(publishResult.status ?? 0);
+  publishExitCode = publishResult.status ?? 0;
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
   rmSync(packPath, { force: true });
 }
+
+process.exit(publishExitCode);
 
 function normalizeGitHubRepo(url) {
   if (!url) {
