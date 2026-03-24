@@ -15,7 +15,13 @@
 1. 安装 Android App
 2. 安装 OpenClaw 插件
 
-正式安装命令：
+推荐安装命令：
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+兼容 npm fallback：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
@@ -24,13 +30,13 @@ openclaw plugins install @zhihand/openclaw
 然后把插件 id 加进 OpenClaw allowlist：
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 然后把智手®插件工具开放给 OpenClaw agent 运行时：
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 然后把当前 OpenClaw gateway token 写进插件配置：
@@ -44,7 +50,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 然后执行：
@@ -100,7 +106,7 @@ App 负责：
 {
   "plugins": {
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {}
       }
@@ -131,9 +137,9 @@ App 负责：
 - `mobileAgentId`
   专门处理手机提示词的 OpenClaw agent id
 - `updateCheckEnabled`
-  是否在启动时自动检查 npm 已发布更新
+  是否在启动时自动检查 npm 兼容包的已发布更新
 - `updateCheckIntervalHours`
-  两次自动 npm 更新检查之间的最小小时数
+  两次自动 npm 兼容包更新检查之间的最小小时数
 - `requestedScopes`
   写进配对描述符的权限申请列表
 
@@ -142,9 +148,9 @@ App 负责：
 ```json
 {
   "plugins": {
-    "allow": ["openclaw"],
+    "allow": ["zhihand"],
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-in-deployment"
@@ -158,24 +164,24 @@ App 负责：
 如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist 和插件 relay token：
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；如果 `tools.allow` 没有包含 `openclaw`，智手®的可选插件工具不会暴露给 agent；如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`；而如果没有打开 `gateway.http.endpoints.responses.enabled`，本地 OpenClaw `POST /v1/responses` 会返回 `404`。
+这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；如果 `tools.allow` 没有包含 `zhihand`，智手®的可选插件工具不会暴露给 agent；如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`；而如果没有打开 `gateway.http.endpoints.responses.enabled`，本地 OpenClaw `POST /v1/responses` 会返回 `404`。迁移期间仍兼容旧的 `openclaw` 配置键。
 
-插件默认也会在启动时检查 npm 是否有新的已发布版本。
+插件默认也会在启动时检查 npm 兼容包是否有新的已发布版本。
 可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
 
 推荐直接在宿主机 shell 执行：
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-`openclaw plugins install @zhihand/openclaw@<version>` 只保留给首次安装，或者删除现有扩展目录后的重装。对于已经安装的插件升级，请使用 `openclaw plugins update openclaw`。
+`openclaw plugins install clawhub:zhihand@<version>` 只保留给首次安装，或者删除现有扩展目录后的重装。兼容 npm fallback 仍可使用 `openclaw plugins install @zhihand/openclaw@<version>`。对于已经安装的插件升级，请使用 `openclaw plugins update zhihand`。
 
 ## 官方托管默认值
 
@@ -214,7 +220,7 @@ openclaw plugins update openclaw
         "id": "zhihand-mobile",
         "model": "openai-codex/gpt-5.4",
         "tools": {
-          "allow": ["openclaw"]
+          "allow": ["zhihand"]
         }
       }
     ]

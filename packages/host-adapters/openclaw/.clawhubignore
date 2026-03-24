@@ -1,0 +1,4 @@
+.clawhubignore
+package-lock.json
+scripts/
+src/**/*.test.ts

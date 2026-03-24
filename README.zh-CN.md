@@ -36,19 +36,25 @@
 安装插件：
 
 ```bash
+openclaw plugins install clawhub:zhihand
+```
+
+兼容 npm 安装方式：
+
+```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
 然后把插件 id 加进 OpenClaw allowlist：
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 然后把智手®插件工具开放给 OpenClaw agent 运行时：
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 然后把当前 OpenClaw gateway token 写进插件配置：
@@ -63,7 +69,7 @@ print(config['gateway']['auth']['token'])
 PY
 )"
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 按你的 OpenClaw 环境要求重启或重新加载后，执行：
@@ -74,16 +80,16 @@ openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND
 
 浏览器打开返回的二维码链接，再用 Android App 扫码。
 
-插件默认会在启动时检查 npm 是否有新的已发布版本。
+插件默认会在启动时检查 npm 兼容包是否有新的已发布版本。
 可以执行 `/zhihand update check` 查看最新发布版本，或执行 `/zhihand update` 输出推荐的宿主侧更新命令，再重新加载 OpenClaw。
 
 推荐直接在宿主机 shell 执行：
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-`openclaw plugins install @zhihand/openclaw@<version>` 只适用于首次安装，或者你已经删除现有扩展目录后的重装。对已经安装的插件做升级时，请使用 `openclaw plugins update openclaw`。
+`openclaw plugins install clawhub:zhihand@<version>` 只适用于首次安装，或者你已经删除现有扩展目录后的重装。兼容 npm fallback 仍可使用 `openclaw plugins install @zhihand/openclaw@<version>`。对已经安装的插件做升级时，请使用 `openclaw plugins update zhihand`。
 
 ### Android 用户
 

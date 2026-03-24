@@ -47,8 +47,9 @@ test("extractLatestVersionFromRegistryPayload prefers dist-tags latest", () => {
 test("formatAvailablePluginUpdateInstruction scopes pinned install to first install", () => {
   const text = formatAvailablePluginUpdateInstruction("0.9.4");
 
-  assert.match(text, /openclaw plugins update openclaw/);
-  assert.match(text, /only for a first install or after removing the existing extension directory/);
+  assert.match(text, /openclaw plugins update zhihand/);
+  assert.match(text, /pinned ClawHub install command only for a first install or after removing the existing extension directory/);
+  assert.match(text, /openclaw plugins install clawhub:zhihand@0.9.4/);
   assert.match(text, /openclaw plugins install @zhihand\/openclaw@0.9.4/);
 });
 
@@ -72,7 +73,7 @@ test("buildPluginUpdateStatus honors disabled auto checks", () => {
   });
 
   assert.equal(status.state, "disabled");
-  assert.match(formatPluginUpdateDetails(status), /updateCheckEnabled/);
+  assert.match(formatPluginUpdateDetails(status), /plugins\.entries\.zhihand\.config\.updateCheckEnabled/);
 });
 
 test("normalizeStoredUpdateState clears pending restart once runtime version matches", () => {

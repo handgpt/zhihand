@@ -27,7 +27,13 @@
 
 ### 2. OpenClaw 插件
 
-正式安装命令：
+推荐安装命令：
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+兼容 npm fallback：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
@@ -36,13 +42,13 @@ openclaw plugins install @zhihand/openclaw
 然后把插件 id 加进 OpenClaw 白名单：
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 然后把智手®插件工具开放给 OpenClaw agent 运行时：
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 然后把当前 OpenClaw gateway token 写进插件配置：
@@ -56,7 +62,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 这是面向普通用户的主要安装方式。
@@ -71,9 +77,9 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 1. 安装 Android App
 2. 安装 OpenClaw 插件
-3. 执行 `openclaw config set plugins.allow '["openclaw"]' --strict-json`
-4. 执行 `openclaw config set tools.allow '["openclaw"]' --strict-json`
-5. 把 `plugins.entries.openclaw.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
+3. 执行 `openclaw config set plugins.allow '["zhihand"]' --strict-json`
+4. 执行 `openclaw config set tools.allow '["zhihand"]' --strict-json`
+5. 把 `plugins.entries.zhihand.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
 6. 打开 `gateway.http.endpoints.responses.enabled`
 7. 按需要重启或重新加载 OpenClaw
 8. 执行 `/zhihand pair`
@@ -111,10 +117,27 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 - 仓库 README
 - 插件 README
+- ClawHub 列表页
 - npm 包页面
 - OpenClawDir 或其他社区插件目录
 
 不要假设所有 OpenClaw 部署都自带“插件商店界面”。
+
+## 维护者发布路径
+
+OpenClaw 适配器在 ClawHub 上发布时，使用简单包名 `zhihand`；npm 继续保留
+兼容包名 `@zhihand/openclaw`。
+
+在 `packages/host-adapters/openclaw` 目录下执行：
+
+```bash
+npm run publish:clawhub -- --changelog "..."
+```
+
+这个辅助脚本会把 ClawHub 包名固定为 `zhihand`，自动带上
+`handgpt/zhihand` 的 GitHub source metadata，并在适配器目录还有未提交改动时拒绝发布。
+如果你希望 ClawHub 的 source-linked verification 能正确定位源码，请先安装 CLI
+`npm i -g clawhub`，执行 `clawhub login`，并把对应 commit 推送出去。
 
 ## 进阶用户
 
@@ -129,14 +152,14 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 对智手®来说，推荐在首次安装后执行一次：
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 如果插件日志里出现 `ZhiHand prompt relay disabled ... gatewayAuthToken`，还要把插件 relay token 配上：
 
 ```bash
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 还需要打开插件 relay 会调用的本地 OpenResponses 端点：
@@ -148,18 +171,18 @@ openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 如果你在生产环境里希望固定依赖版本，并且这是首次安装，或者你已经删除现有扩展目录准备重装，也可以显式安装某个发布版本，再保留同样的 allowlist：
 
 ```bash
-openclaw plugins install @zhihand/openclaw@<version>
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw plugins install clawhub:zhihand@<version>
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
-插件默认会在启动时检查 npm 是否有新发布版本。
+插件默认会在启动时检查 npm 兼容包是否有新发布版本。
 如果要安装最新发布版本，可以执行 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
 
 推荐直接在宿主机 shell 执行：
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-对于已经安装的插件升级，请使用 `openclaw plugins update openclaw`。固定版本的 `openclaw plugins install @zhihand/openclaw@<version>` 属于创建式安装，只适用于首次安装或删除后重装。
+对于已经安装的插件升级，请使用 `openclaw plugins update zhihand`。固定版本的 `openclaw plugins install clawhub:zhihand@<version>` 属于创建式安装，只适用于首次安装或删除后重装。兼容 npm fallback 仍可使用 `openclaw plugins install @zhihand/openclaw@<version>`。

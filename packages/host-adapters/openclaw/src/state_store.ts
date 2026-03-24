@@ -3,6 +3,10 @@ import path from "node:path";
 import { randomInt } from "node:crypto";
 
 import type { PluginRecord } from "./index.ts";
+import {
+  LEGACY_ZHIHAND_PLUGIN_ID,
+  ZHIHAND_PLUGIN_ID
+} from "./plugin_identity.ts";
 
 export type StoredPairingState = {
   sessionId: string;
@@ -28,12 +32,21 @@ export type StoredPluginState = {
   };
 };
 
-const STATE_RELATIVE_PATH = ["plugins", "openclaw", "state.json"] as const;
+const CURRENT_STATE_RELATIVE_PATH = ["plugins", ZHIHAND_PLUGIN_ID, "state.json"] as const;
+const LEGACY_STATE_RELATIVE_PATH = ["plugins", LEGACY_ZHIHAND_PLUGIN_ID, "state.json"] as const;
 
 export async function loadState(stateDir: string): Promise<StoredPluginState> {
-  const filePath = resolveStatePath(stateDir);
   try {
-    const raw = await fs.readFile(filePath, "utf8");
+    const raw = await fs.readFile(resolveStatePath(stateDir), "utf8");
+    return JSON.parse(raw) as StoredPluginState;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  try {
+    const raw = await fs.readFile(resolveLegacyStatePath(stateDir), "utf8");
     return JSON.parse(raw) as StoredPluginState;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -52,5 +65,9 @@ export async function saveState(stateDir: string, state: StoredPluginState): Pro
 }
 
 export function resolveStatePath(stateDir: string): string {
-  return path.join(stateDir, ...STATE_RELATIVE_PATH);
+  return path.join(stateDir, ...CURRENT_STATE_RELATIVE_PATH);
+}
+
+export function resolveLegacyStatePath(stateDir: string): string {
+  return path.join(stateDir, ...LEGACY_STATE_RELATIVE_PATH);
 }

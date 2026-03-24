@@ -34,19 +34,25 @@ If you use the hosted defaults, you do not need to deploy your own server first.
 Install the plugin:
 
 ```bash
+openclaw plugins install clawhub:zhihand
+```
+
+Compatibility npm install:
+
+```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
 Then trust the plugin id in OpenClaw:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 Then allow the ZhiHand plugin tools in the OpenClaw agent runtime:
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 Then point the plugin at the current OpenClaw gateway token:
@@ -61,7 +67,7 @@ print(config['gateway']['auth']['token'])
 PY
 )"
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 Then restart or reload OpenClaw if your setup requires it, and run:
@@ -72,16 +78,16 @@ Then restart or reload OpenClaw if your setup requires it, and run:
 
 Open the returned QR URL in a browser and scan it from the Android app.
 
-The plugin checks npm for published updates during startup by default.
+The plugin checks the npm compatibility package for published updates during startup by default.
 Run `/zhihand update check` to inspect the latest published version, or `/zhihand update` to print the recommended host-side update command before restarting OpenClaw.
 
 Recommended host-side update command:
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-Use `openclaw plugins install @zhihand/openclaw@<version>` only for a first install or after removing the existing extension directory. For an installed plugin, use `openclaw plugins update openclaw`.
+Use `openclaw plugins install clawhub:zhihand@<version>` only for a first install or after removing the existing extension directory. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`. For an installed plugin, use `openclaw plugins update zhihand`.
 
 ### Android user
 

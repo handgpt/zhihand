@@ -22,6 +22,7 @@
   "keywords": [
     "zhihand",
     "openclaw",
+    "clawhub",
     "plugin",
     "android",
     "phone-control"
@@ -39,6 +40,7 @@
     "src/native_mobile_agent.ts",
     "src/openclaw_config.ts",
     "src/package_metadata.ts",
+    "src/plugin_identity.ts",
     "src/plugin.ts",
     "src/plugin_update.ts",
     "src/state_store.ts",
@@ -48,7 +50,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types src/index.test.ts src/plugin.test.ts src/plugin_update.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts"
+    "test": "node --test --experimental-strip-types src/index.test.ts src/plugin.test.ts src/plugin_update.test.ts src/native_mobile_agent.test.ts src/mobile_prompt_media.test.ts",
+    "publish:clawhub": "node ./scripts/publish-clawhub.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

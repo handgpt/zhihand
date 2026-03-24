@@ -31,8 +31,17 @@ import {
 } from "./native_mobile_agent.ts";
 import { prepareMobilePromptInput } from "./mobile_prompt_media.ts";
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
-import { tryLoadOpenClawConfig, type OpenClawConfigFile } from "./openclaw_config.ts";
+import {
+  resolveEffectivePluginConfig,
+  tryLoadOpenClawConfig,
+  type OpenClawConfigFile
+} from "./openclaw_config.ts";
 import { OPENCLAW_PACKAGE_VERSION } from "./package_metadata.ts";
+import {
+  LEGACY_ZHIHAND_PLUGIN_ID,
+  ZHIHAND_PLUGIN_ID,
+  formatPluginConfigSettingPath
+} from "./plugin_identity.ts";
 import {
   formatPluginUpdateDetails,
   formatPluginUpdateSummary,
@@ -97,7 +106,8 @@ const CONTROL_SETTLE_MS = 2_000;
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
 const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
 const ZHIHAND_OPTIONAL_TOOL_KEYS = new Set([
-  "openclaw",
+  ZHIHAND_PLUGIN_ID,
+  LEGACY_ZHIHAND_PLUGIN_ID,
   "group:plugins",
   "zhihand_pair",
   "zhihand_status",
@@ -1187,7 +1197,11 @@ async function tryRecoverLatestClaimedPairing(
 }
 
 function resolvePluginConfig(api: OpenClawPluginApi): PluginConfig {
-  return ((api.pluginConfig ?? {}) as PluginConfig);
+  return resolveEffectivePluginConfig(
+    api.pluginConfig,
+    tryLoadOpenClawConfig(),
+    [ZHIHAND_PLUGIN_ID, LEGACY_ZHIHAND_PLUGIN_ID]
+  ) as PluginConfig;
 }
 
 function resolveControlPlaneEndpoint(api: OpenClawPluginApi): string {
@@ -1219,7 +1233,7 @@ export function resolveGatewayAuthToken(api: OpenClawPluginApi): string {
   const configured = resolvePluginConfig(api).gatewayAuthToken?.trim();
   if (!configured) {
     throw new Error(
-      "ZhiHand OpenClaw plugin requires plugins.entries.openclaw.config.gatewayAuthToken for native /v1/responses relay."
+      `ZhiHand OpenClaw plugin requires ${formatPluginConfigSettingPath("gatewayAuthToken")} for native /v1/responses relay. Legacy ${formatPluginConfigSettingPath("gatewayAuthToken", LEGACY_ZHIHAND_PLUGIN_ID)} is still accepted during migration.`
     );
   }
   return configured;
@@ -1293,7 +1307,7 @@ function warnIfToolBindingsMissing(api: OpenClawPluginApi): void {
     return;
   }
   api.logger.warn?.(
-    `ZhiHand optional tools are not enabled for OpenClaw agent "${agentId}". Add tools.allow ["openclaw"] or an agents.list entry with tools.allow ["openclaw"]. Without this, mobile chat can reply but cannot use zhihand_status or zhihand_control.`
+    `ZhiHand optional tools are not enabled for OpenClaw agent "${agentId}". Add tools.allow ["${ZHIHAND_PLUGIN_ID}"] or an agents.list entry with tools.allow ["${ZHIHAND_PLUGIN_ID}"]. Legacy ["${LEGACY_ZHIHAND_PLUGIN_ID}"] is still accepted during migration. Without this, mobile chat can reply but cannot use zhihand_status or zhihand_control.`
   );
 }
 

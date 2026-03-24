@@ -12,6 +12,10 @@ import register, {
   resolveActivePairingTransition,
   resolveGatewayAuthToken
 } from "./plugin.ts";
+import {
+  resolveLegacyStatePath,
+  resolveStatePath
+} from "./state_store.ts";
 
 test("formatPairingCommandText returns clean browser-first pairing instructions", () => {
   const text = formatPairingCommandText(
@@ -38,7 +42,7 @@ test("formatPairingCommandText supports tool-oriented next steps", () => {
 test("resolveGatewayAuthToken requires explicit plugin config", () => {
   assert.throws(
     () => resolveGatewayAuthToken({ pluginConfig: {} }),
-    /plugins\.entries\.openclaw\.config\.gatewayAuthToken/
+    /plugins\.entries\.zhihand\.config\.gatewayAuthToken/
   );
 
   assert.equal(
@@ -51,7 +55,58 @@ test("resolveGatewayAuthToken requires explicit plugin config", () => {
   );
 });
 
+test("resolveGatewayAuthToken falls back to the legacy openclaw config entry", async () => {
+  const previousHome = process.env.HOME;
+  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "zhihand-plugin-config-home-"));
+  process.env.HOME = tempHome;
+  const configPath = path.join(tempHome, ".openclaw", "openclaw.json");
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      plugins: {
+        entries: {
+          openclaw: {
+            config: {
+              gatewayAuthToken: "legacy-token"
+            }
+          }
+        }
+      }
+    }),
+    "utf8"
+  );
+
+  try {
+    assert.equal(
+      resolveGatewayAuthToken({
+        pluginConfig: {}
+      }),
+      "legacy-token"
+    );
+  } finally {
+    if (previousHome == null) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    await fs.rm(tempHome, { recursive: true, force: true });
+  }
+});
+
 test("hasZhiHandToolBinding recognizes global and agent-scoped tool allowlists", () => {
+  assert.equal(
+    hasZhiHandToolBinding(
+      {
+        tools: {
+          allow: ["zhihand"]
+        }
+      },
+      "zhihand-mobile"
+    ),
+    true
+  );
+
   assert.equal(
     hasZhiHandToolBinding(
       {
@@ -135,7 +190,8 @@ test("register exposes update help in the slash command", async () => {
 
 test("reconcilePairingState upgrades stale pending local pairing from active pairing", async () => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "zhihand-openclaw-state-"));
-  const statePath = path.join(stateDir, "plugins", "openclaw", "state.json");
+  const statePath = resolveLegacyStatePath(stateDir);
+  const migratedStatePath = resolveStatePath(stateDir);
   await fs.mkdir(path.dirname(statePath), { recursive: true });
   await fs.writeFile(
     statePath,
@@ -225,7 +281,7 @@ test("reconcilePairingState upgrades stale pending local pairing from active pai
     assert.equal(reconciled?.status, "claimed");
     assert.equal(reconciled?.credentialId, "crd_123");
 
-    const saved = JSON.parse(await fs.readFile(statePath, "utf8"));
+    const saved = JSON.parse(await fs.readFile(migratedStatePath, "utf8"));
     assert.equal(saved.pairing.status, "claimed");
     assert.equal(saved.pairing.credentialId, "crd_123");
   } finally {
@@ -236,7 +292,7 @@ test("reconcilePairingState upgrades stale pending local pairing from active pai
 
 test("reconcilePairingState stores controller token returned by the claimed session", async () => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "zhihand-openclaw-state-"));
-  const statePath = path.join(stateDir, "plugins", "openclaw", "state.json");
+  const statePath = resolveStatePath(stateDir);
   await fs.mkdir(path.dirname(statePath), { recursive: true });
   await fs.writeFile(
     statePath,

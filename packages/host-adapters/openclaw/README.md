@@ -17,9 +17,9 @@ It is a thin plugin layer on top of the shared ZhiHand control-plane contract.
 The shortest working setup on a fresh OpenClaw host is:
 
 ```bash
-openclaw plugins install @zhihand/openclaw
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw plugins install clawhub:zhihand
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -29,7 +29,13 @@ print(config['gateway']['auth']['token'])
 PY
 )"
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+```
+
+Compatibility npm fallback:
+
+```bash
+openclaw plugins install @zhihand/openclaw
 ```
 
 Then restart or reload OpenClaw if your deployment requires it.
@@ -41,14 +47,21 @@ Why these steps matter:
 - `gateway.http.endpoints.responses.enabled` turns on the local OpenClaw `POST /v1/responses` route. Without it, the plugin can load and pair, but mobile prompts fail with `OpenClaw /v1/responses returned 404`.
 - `gatewayAuthToken` is required for the plugin's native relay into the local OpenClaw `POST /v1/responses` endpoint.
 - without `gatewayAuthToken`, the plugin loads but logs `ZhiHand prompt relay disabled... gatewayAuthToken` and mobile prompts do not reach the local runtime.
+- legacy `openclaw` config paths are still accepted during migration, but new installs should use `zhihand`.
 
 If you already know your gateway token, you can set it directly:
 
 ```bash
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 If you prefer pinned installs for supply-chain stability on a first install, or after deleting the existing extension directory for a reinstall, install an exact published version:
+
+```bash
+openclaw plugins install clawhub:zhihand@<version>
+```
+
+Compatibility npm fallback:
 
 ```bash
 openclaw plugins install @zhihand/openclaw@<version>
@@ -60,9 +73,11 @@ Development fallback from a local checkout:
 openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
-Recommended discovery paths after npm publication:
+Recommended discovery paths after publication:
 
+- ClawHub listing
 - package README
+- npm compatibility package page
 - OpenClawDir or another community plugin directory
 - external catalogs when the host deployment supports them
 
@@ -73,13 +88,13 @@ Do not assume a first-party plugin store UI is the only distribution path.
 These warnings are normal during setup and tell you what is still missing:
 
 - `plugins.allow is empty`
-  Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
+  Run `openclaw config set plugins.allow '["zhihand"]' --strict-json`. Legacy `["openclaw"]` is still accepted during migration.
 - `ZhiHand optional tools are not enabled for OpenClaw agent`
-  Run `openclaw config set tools.allow '["openclaw"]' --strict-json`, or add `tools.allow: ["openclaw"]` to the dedicated mobile agent in `agents.list`.
+  Run `openclaw config set tools.allow '["zhihand"]' --strict-json`, or add `tools.allow: ["zhihand"]` to the dedicated mobile agent in `agents.list`. Legacy `["openclaw"]` is still accepted during migration.
 - `OpenClaw /v1/responses returned 404`
   Run `openclaw config set gateway.http.endpoints.responses.enabled true --strict-json`, then restart the gateway.
 - `ZhiHand prompt relay disabled ... gatewayAuthToken`
-  Set `plugins.entries.openclaw.config.gatewayAuthToken` to your current OpenClaw gateway token.
+  Set `plugins.entries.zhihand.config.gatewayAuthToken` to your current OpenClaw gateway token. Legacy `plugins.entries.openclaw.config.gatewayAuthToken` is still accepted during migration.
 
 These are OpenClaw deployment warnings, not ZhiHand plugin install failures:
 
@@ -92,9 +107,9 @@ Minimal plugin config example:
 ```json
 {
   "plugins": {
-    "allow": ["openclaw"],
+    "allow": ["zhihand"],
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-to-your-openclaw-gateway-token"
@@ -112,7 +127,7 @@ What is **not** a plugin prerequisite:
 - browser device pairing / Control UI login
 
 Those belong to the OpenClaw gateway deployment itself. ZhiHand only needs the
-current gateway token value for `plugins.entries.openclaw.config.gatewayAuthToken`;
+current gateway token value for `plugins.entries.zhihand.config.gatewayAuthToken`;
 it does not require you to set up the Control UI, browser pairing, or allowed
 origins before the plugin can load and relay prompts.
 
@@ -120,7 +135,9 @@ origins before the plugin can load and relay prompts.
 
 The plugin reads its config from:
 
-- `plugins.entries.openclaw.config`
+- `plugins.entries.zhihand.config`
+
+Legacy `plugins.entries.openclaw.config` is still accepted during migration.
 
 Supported fields:
 
@@ -148,9 +165,9 @@ Example:
 ```json
 {
   "plugins": {
-    "allow": ["openclaw"],
+    "allow": ["zhihand"],
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-in-deployment"
@@ -164,9 +181,9 @@ Example:
 CLI equivalent for the allowlist and plugin token steps:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 Advanced self-host example:
@@ -174,9 +191,9 @@ Advanced self-host example:
 ```json
 {
   "plugins": {
-    "allow": ["openclaw"],
+    "allow": ["zhihand"],
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {
           "controlPlaneEndpoint": "https://api.example.com",
@@ -238,7 +255,7 @@ Recommended deployment shape:
         "id": "zhihand-mobile",
         "model": "openai-codex/gpt-5.4",
         "tools": {
-          "allow": ["openclaw"]
+          "allow": ["zhihand"]
         }
       }
     ]
@@ -297,10 +314,39 @@ Recommended first public release:
 
 - mobile app
 - hosted `pair.zhihand.com` and `api.zhihand.com`
-- npm-published OpenClaw plugin
+- ClawHub-published OpenClaw plugin
+- npm compatibility package
 
 For non-OpenClaw hosts, publish additional thin adapters on top of the same
 control-plane contract instead of growing this package into a multi-host shell.
+
+## ClawHub Publish
+
+ClawHub publication for this adapter uses the simple package name `zhihand`.
+The npm compatibility package name remains `@zhihand/openclaw`.
+
+Publish from this folder with:
+
+```bash
+npm run publish:clawhub -- --changelog "..."
+```
+
+What the helper script does:
+
+- publishes to ClawHub as `zhihand`
+- keeps the display name as `ZhiHand`
+- links the release back to `handgpt/zhihand`
+- records `packages/host-adapters/openclaw` as the source path
+- refuses to publish while this adapter folder still has uncommitted changes
+
+Prerequisites:
+
+- install the CLI: `npm i -g clawhub`
+- log in first: `clawhub login`
+- push the commit you want ClawHub to verify before publishing
+
+This folder uses `.clawhubignore` so ClawHub uploads skip local test files and
+`package-lock.json`.
 
 ## Slash Commands
 
@@ -319,18 +365,18 @@ Open the QR URL in a browser to display the actual scannable QR page.
 
 Plugin update behavior:
 
-- on startup, the plugin checks npm for a newer published version by default
+- on startup, the plugin checks the npm compatibility package for a newer published version by default
 - `/zhihand update check` forces a fresh version lookup and prints the result
 - `/zhihand update` prints the recommended host-side update command
-- the preferred host-side update command is `openclaw plugins update openclaw`
+- the preferred host-side update command is `openclaw plugins update zhihand`
 
 Recommended host-side update command:
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-For an installed plugin, upgrade with `openclaw plugins update openclaw`. Reserve `openclaw plugins install @zhihand/openclaw@<version>` for a first install or a reinstall after removal.
+For an installed plugin, upgrade with `openclaw plugins update zhihand`. Reserve `openclaw plugins install clawhub:zhihand@<version>` for a first install or a reinstall after removal. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`.
 
 The current hosted control path is:
 
@@ -387,10 +433,12 @@ Coordinate rules:
 
 Relative to the OpenClaw state directory:
 
-- `plugins/openclaw/state.json`
+- `plugins/zhihand/state.json`
   stored pairing state for the host instance
-- `plugins/openclaw/latest-screen.jpg`
+- `plugins/zhihand/latest-screen.jpg`
   last fetched screen snapshot cache
+
+Legacy `plugins/openclaw/state.json` is still read during migration when the new path does not exist yet.
 
 The adapter may automatically advance local pairing state to the latest claimed
 session for the same host edge when the stored pairing becomes stale. This is a

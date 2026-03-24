@@ -3,8 +3,9 @@ import path from "node:path";
 
 import type { ScreenSnapshotRecord } from "./index.ts";
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
+import { ZHIHAND_PLUGIN_ID } from "./plugin_identity.ts";
 
-const SCREEN_CACHE_FILE = ["plugins", "openclaw", "latest-screen.jpg"] as const;
+const SCREEN_CACHE_FILE = ["plugins", ZHIHAND_PLUGIN_ID, "latest-screen.jpg"] as const;
 
 export async function cacheScreenSnapshot(
   api: OpenClawPluginApi,

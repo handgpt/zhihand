@@ -1,15 +1,25 @@
 import type { OpenClawPluginApi } from "./openclaw_api.ts";
 import {
+  resolveEffectivePluginConfig,
+  tryLoadOpenClawConfig
+} from "./openclaw_config.ts";
+import {
   OPENCLAW_PACKAGE_NAME,
   OPENCLAW_PACKAGE_VERSION,
   OPENCLAW_USER_AGENT
 } from "./package_metadata.ts";
+import {
+  LEGACY_ZHIHAND_PLUGIN_ID,
+  ZHIHAND_CLAWHUB_PACKAGE_NAME,
+  ZHIHAND_PLUGIN_ID,
+  formatPluginConfigSettingPath
+} from "./plugin_identity.ts";
 import { loadState, saveState, type StoredPluginState } from "./state_store.ts";
 
 const DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 24;
 const DEFAULT_NPM_REGISTRY_ORIGIN = "https://registry.npmjs.org";
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
-const HOST_UPDATE_COMMAND = "openclaw plugins update openclaw";
+const HOST_UPDATE_COMMAND = `openclaw plugins update ${ZHIHAND_PLUGIN_ID}`;
 
 export type PluginUpdateState =
   | "available"
@@ -63,6 +73,10 @@ export function buildHostUpdateCommand(): string {
 }
 
 export function buildPinnedInstallCommand(version: string): string {
+  return `openclaw plugins install clawhub:${ZHIHAND_CLAWHUB_PACKAGE_NAME}@${version}`;
+}
+
+export function buildPinnedNpmInstallCommand(version: string): string {
   return `openclaw plugins install ${OPENCLAW_PACKAGE_NAME}@${version}`;
 }
 
@@ -70,7 +84,8 @@ export function formatAvailablePluginUpdateInstruction(version: string): string 
   return [
     `ZhiHand plugin ${version} is available.`,
     `Run this on the host shell: ${buildHostUpdateCommand()}`,
-    `Use this pinned install command only for a first install or after removing the existing extension directory: ${buildPinnedInstallCommand(version)}`,
+    `Use this pinned ClawHub install command only for a first install or after removing the existing extension directory: ${buildPinnedInstallCommand(version)}`,
+    `Compatibility npm fallback: ${buildPinnedNpmInstallCommand(version)}`,
     "Then restart the OpenClaw gateway to load plugins."
   ].join("\n");
 }
@@ -230,7 +245,7 @@ export function formatPluginUpdateDetails(status: PluginUpdateStatus): string {
     lines.push("Restart the OpenClaw gateway to load the already-installed plugin version.");
   } else if (status.state === "disabled") {
     lines.push(
-      "Automatic checks are disabled by plugins.entries.openclaw.config.updateCheckEnabled."
+      `Automatic checks are disabled by ${formatPluginConfigSettingPath("updateCheckEnabled")}. Legacy ${formatPluginConfigSettingPath("updateCheckEnabled", LEGACY_ZHIHAND_PLUGIN_ID)} is still accepted during migration.`
     );
   }
 
@@ -374,17 +389,25 @@ function shouldRunRemoteCheck(api: OpenClawPluginApi, state: StoredPluginState):
 }
 
 function isUpdateCheckEnabled(api: OpenClawPluginApi): boolean {
-  const configured = api.pluginConfig?.updateCheckEnabled;
+  const configured = resolveRuntimePluginConfig(api).updateCheckEnabled;
   return configured !== false;
 }
 
 function resolveUpdateCheckIntervalMs(api: OpenClawPluginApi): number {
-  const raw = api.pluginConfig?.updateCheckIntervalHours;
+  const raw = resolveRuntimePluginConfig(api).updateCheckIntervalHours;
   if (!Number.isFinite(raw) || raw == null) {
     return DEFAULT_UPDATE_CHECK_INTERVAL_HOURS * 3_600_000;
   }
   const hours = Math.min(168, Math.max(1, Math.trunc(raw)));
   return hours * 3_600_000;
+}
+
+function resolveRuntimePluginConfig(api: OpenClawPluginApi): Record<string, unknown> {
+  return resolveEffectivePluginConfig(
+    api.pluginConfig,
+    tryLoadOpenClawConfig(),
+    [ZHIHAND_PLUGIN_ID, LEGACY_ZHIHAND_PLUGIN_ID]
+  );
 }
 
 async function fetchLatestPackageVersion(): Promise<string> {

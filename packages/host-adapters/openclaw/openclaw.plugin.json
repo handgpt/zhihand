@@ -1,5 +1,5 @@
 {
-  "id": "openclaw",
+  "id": "zhihand",
   "name": "ZhiHand",
   "description": "Pair a ZhiHand Android app, chat through OpenClaw, read the latest phone screen, and send BLE-backed control commands.",
   "skills": [
@@ -107,11 +107,11 @@
     },
     "updateCheckEnabled": {
       "label": "Update Check Enabled",
-      "help": "When true, the plugin checks npm for published updates during startup."
+      "help": "When true, the plugin checks the npm compatibility package for published updates during startup."
     },
     "updateCheckIntervalHours": {
       "label": "Update Check Interval Hours",
-      "help": "Minimum interval between automatic npm update checks."
+      "help": "Minimum interval between automatic npm compatibility update checks."
     },
     "requestedScopes": {
       "label": "Requested Scopes",

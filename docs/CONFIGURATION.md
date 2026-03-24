@@ -11,7 +11,13 @@ If you use the hosted defaults, most users only need two things:
 1. install the Android app
 2. install the OpenClaw plugin
 
-The normal install command is:
+The preferred install command is:
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+Compatibility npm fallback:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
@@ -20,13 +26,13 @@ openclaw plugins install @zhihand/openclaw
 Then add the plugin id to the OpenClaw allowlist:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 Then enable the ZhiHand plugin tools for agent runs:
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 Then set the plugin relay token from the current OpenClaw gateway token:
@@ -40,7 +46,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 Then run:
@@ -96,7 +102,7 @@ Advanced or self-hosted users can configure the plugin under:
 {
   "plugins": {
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {}
       }
@@ -127,9 +133,9 @@ Supported public config fields:
 - `mobileAgentId`
   Dedicated OpenClaw agent id for mobile prompts
 - `updateCheckEnabled`
-  Enable automatic npm update checks during startup
+  Enable automatic npm compatibility-package update checks during startup
 - `updateCheckIntervalHours`
-  Minimum number of hours between automatic npm update checks
+  Minimum number of hours between automatic npm compatibility-package update checks
 - `requestedScopes`
   Scope list embedded into the pairing descriptor
 
@@ -138,9 +144,9 @@ Public-safe example:
 ```json
 {
   "plugins": {
-    "allow": ["openclaw"],
+    "allow": ["zhihand"],
     "entries": {
-      "openclaw": {
+      "zhihand": {
         "enabled": true,
         "config": {
           "gatewayAuthToken": "set-this-in-deployment"
@@ -154,24 +160,24 @@ Public-safe example:
 If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist and plugin relay token can be set from the CLI:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, optional plugin tools stay unavailable until `tools.allow` includes `openclaw`, ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present, and the local OpenClaw `POST /v1/responses` route returns `404` until `gateway.http.endpoints.responses.enabled` is turned on.
+This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, optional plugin tools stay unavailable until `tools.allow` includes `zhihand`, ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present, and the local OpenClaw `POST /v1/responses` route returns `404` until `gateway.http.endpoints.responses.enabled` is turned on. Legacy `openclaw` config keys are still accepted during migration.
 
-By default, the plugin also checks npm for a newer published version during startup.
+By default, the plugin also checks the npm compatibility package for a newer published version during startup.
 Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.
 
 Recommended host-side update command:
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-Reserve `openclaw plugins install @zhihand/openclaw@<version>` for a first install or for a reinstall after deleting the existing extension directory. For an installed plugin, upgrade with `openclaw plugins update openclaw`.
+Reserve `openclaw plugins install clawhub:zhihand@<version>` for a first install or for a reinstall after deleting the existing extension directory. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`. For an installed plugin, upgrade with `openclaw plugins update zhihand`.
 
 ## Recommended Hosted Defaults
 
@@ -210,7 +216,7 @@ Recommended dedicated agent shape:
         "id": "zhihand-mobile",
         "model": "openai-codex/gpt-5.4",
         "tools": {
-          "allow": ["openclaw"]
+          "allow": ["zhihand"]
         }
       }
     ]

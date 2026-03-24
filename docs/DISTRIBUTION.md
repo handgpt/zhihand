@@ -25,7 +25,13 @@ The app is where the user:
 
 ### 2. OpenClaw plugin
 
-The normal install command is:
+The preferred install command is:
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+Compatibility npm fallback:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
@@ -34,13 +40,13 @@ openclaw plugins install @zhihand/openclaw
 Then add the explicit plugin allowlist entry:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
 ```
 
 Then enable the ZhiHand plugin tools for agent runs:
 
 ```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 Then point the plugin at the current OpenClaw gateway token:
@@ -54,7 +60,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
 This is the main public install path.
@@ -69,9 +75,9 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 
 1. Install the Android app.
 2. Install the OpenClaw plugin.
-3. Run `openclaw config set plugins.allow '["openclaw"]' --strict-json`.
-4. Run `openclaw config set tools.allow '["openclaw"]' --strict-json`.
-5. Set `plugins.entries.openclaw.config.gatewayAuthToken` to the current OpenClaw gateway token.
+3. Run `openclaw config set plugins.allow '["zhihand"]' --strict-json`.
+4. Run `openclaw config set tools.allow '["zhihand"]' --strict-json`.
+5. Set `plugins.entries.zhihand.config.gatewayAuthToken` to the current OpenClaw gateway token.
 6. Enable `gateway.http.endpoints.responses.enabled`.
 7. Restart or reload OpenClaw if needed.
 8. Run `/zhihand pair`.
@@ -109,10 +115,28 @@ Recommended discovery paths:
 
 - this repository README
 - the plugin README
+- ClawHub listing
 - npm package page
 - OpenClawDir or another community plugin directory
 
 Do not assume users have a built-in plugin-store UI inside every OpenClaw deployment.
+
+## Maintainer Publish Path
+
+ClawHub publication for the OpenClaw adapter uses the simple package name
+`zhihand`, while npm remains the compatibility package `@zhihand/openclaw`.
+
+From `packages/host-adapters/openclaw`, publish with:
+
+```bash
+npm run publish:clawhub -- --changelog "..."
+```
+
+The helper script fixes the ClawHub package name to `zhihand`, injects the
+GitHub source metadata for `handgpt/zhihand`, and refuses to publish while the
+adapter folder is dirty. Install the CLI with `npm i -g clawhub`, run
+`clawhub login`, and push the commit first if you want ClawHub source-linked
+verification to resolve correctly.
 
 ## For Advanced Users
 
@@ -127,14 +151,14 @@ OpenClaw warns when a non-bundled plugin is installed but `plugins.allow` is emp
 For ZhiHand, the recommended one-time trust step is:
 
 ```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
 If the plugin logs `ZhiHand prompt relay disabled ... gatewayAuthToken`, set the plugin relay token too:
 
 ```bash
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
+openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
 And enable the local OpenResponses endpoint that the plugin relays into:
@@ -146,18 +170,18 @@ openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:
 
 ```bash
-openclaw plugins install @zhihand/openclaw@<version>
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
+openclaw plugins install clawhub:zhihand@<version>
+openclaw config set plugins.allow '["zhihand"]' --strict-json
+openclaw config set tools.allow '["zhihand"]' --strict-json
 ```
 
-The plugin checks npm for published updates during startup by default.
+The plugin checks the npm compatibility package for published updates during startup by default.
 Use `/zhihand update` to print the recommended host-side update command, then reload OpenClaw.
 
 Recommended host-side update command:
 
 ```bash
-openclaw plugins update openclaw
+openclaw plugins update zhihand
 ```
 
-For an installed plugin, use `openclaw plugins update openclaw`. The pinned `openclaw plugins install @zhihand/openclaw@<version>` form is create-only and is intended for a first install or a reinstall after removal.
+For an installed plugin, use `openclaw plugins update zhihand`. The pinned `openclaw plugins install clawhub:zhihand@<version>` form is create-only and is intended for a first install or a reinstall after removal. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`.
