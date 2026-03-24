@@ -1,57 +1,49 @@
 # Distribution
 
-This page explains how ZhiHand is meant to be delivered to real users.
+This page explains the public delivery path for ZhiHand from a first-time user point of view.
 
-## The Product Shape
+## Recommended Default Path
 
-ZhiHand is easiest to use when it is delivered in three parts:
+For most users, ZhiHand should arrive as three parts:
 
 1. **ZhiHand mobile app**
 2. **Hosted ZhiHand control plane**
 3. **OpenClaw plugin**
 
-That means a new user does not need to self-host anything on day one.
+That means a new user should not need to self-host anything on day one.
 
-## What Most Users Install
+## What A New User Actually Needs
 
-### 1. ZhiHand mobile app
+### Mobile side
 
 The app is where the user:
 
 - scans the pairing QR code
 - connects `ZhiHand Device`
-- grants screen sharing when needed
-- sends requests, voice notes, and attachments
+- enables screen sharing only when needed
+- sends text, voice notes, and attachments
 
-### 2. OpenClaw plugin
+### OpenClaw side
 
-The preferred install command is:
+The preferred install path is:
 
 ```bash
 openclaw plugins install clawhub:zhihand
 ```
 
-Compatibility npm fallback:
+If ClawHub is unavailable or rate-limited in the current environment, use the npm compatibility package:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-Then add the explicit plugin allowlist entry:
+Then complete the one-time host setup:
+
+The token extraction snippet below assumes `python3` is available on the OpenClaw host. If it is not, open `~/.openclaw/openclaw.json` and copy `gateway.auth.token` manually.
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
-```
-
-Then enable the ZhiHand plugin tools for agent runs:
-
-```bash
 openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-Then point the plugin at the current OpenClaw gateway token:
-
-```bash
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -60,32 +52,56 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
-This is the main public install path.
-
-Local-path install is only for plugin development:
+Local-path install is for plugin development only:
 
 ```bash
 openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
-## First-Run User Flow
+## First Successful Run
+
+After the plugin is installed, the normal first-run flow is:
 
 1. Install the Android app.
 2. Install the OpenClaw plugin.
-3. Run `openclaw config set plugins.allow '["zhihand"]' --strict-json`.
-4. Run `openclaw config set tools.allow '["zhihand"]' --strict-json`.
-5. Set `plugins.entries.zhihand.config.gatewayAuthToken` to the current OpenClaw gateway token.
-6. Enable `gateway.http.endpoints.responses.enabled`.
-7. Restart or reload OpenClaw if needed.
+3. Add `zhihand` to `plugins.allow`.
+4. Add `zhihand` to `tools.allow`.
+5. Enable `gateway.http.endpoints.responses.enabled`.
+6. Set `plugins.entries.zhihand.config.gatewayAuthToken` to the current OpenClaw gateway token.
+7. Restart or reload OpenClaw if the deployment requires it.
 8. Run `/zhihand pair`.
 9. Open the QR URL in a browser.
 10. Scan it from the mobile app.
 11. Connect `ZhiHand Device`.
-12. Turn on `Eye` when you want ZhiHand to read the screen.
+12. Turn on `Eye` only when you want ZhiHand to read the screen.
 13. Start sending requests from the phone or from OpenClaw.
+
+## What Success Looks Like
+
+The onboarding path is working when:
+
+- `/zhihand pair` returns a QR URL
+- the app claims the pairing session
+- the device connects
+- `/zhihand status` shows the paired host is reachable
+- screen reading only starts after `Eye` is enabled
+
+## Common Setup Misses
+
+- `plugins.allow is empty`
+  Add `zhihand` to `plugins.allow`.
+- `ZhiHand optional tools are not enabled for OpenClaw agent`
+  Add `zhihand` to `tools.allow`.
+- `OpenClaw /v1/responses returned 404`
+  Enable `gateway.http.endpoints.responses.enabled`.
+- `ZhiHand prompt relay disabled ... gatewayAuthToken`
+  Set `plugins.entries.zhihand.config.gatewayAuthToken` to the current OpenClaw gateway token.
+- ClawHub install fails because the service is temporarily unavailable
+  Retry later or use `openclaw plugins install @zhihand/openclaw` as the compatibility path.
 
 ## What Runs Where
 
@@ -99,44 +115,40 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 Related implementation repos:
 
 - [Android app repository](https://github.com/handgpt/zhihand-android)
+- [iOS app repository](https://github.com/handgpt/zhihand-ios)
 - [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
 
 ## Hosted By Default
 
-The recommended first release is hosted by default:
+The public onboarding path is hosted by default:
 
-- the Android app uses the official hosted endpoints
+- the mobile app uses the official hosted endpoints
 - the OpenClaw plugin points to the official hosted control plane
-- self-hosting is optional, not required for first use
+- self-hosting is optional and should stay out of the first-run path
 
-## Discovery
+## Upgrades And Version Pinning
 
-Recommended discovery paths:
-
-- this repository README
-- the plugin README
-- ClawHub listing
-- npm package page
-- OpenClawDir or another community plugin directory
-
-Do not assume users have a built-in plugin-store UI inside every OpenClaw deployment.
-
-## Maintainer Publish Path
-
-ClawHub publication for the OpenClaw adapter uses the simple package name
-`zhihand`, while npm remains the compatibility package `@zhihand/openclaw`.
-
-From `packages/host-adapters/openclaw`, publish with:
+For installed plugins, the standard host-side update command is:
 
 ```bash
-npm run publish:clawhub -- --changelog "..."
+openclaw plugins update zhihand
 ```
 
-The helper script fixes the ClawHub package name to `zhihand`, injects the
-GitHub source metadata for `handgpt/zhihand`, and refuses to publish while the
-adapter folder is dirty. Install the CLI with `npm i -g clawhub`, run
-`clawhub login`, and push the commit first if you want ClawHub source-linked
-verification to resolve correctly.
+This remains the correct update command even if the first install used the npm compatibility package, because the runtime plugin id is still `zhihand`.
+
+If you need a pinned first install, or you removed the extension directory and are reinstalling, install the exact published version:
+
+```bash
+openclaw plugins install clawhub:zhihand@<version>
+```
+
+Compatibility npm fallback:
+
+```bash
+openclaw plugins install @zhihand/openclaw@<version>
+```
+
+The pinned `install` form is create-only. For an already installed plugin, use `openclaw plugins update zhihand`.
 
 ## For Advanced Users
 
@@ -144,44 +156,26 @@ Advanced users can still self-host by overriding the control-plane endpoint.
 
 That is an advanced deployment path, not the default onboarding path.
 
-## Recommended OpenClaw Trust Step
+## Discovery
 
-OpenClaw warns when a non-bundled plugin is installed but `plugins.allow` is empty.
+Recommended discovery paths:
 
-For ZhiHand, the recommended one-time trust step is:
+- this repository README
+- the plugin README
+- the ClawHub listing
+- the npm compatibility package page
+- OpenClawDir or another community plugin directory
 
-```bash
-openclaw config set plugins.allow '["zhihand"]' --strict-json
-openclaw config set tools.allow '["zhihand"]' --strict-json
-```
+Do not assume every OpenClaw deployment has a built-in plugin-store UI.
 
-If the plugin logs `ZhiHand prompt relay disabled ... gatewayAuthToken`, set the plugin relay token too:
+## Maintainer Publish Path
 
-```bash
-openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
-```
+ClawHub publication for the OpenClaw adapter uses the simple package name `zhihand`, while npm remains the compatibility package `@zhihand/openclaw`.
 
-And enable the local OpenResponses endpoint that the plugin relays into:
-
-```bash
-openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-```
-
-If you pin package versions in production for a first install or a reinstall after deleting the existing extension directory, install the exact published version and keep the same allowlist:
+From `packages/host-adapters/openclaw`, publish with:
 
 ```bash
-openclaw plugins install clawhub:zhihand@<version>
-openclaw config set plugins.allow '["zhihand"]' --strict-json
-openclaw config set tools.allow '["zhihand"]' --strict-json
+npm run publish:clawhub -- --changelog "..."
 ```
 
-The plugin checks the npm compatibility package for published updates during startup by default.
-Use `/zhihand update` to print the recommended host-side update command, then reload OpenClaw.
-
-Recommended host-side update command:
-
-```bash
-openclaw plugins update zhihand
-```
-
-For an installed plugin, use `openclaw plugins update zhihand`. The pinned `openclaw plugins install clawhub:zhihand@<version>` form is create-only and is intended for a first install or a reinstall after removal. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`.
+The helper script rewrites the staged ClawHub package name to `zhihand`, injects the GitHub source metadata for `handgpt/zhihand`, and refuses to publish while the adapter folder is dirty. Install the CLI with `npm i -g clawhub`, run `clawhub login`, and push the commit first if you want ClawHub source-linked verification to resolve correctly.

@@ -2,11 +2,41 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-本文定义智手®（ZhiHand）的升级探测、存放与发布机制建议。
+本文说明智手®的升级机制，以及普通用户真正需要关心什么。
+
+## 普通用户最需要知道的事
+
+智手®有 3 条不同的升级面：
+
+- **OpenClaw 插件**
+  在宿主机上执行 `openclaw plugins update zhihand`。
+- **Android App**
+  通过 App manifest 和 APK 下载路径升级。
+- **设备固件**
+  由移动端 App 在 `ZhiHand Device` 连接时完成升级。
+
+普通首次安装路径仍然是：
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+如果 ClawHub 暂时不可用或遇到限流，可以改用 npm 兼容包：
+
+```bash
+openclaw plugins install @zhihand/openclaw
+```
+
+对已经安装好的插件，使用：
+
+```bash
+openclaw plugins update zhihand
+```
 
 ## 目标
 
 - 让 Android App 升级与设备固件升级都通过稳定、机器可读的 manifest 探测。
+- 让 OpenClaw 插件升级对普通用户和运维方都足够可预测。
 - 将控制面 API 与大体积升级包解耦。
 - 让升级检查足够轻量、可缓存，并支持分渠道发布。
 - 在安装或刷写前，对每个升级包做完整性校验。
@@ -14,16 +44,26 @@
 ## 职责边界
 
 - `zhihand-server`
-  - 负责 pairing、prompt、reply、command、screen 等控制面状态。
-  - 长期不建议承担升级包分发主角色。
+  协调 pairing、prompt、reply、command、screen 等控制面状态。
+  长期不建议承担升级包分发主角色。
 - 静态更新源
-  - 提供不可变 APK、固件二进制和小型 JSON manifest。
-  - 最佳实践是对象存储 + CDN；Phase 1 可以先用 nginx 静态托管。
+  提供不可变 APK、固件二进制和小型 JSON manifest。
+  最佳实践是对象存储 + CDN；Phase 1 可以先用 nginx 静态托管。
 - Android App
-  - 拉取 manifest、下载升级包、校验、安装或刷写。
+  拉取 manifest、下载升级包、校验、安装或刷写。
 - 固件
-  - 通过 BLE 暴露当前硬件版本和固件版本。
-  - 只接收经过 App 校验的 OTA 二进制。
+  通过 BLE 暴露当前硬件版本和固件版本。
+  只接收经过 App 校验的 OTA 二进制。
+
+## 插件升级规则
+
+- 推荐首次安装：`openclaw plugins install clawhub:zhihand`
+- 兼容首次安装：`openclaw plugins install @zhihand/openclaw`
+- 已安装插件升级：`openclaw plugins update zhihand`
+- 固定版本首次安装或删除后重装：`openclaw plugins install clawhub:zhihand@<version>`
+- 固定版本 npm 兼容路径：`openclaw plugins install @zhihand/openclaw@<version>`
+
+带 `@<version>` 的 `install` 只适用于创建式场景。对已经装好的插件，最佳实践是 `openclaw plugins update zhihand`。
 
 ## 生产环境存放模型
 
@@ -105,11 +145,11 @@ https://updates.zhihand.com/device/zhihand-device-1.0.1.bin
 ## 发布渠道
 
 - `stable`
-  - 默认用户渠道。
+  默认用户渠道。
 - `beta`
-  - 自愿加入的测试渠道。
+  自愿加入的测试渠道。
 - `internal`
-  - 开发和联调用渠道。
+  开发或联调用渠道。
 
 建议发布顺序：
 
@@ -153,5 +193,5 @@ https://api.zhihand.com/updates/device-stable.json
 
 - 将 ESP32 OTA 写 flash 从 GATT callback 线程迁移到独立 worker task。
 - 补齐 manifest 签名。
-- 为大 APK/固件包补充断点续传。
+- 为大 APK 或固件包补充断点续传。
 - 当 beta 渠道启用后，在 Android 设置中加入渠道选择。

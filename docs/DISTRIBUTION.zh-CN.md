@@ -1,31 +1,31 @@
-# 智手®（ZhiHand）如何发布
+# 智手®（ZhiHand）如何交付给用户
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-这份文档从用户角度解释：智手®应该如何交付给真实用户。
+这份文档从第一次接触智手®的用户视角，解释它应该如何被安装和交付。
 
-## 推荐的产品形态
+## 推荐的默认路径
 
-智手®最适合拆成 3 部分交付：
+对大多数用户，智手®应该以 3 部分交付：
 
 1. **Android App**
 2. **官方托管控制面**
 3. **OpenClaw 插件**
 
-这样用户第一次使用时，不需要先自建服务端。
+这意味着第一次使用时，不应该要求用户先自建服务端。
 
-## 用户实际需要安装什么
+## 新用户真正需要的东西
 
-### 1. Android App
+### 手机侧
 
 用户通过 App 完成：
 
-- 扫配对二维码
+- 扫描配对二维码
 - 连接 `ZhiHand Device`
-- 在需要时打开屏幕共享
+- 只在需要时开启屏幕共享
 - 发送文本、语音和附件
 
-### 2. OpenClaw 插件
+### OpenClaw 侧
 
 推荐安装命令：
 
@@ -33,27 +33,19 @@
 openclaw plugins install clawhub:zhihand
 ```
 
-兼容 npm fallback：
+如果当前环境里 ClawHub 暂时不可用，或者遇到限流，可以改用 npm 兼容包：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-然后把插件 id 加进 OpenClaw 白名单：
+然后完成一次性的宿主配置：
+
+下面这段取 token 的脚本默认宿主机上有 `python3`。如果没有，可以直接打开 `~/.openclaw/openclaw.json`，手动读取 `gateway.auth.token`。
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
-```
-
-然后把智手®插件工具开放给 OpenClaw agent 运行时：
-
-```bash
 openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-然后把当前 OpenClaw gateway token 写进插件配置：
-
-```bash
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -62,10 +54,9 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
-
-这是面向普通用户的主要安装方式。
 
 本地路径安装只保留给插件开发调试：
 
@@ -73,21 +64,46 @@ openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_
 openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 ```
 
-## 用户第一次使用的流程
+## 第一次成功运行的流程
+
+插件安装完成后，普通用户的流程应该是：
 
 1. 安装 Android App
 2. 安装 OpenClaw 插件
-3. 执行 `openclaw config set plugins.allow '["zhihand"]' --strict-json`
-4. 执行 `openclaw config set tools.allow '["zhihand"]' --strict-json`
-5. 把 `plugins.entries.zhihand.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
-6. 打开 `gateway.http.endpoints.responses.enabled`
-7. 按需要重启或重新加载 OpenClaw
+3. 把 `zhihand` 加到 `plugins.allow`
+4. 把 `zhihand` 加到 `tools.allow`
+5. 打开 `gateway.http.endpoints.responses.enabled`
+6. 把 `plugins.entries.zhihand.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token
+7. 如果部署要求，重启或 reload OpenClaw
 8. 执行 `/zhihand pair`
 9. 在浏览器打开返回的二维码链接
 10. 用 Android App 扫码
 11. 连接 `ZhiHand Device`
-12. 当需要读屏时，再打开 `Eye`
-13. 后续即可从手机或 OpenClaw 发起任务
+12. 只在需要读屏时打开 `Eye`
+13. 之后就可以从手机或 OpenClaw 发起任务
+
+## 成功之后你应该看到什么
+
+当下面这些条件成立时，说明首次启用流程已经走通：
+
+- `/zhihand pair` 会返回二维码链接
+- App 成功完成这次配对认领
+- 设备成功连接
+- `/zhihand status` 能看到已配对宿主可达
+- 只有在打开 `Eye` 之后，智手®才开始读屏
+
+## 常见漏配项
+
+- `plugins.allow is empty`
+  把 `zhihand` 加进 `plugins.allow`。
+- `ZhiHand optional tools are not enabled for OpenClaw agent`
+  把 `zhihand` 加进 `tools.allow`。
+- `OpenClaw /v1/responses returned 404`
+  打开 `gateway.http.endpoints.responses.enabled`。
+- `ZhiHand prompt relay disabled ... gatewayAuthToken`
+  把 `plugins.entries.zhihand.config.gatewayAuthToken` 设置为当前 OpenClaw gateway token。
+- ClawHub 安装因为服务暂时不可用而失败
+  稍后重试，或先使用 `openclaw plugins install @zhihand/openclaw` 这条兼容路径。
 
 ## 三部分分别在哪里运行
 
@@ -101,15 +117,46 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 相关实现仓库：
 
 - [zhihand-android](https://github.com/handgpt/zhihand-android)
+- [zhihand-ios](https://github.com/handgpt/zhihand-ios)
 - [zhihand-server](https://github.com/handgpt/zhihand-server)
 
 ## 默认推荐托管模式
 
-第一阶段推荐直接使用官方托管默认值：
+公共首次启用路径默认使用托管模式：
 
-- Android App 默认连接官方托管地址
+- App 默认连接官方托管地址
 - OpenClaw 插件默认连接官方托管控制面
-- 用户首次使用不需要先自建 server
+- 自托管是可选项，不该进入第一次使用流程
+
+## 升级与版本固定
+
+对已经安装好的插件，标准升级命令是：
+
+```bash
+openclaw plugins update zhihand
+```
+
+即使第一次安装走的是 npm 兼容包，后续正确的升级命令也仍然是这条，因为运行时插件 id 依然是 `zhihand`。
+
+如果你需要固定版本做首次安装，或者已经删掉扩展目录准备重装，可以安装指定版本：
+
+```bash
+openclaw plugins install clawhub:zhihand@<version>
+```
+
+兼容 npm 路径：
+
+```bash
+openclaw plugins install @zhihand/openclaw@<version>
+```
+
+固定版本的 `install` 属于创建式安装。对已经安装好的插件，应使用 `openclaw plugins update zhihand`。
+
+## 进阶用户
+
+进阶用户仍然可以通过覆盖 control-plane endpoint 做自托管。
+
+但这属于进阶部署路径，不应该成为默认首次启用流程。
 
 ## 用户如何发现它
 
@@ -118,15 +165,14 @@ openclaw plugins install --link /path/to/zhihand/packages/host-adapters/openclaw
 - 仓库 README
 - 插件 README
 - ClawHub 列表页
-- npm 包页面
+- npm 兼容包页面
 - OpenClawDir 或其他社区插件目录
 
 不要假设所有 OpenClaw 部署都自带“插件商店界面”。
 
 ## 维护者发布路径
 
-OpenClaw 适配器在 ClawHub 上发布时，使用简单包名 `zhihand`；npm 继续保留
-兼容包名 `@zhihand/openclaw`。
+OpenClaw 适配器在 ClawHub 上使用简单包名 `zhihand`；npm 继续保留兼容包名 `@zhihand/openclaw`。
 
 在 `packages/host-adapters/openclaw` 目录下执行：
 
@@ -134,55 +180,4 @@ OpenClaw 适配器在 ClawHub 上发布时，使用简单包名 `zhihand`；npm 
 npm run publish:clawhub -- --changelog "..."
 ```
 
-这个辅助脚本会把 ClawHub 包名固定为 `zhihand`，自动带上
-`handgpt/zhihand` 的 GitHub source metadata，并在适配器目录还有未提交改动时拒绝发布。
-如果你希望 ClawHub 的 source-linked verification 能正确定位源码，请先安装 CLI
-`npm i -g clawhub`，执行 `clawhub login`，并把对应 commit 推送出去。
-
-## 进阶用户
-
-如果你是进阶用户，也可以覆盖 control-plane endpoint 做自托管。
-
-但那是进阶部署路径，不应该成为默认 onboarding。
-
-## 推荐的 OpenClaw 信任步骤
-
-当安装的不是 OpenClaw 内置插件时，如果 `plugins.allow` 为空，OpenClaw 会给出 warning。
-
-对智手®来说，推荐在首次安装后执行一次：
-
-```bash
-openclaw config set plugins.allow '["zhihand"]' --strict-json
-openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-如果插件日志里出现 `ZhiHand prompt relay disabled ... gatewayAuthToken`，还要把插件 relay token 配上：
-
-```bash
-openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
-```
-
-还需要打开插件 relay 会调用的本地 OpenResponses 端点：
-
-```bash
-openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-```
-
-如果你在生产环境里希望固定依赖版本，并且这是首次安装，或者你已经删除现有扩展目录准备重装，也可以显式安装某个发布版本，再保留同样的 allowlist：
-
-```bash
-openclaw plugins install clawhub:zhihand@<version>
-openclaw config set plugins.allow '["zhihand"]' --strict-json
-openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-插件默认会在启动时检查 npm 兼容包是否有新发布版本。
-如果要安装最新发布版本，可以执行 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
-
-推荐直接在宿主机 shell 执行：
-
-```bash
-openclaw plugins update zhihand
-```
-
-对于已经安装的插件升级，请使用 `openclaw plugins update zhihand`。固定版本的 `openclaw plugins install clawhub:zhihand@<version>` 属于创建式安装，只适用于首次安装或删除后重装。兼容 npm fallback 仍可使用 `openclaw plugins install @zhihand/openclaw@<version>`。
+这个辅助脚本会把临时发布包中的 ClawHub 名称改成 `zhihand`，自动带上 `handgpt/zhihand` 的 GitHub source metadata，并在适配器目录还有未提交改动时拒绝发布。如果你希望 ClawHub 的 source-linked verification 能正确定位源码，请先安装 CLI `npm i -g clawhub`，执行 `clawhub login`，并把对应 commit 推送出去。

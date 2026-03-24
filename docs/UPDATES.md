@@ -1,27 +1,67 @@
 # Update Delivery
 
-This document defines the recommended update detection, storage, and rollout model for ZhiHand.
+This page explains how ZhiHand updates reach real users, and what a normal user actually needs to care about.
 
-## Goals
+## What Normal Users Need To Know
+
+ZhiHand has three different update surfaces:
+
+- **OpenClaw plugin**
+  Updated on the host with `openclaw plugins update zhihand`.
+- **Android app**
+  Updated from an app manifest and APK download flow.
+- **Device firmware**
+  Updated by the mobile app when `ZhiHand Device` is connected.
+
+The normal first-time install path is still:
+
+```bash
+openclaw plugins install clawhub:zhihand
+```
+
+If ClawHub is temporarily unavailable or rate-limited, use the npm compatibility package:
+
+```bash
+openclaw plugins install @zhihand/openclaw
+```
+
+For an already installed plugin, use:
+
+```bash
+openclaw plugins update zhihand
+```
+
+## Update Goals
 
 - Keep Android app updates and device firmware updates discoverable from stable, machine-readable manifests.
+- Keep OpenClaw plugin upgrades predictable for operators and ordinary users.
 - Separate control-plane APIs from large immutable update artifacts.
 - Make update checks cheap, cache-friendly, and channel-aware.
 - Ensure every installable artifact is integrity-checked before use.
 
-## Roles
+## Update Roles
 
 - `zhihand-server`
-  - Coordinates pairing, prompts, replies, commands, and screen snapshots.
-  - Does not need to serve release binaries in the long term.
+  Coordinates pairing, prompts, replies, commands, and screen snapshots.
+  It does not need to serve release binaries in the long term.
 - Static update host
-  - Serves immutable APK and firmware binaries plus small JSON manifests.
-  - Best practice is object storage plus CDN. Phase 1 can use nginx static hosting.
+  Serves immutable APK and firmware binaries plus small JSON manifests.
+  Best practice is object storage plus CDN. Phase 1 can use nginx static hosting.
 - Android app
-  - Polls manifests, downloads artifacts, verifies checksums, and installs or flashes updates.
+  Polls manifests, downloads artifacts, verifies checksums, and installs or flashes updates.
 - Firmware
-  - Exposes current hardware and firmware versions over BLE.
-  - Accepts OTA binaries only after the app has verified the manifest and artifact integrity.
+  Exposes current hardware and firmware versions over BLE.
+  Accepts OTA binaries only after the app has verified the manifest and artifact integrity.
+
+## Plugin Update Rules
+
+- Preferred first install: `openclaw plugins install clawhub:zhihand`
+- Compatibility first install: `openclaw plugins install @zhihand/openclaw`
+- Installed plugin update: `openclaw plugins update zhihand`
+- Pinned first install or reinstall after deletion: `openclaw plugins install clawhub:zhihand@<version>`
+- Pinned npm fallback: `openclaw plugins install @zhihand/openclaw@<version>`
+
+The `install ...@<version>` form is for create-only scenarios. For a plugin that is already installed, the best-practice command is `openclaw plugins update zhihand`.
 
 ## Production Storage Model
 
@@ -103,11 +143,11 @@ HTTPS plus checksum is sufficient for Phase 1 testing, but not the final trust m
 ## Rollout Model
 
 - `stable`
-  - Default channel for users.
+  Default channel for users.
 - `beta`
-  - Opt-in channel for faster validation.
+  Opt-in channel for faster validation.
 - `internal`
-  - Optional debug/testing channel used by development builds.
+  Optional debug or testing channel used by development builds.
 
 Recommended rollout order:
 

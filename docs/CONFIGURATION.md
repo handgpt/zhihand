@@ -1,43 +1,34 @@
 # Configuration
 
-This page explains what most users need to configure, and what advanced users can override.
+This page explains the smallest public-safe configuration that works for most users, then the overrides that advanced users can apply.
 
-It is intentionally safe to publish.
+## If You Only Want The Hosted Setup
 
-## Most Users
+For the normal public path, most users only need:
 
-If you use the hosted defaults, most users only need two things:
+1. the Android app
+2. the OpenClaw plugin
+3. one OpenClaw gateway token copied into the plugin config
 
-1. install the Android app
-2. install the OpenClaw plugin
-
-The preferred install command is:
+Preferred plugin install:
 
 ```bash
 openclaw plugins install clawhub:zhihand
 ```
 
-Compatibility npm fallback:
+If ClawHub is unavailable or rate-limited, use the npm compatibility package:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-Then add the plugin id to the OpenClaw allowlist:
+One-time hosted setup:
+
+The token extraction snippet below assumes `python3` is available on the OpenClaw host. If it is not, open `~/.openclaw/openclaw.json` and copy `gateway.auth.token` manually.
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
-```
-
-Then enable the ZhiHand plugin tools for agent runs:
-
-```bash
 openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-Then set the plugin relay token from the current OpenClaw gateway token:
-
-```bash
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -46,6 +37,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
@@ -55,22 +47,20 @@ Then run:
 /zhihand pair
 ```
 
-For the normal hosted setup, the plugin already defaults to:
+## Why These Settings Matter
 
-- pairing on `https://pair.zhihand.com`
-- control-plane traffic on `https://api.zhihand.com`
-- app download URL `https://zhihand.com/download`
+- `plugins.allow`
+  Tells OpenClaw to trust the non-bundled plugin id.
+- `tools.allow`
+  Makes the optional `zhihand_*` tools available to the OpenClaw runtime.
+- `gateway.http.endpoints.responses.enabled`
+  Turns on the local OpenClaw `POST /v1/responses` route that the plugin relays into.
+- `plugins.entries.zhihand.config.gatewayAuthToken`
+  Gives the plugin the bearer token it needs for the local relay.
 
-If you also need mobile or server details, use these companion repos:
+If you skip them, the plugin may install but pairing, relay, or tool execution will not work correctly. Legacy `openclaw` config keys are still accepted during migration, but new installs should use `zhihand`.
 
-- [Android app repository](https://github.com/handgpt/zhihand-android)
-  Android behavior, permissions, and device-side settings.
-- [iOS app repository](https://github.com/handgpt/zhihand-ios)
-  iPhone/iPad client behavior and iOS-specific transport details.
-- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
-  Hosted control-plane deployment and operator-facing configuration.
-
-## What the User Sees
+## What The User Sees
 
 ### In OpenClaw
 
@@ -82,7 +72,7 @@ The plugin provides:
 - `/zhihand update`
 - `/zhihand update check`
 
-### In the mobile app
+### In The Mobile App
 
 The app is expected to:
 
@@ -93,6 +83,20 @@ The app is expected to:
 - upload device-profile snapshots so the host can adapt behavior by runtime family
 - upload prompts and attachments
 - receive commands and replies over SSE, then execute device-side actions
+
+## Recommended Hosted Defaults
+
+For the hosted public path, the plugin already defaults to:
+
+- pairing on `https://pair.zhihand.com`
+- control-plane traffic on `https://api.zhihand.com`
+- app download URL `https://zhihand.com/download`
+- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
+- `mobileAgentId`: `zhihand-mobile`
+- `updateCheckEnabled`: `true`
+- `updateCheckIntervalHours`: `24`
+
+Most users do not need to override these.
 
 ## Advanced OpenClaw Configuration
 
@@ -139,7 +143,7 @@ Supported public config fields:
 - `requestedScopes`
   Scope list embedded into the pairing descriptor
 
-Public-safe example:
+Public-safe minimum example:
 
 ```json
 {
@@ -157,7 +161,7 @@ Public-safe example:
 }
 ```
 
-If you do not want to edit `~/.openclaw/openclaw.json` by hand, the allowlist and plugin relay token can be set from the CLI:
+CLI equivalent:
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
@@ -166,32 +170,15 @@ openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-This is recommended because OpenClaw warns when `plugins.allow` is empty for non-bundled plugins, optional plugin tools stay unavailable until `tools.allow` includes `zhihand`, ZhiHand logs `prompt relay disabled` until `gatewayAuthToken` is present, and the local OpenClaw `POST /v1/responses` route returns `404` until `gateway.http.endpoints.responses.enabled` is turned on. Legacy `openclaw` config keys are still accepted during migration.
-
-By default, the plugin also checks the npm compatibility package for a newer published version during startup.
-Use `/zhihand update check` to force a fresh lookup, or `/zhihand update` to print the recommended host-side update command and then reload OpenClaw.
-
 Recommended host-side update command:
 
 ```bash
 openclaw plugins update zhihand
 ```
 
-Reserve `openclaw plugins install clawhub:zhihand@<version>` for a first install or for a reinstall after deleting the existing extension directory. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`. For an installed plugin, upgrade with `openclaw plugins update zhihand`.
+This remains the correct update command even if the plugin was first installed from the npm compatibility package, because the runtime plugin id is still `zhihand`.
 
-## Recommended Hosted Defaults
-
-The public plugin defaults to:
-
-- `controlPlaneEndpoint`: `https://api.zhihand.com`
-- `pairingTTLSeconds`: `600`
-- `appDownloadURL`: `https://zhihand.com/download`
-- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
-- `mobileAgentId`: `zhihand-mobile`
-- `updateCheckEnabled`: `true`
-- `updateCheckIntervalHours`: `24`
-
-These defaults are recommended for the hosted public path.
+Use `openclaw plugins install clawhub:zhihand@<version>` only for a first install or a reinstall after deleting the extension directory. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`.
 
 ## OpenClaw Runtime Best Practice
 
@@ -224,22 +211,33 @@ Recommended dedicated agent shape:
 }
 ```
 
+## What You Usually Do Not Need To Change
+
+For a normal hosted setup, you do not need to configure:
+
+- a custom control-plane endpoint
+- a custom app download URL
+- a custom `mobileAgentId`
+- manual edits to `~/.openclaw/openclaw.json`
+- Control UI browser settings such as allowed origins
+
+If you need mobile or server details, use these companion repos:
+
+- [Android app repository](https://github.com/handgpt/zhihand-android)
+- [iOS app repository](https://github.com/handgpt/zhihand-ios)
+- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
+
 ## OpenAI Computer Tool Status
 
-The recommended ZhiHand mobile model is still `openai-codex/gpt-5.4`, but the
-current OpenClaw relay path does **not** expose the GA OpenAI computer tool.
+The recommended ZhiHand mobile model is still `openai-codex/gpt-5.4`, but the current OpenClaw relay path does **not** expose the GA OpenAI computer tool.
 
 Current integration contract:
 
 - local relay goes through OpenClaw `POST /v1/responses`
 - OpenClaw currently accepts hosted **function tools** on that surface
-- the mobile agent therefore operates through `zhihand_screen_read` and
-  `zhihand_control`
+- the mobile agent therefore operates through `zhihand_screen_read` and `zhihand_control`
 
-Do not assume this means native OpenAI `computer_call` /
-`computer_call_output` support is active. To use the GA OpenAI computer tool,
-you would need upstream OpenClaw support for that tool type or a separate
-direct-to-OpenAI harness outside the current public ZhiHand plugin contract.
+Do not assume this means native OpenAI `computer_call` or `computer_call_output` support is active. To use the GA OpenAI computer tool, you would need upstream OpenClaw support for that tool type or a separate direct-to-OpenAI harness outside the current public ZhiHand plugin contract.
 
 ## OpenClaw Tools
 

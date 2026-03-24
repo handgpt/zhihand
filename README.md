@@ -1,63 +1,62 @@
 # ZhiHand
 
-ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
+ZhiHand lets OpenClaw see an Android phone and help operate it through `ZhiHand Device`.
 
-Current core version: `0.10.0`
+Current core version: `0.10.1`
 
-In practice, ZhiHand brings three parts together:
+## Start Here
+
+ZhiHand is for people who want one workflow across three pieces:
 
 - `Brain`
-  OpenClaw receives the request and decides what to do.
+  OpenClaw decides what to do next.
 - `Eye`
-  The Android app shares the current screen when you allow it.
+  The Android app shares the current screen only when you allow it.
 - `Hand`
-  ZhiHand Device sends the actual input to the phone.
+  `ZhiHand Device` sends the actual phone input.
 
-## What Users Do
-
-Most users only need this flow:
+The recommended first-time path is:
 
 1. Install the Android app.
 2. Install the OpenClaw plugin.
-3. Run `/zhihand pair` in OpenClaw.
-4. Scan the QR code in the app.
+3. Run `/zhihand pair`.
+4. Scan the QR code from the app.
 5. Connect `ZhiHand Device`.
-6. Turn on screen sharing when you want ZhiHand to see the screen.
-7. Start asking OpenClaw to help.
+6. Turn on `Eye` only when you want ZhiHand to read the screen.
+7. Ask OpenClaw to help.
 
-If you use the hosted defaults, you do not need to deploy your own server first.
+You do not need to self-host anything for a normal first run.
 
-## Quick Start
+## Before You Start
 
-### OpenClaw user
+The shortest working setup assumes:
 
-Install the plugin:
+- an Android phone with the ZhiHand app
+- a `ZhiHand Device`
+- an OpenClaw host where you can run `openclaw` commands
+- shell access to the OpenClaw host so you can set one plugin token
+
+## Fastest Setup
+
+Preferred install path:
 
 ```bash
 openclaw plugins install clawhub:zhihand
 ```
 
-Compatibility npm install:
+If ClawHub is unavailable or rate-limited in your environment, use the npm compatibility package:
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-Then trust the plugin id in OpenClaw:
+Then run the one-time OpenClaw setup:
+
+The token extraction snippet below assumes `python3` is available on the OpenClaw host. If it is not, open `~/.openclaw/openclaw.json` and copy `gateway.auth.token` manually.
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
-```
-
-Then allow the ZhiHand plugin tools in the OpenClaw agent runtime:
-
-```bash
 openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-Then point the plugin at the current OpenClaw gateway token:
-
-```bash
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -70,7 +69,7 @@ openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
-Then restart or reload OpenClaw if your setup requires it, and run:
+If your OpenClaw deployment requires a restart or reload, do that now. Then run:
 
 ```text
 /zhihand pair
@@ -78,24 +77,42 @@ Then restart or reload OpenClaw if your setup requires it, and run:
 
 Open the returned QR URL in a browser and scan it from the Android app.
 
-The plugin checks the npm compatibility package for published updates during startup by default.
-Run `/zhihand update check` to inspect the latest published version, or `/zhihand update` to print the recommended host-side update command before restarting OpenClaw.
+## What Success Looks Like
 
-Recommended host-side update command:
+Your setup is on the right path when:
+
+- `/zhihand pair` returns a QR URL instead of an error
+- the app claims the pairing session
+- `ZhiHand Device` connects successfully
+- `/zhihand status` shows the paired host is reachable
+- screen reading only starts after you turn on `Eye`
+
+## Install And Update Rules
+
+For installed plugins, the normal update command is:
 
 ```bash
 openclaw plugins update zhihand
 ```
 
-Use `openclaw plugins install clawhub:zhihand@<version>` only for a first install or after removing the existing extension directory. The npm fallback remains `openclaw plugins install @zhihand/openclaw@<version>`. For an installed plugin, use `openclaw plugins update zhihand`.
+This remains the correct update command even if the plugin was first installed through the npm compatibility package, because the runtime plugin id is still `zhihand`.
 
-### Android user
+Use `openclaw plugins install clawhub:zhihand@<version>` only for a first install or after deleting the existing extension directory. The npm compatibility fallback remains `openclaw plugins install @zhihand/openclaw@<version>`.
 
-1. Open the ZhiHand app.
-2. Tap `Scan`.
-3. Scan the QR code from OpenClaw.
-4. Connect `ZhiHand Device`.
-5. Tap `Eye` when you want ZhiHand to read the screen.
+The plugin checks the npm compatibility package for published updates during startup by default. Use `/zhihand update check` for a fresh lookup, or `/zhihand update` to print the recommended host-side command.
+
+## Choose The Right Doc
+
+- [Distribution](./docs/DISTRIBUTION.md)
+  Start here if you are a new user, an operator preparing a rollout, or someone choosing between ClawHub and npm.
+- [Configuration](./docs/CONFIGURATION.md)
+  Start here if you want the minimum hosted setup, or need to override defaults for self-hosting.
+- [Updates](./docs/UPDATES.md)
+  Start here if you need to understand plugin, app, or device update behavior.
+- [OpenClaw adapter README](./packages/host-adapters/openclaw/README.md)
+  Start here if you landed on the plugin package and only care about the OpenClaw side.
+- [README.zh-CN.md](./README.zh-CN.md)
+  Chinese version.
 
 ## What Runs Where
 
@@ -117,20 +134,14 @@ This repository is the public core for ZhiHand:
 
 It does not include private deployment secrets or private product infrastructure.
 
-## Where To Read Next
+## Related Repositories
 
-- [Distribution](./docs/DISTRIBUTION.md)
-  How users install and start using ZhiHand.
-- [Configuration](./docs/CONFIGURATION.md)
-  What most users need, and what advanced self-hosters can override.
-- [Updates](./docs/UPDATES.md)
-  How app and device updates are detected and delivered.
 - [Android app repository](https://github.com/handgpt/zhihand-android)
-  Mobile UI, permissions, pairing, and device-side execution.
+  Mobile UI, pairing, permissions, and device-side execution.
+- [iOS app repository](https://github.com/handgpt/zhihand-ios)
+  iPhone and iPad client behavior.
 - [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
-  Hosted control-plane deployment and service configuration.
-- [README.zh-CN.md](./README.zh-CN.md)
-  Chinese version.
+  Hosted control-plane deployment and server configuration.
 
 ## For Developers
 

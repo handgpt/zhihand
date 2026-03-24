@@ -2,46 +2,35 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-这份文档说明：
+这份文档先解释“普通用户最少要配什么”，再解释“进阶用户还能改什么”。
 
-- 大多数用户实际需要配置什么
-- 进阶用户还能覆盖什么
-- 哪些内容绝不能写进公共仓库
+## 如果你只想走官方托管路径
 
-## 大多数用户
+对大多数用户，只需要：
 
-如果你使用官方托管默认值，大多数用户只需要两步：
+1. Android App
+2. OpenClaw 插件
+3. 把一次性的 OpenClaw gateway token 写进插件配置
 
-1. 安装 Android App
-2. 安装 OpenClaw 插件
-
-推荐安装命令：
+推荐安装方式：
 
 ```bash
 openclaw plugins install clawhub:zhihand
 ```
 
-兼容 npm fallback：
+如果 ClawHub 当前不可用或遇到限流，可以改用 npm 兼容包：
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-然后把插件 id 加进 OpenClaw allowlist：
+一次性托管配置：
+
+下面这段取 token 的脚本默认宿主机上有 `python3`。如果没有，可以直接打开 `~/.openclaw/openclaw.json`，手动读取 `gateway.auth.token`。
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
-```
-
-然后把智手®插件工具开放给 OpenClaw agent 运行时：
-
-```bash
 openclaw config set tools.allow '["zhihand"]' --strict-json
-```
-
-然后把当前 OpenClaw gateway token 写进插件配置：
-
-```bash
 openclaw doctor --generate-gateway-token
 export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
 import json
@@ -50,6 +39,7 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
@@ -59,20 +49,18 @@ openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_
 /zhihand pair
 ```
 
-在默认托管路径下，插件已经默认使用：
+## 为什么这几项配置不能省
 
-- `https://pair.zhihand.com`
-- `https://api.zhihand.com`
-- `https://zhihand.com/download`
+- `plugins.allow`
+  告诉 OpenClaw 信任这个非内置插件 id。
+- `tools.allow`
+  让 `zhihand_*` 这些可选工具真正暴露给 OpenClaw 运行时。
+- `gateway.http.endpoints.responses.enabled`
+  打开插件转发链路依赖的本地 OpenClaw `POST /v1/responses` 路由。
+- `plugins.entries.zhihand.config.gatewayAuthToken`
+  给插件提供本地转发所需的 bearer token。
 
-如果你还需要查看 Android App 或 server 的说明，请直接看：
-
-- [zhihand-android](https://github.com/handgpt/zhihand-android)
-  查看 Android 侧行为、权限和移动端设置
-- [zhihand-ios](https://github.com/handgpt/zhihand-ios)
-  查看 iPhone/iPad 侧行为和 iOS 传输细节
-- [zhihand-server](https://github.com/handgpt/zhihand-server)
-  查看控制面部署和服务端配置
+如果缺了它们，插件可能能装上，但配对、转发或工具执行不会真正工作。迁移期间仍兼容旧的 `openclaw` 配置键，但新安装应统一使用 `zhihand`。
 
 ## 用户实际会看到什么
 
@@ -90,13 +78,27 @@ openclaw config set plugins.entries.zhihand.config.gatewayAuthToken "\"$ZHIHAND_
 
 App 负责：
 
-- 扫配对二维码
-- claim 配对关系
+- 扫描配对二维码
+- 认领配对关系
 - 本地保存长期凭据
 - 在录屏开启时上传屏幕快照
-- 上传设备画像，便于宿主按 ROM / 机型 / 运行时特征做策略适配
+- 上传设备画像，便于宿主按运行时类型做策略适配
 - 上传提示词与附件
 - 通过 SSE 接收命令与回复，再执行设备侧动作
+
+## 官方托管默认值
+
+对公共托管路径，插件默认使用：
+
+- `https://pair.zhihand.com`
+- `https://api.zhihand.com`
+- `https://zhihand.com/download`
+- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
+- `mobileAgentId`: `zhihand-mobile`
+- `updateCheckEnabled`: `true`
+- `updateCheckIntervalHours`: `24`
+
+大多数用户不需要覆盖这些值。
 
 ## OpenClaw 进阶配置
 
@@ -143,7 +145,7 @@ App 负责：
 - `requestedScopes`
   写进配对描述符的权限申请列表
 
-公开安全的示例：
+公开安全的最小示例：
 
 ```json
 {
@@ -161,7 +163,7 @@ App 负责：
 }
 ```
 
-如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist 和插件 relay token：
+CLI 等价写法：
 
 ```bash
 openclaw config set plugins.allow '["zhihand"]' --strict-json
@@ -170,36 +172,19 @@ openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.zhihand.config.gatewayAuthToken '"your-gateway-token"' --strict-json
 ```
 
-这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；如果 `tools.allow` 没有包含 `zhihand`，智手®的可选插件工具不会暴露给 agent；如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`；而如果没有打开 `gateway.http.endpoints.responses.enabled`，本地 OpenClaw `POST /v1/responses` 会返回 `404`。迁移期间仍兼容旧的 `openclaw` 配置键。
-
-插件默认也会在启动时检查 npm 兼容包是否有新的已发布版本。
-可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
-
-推荐直接在宿主机 shell 执行：
+推荐的宿主侧升级命令：
 
 ```bash
 openclaw plugins update zhihand
 ```
 
-`openclaw plugins install clawhub:zhihand@<version>` 只保留给首次安装，或者删除现有扩展目录后的重装。兼容 npm fallback 仍可使用 `openclaw plugins install @zhihand/openclaw@<version>`。对于已经安装的插件升级，请使用 `openclaw plugins update zhihand`。
+即使第一次安装来自 npm 兼容包，后续正确的升级命令也仍然是这条，因为运行时插件 id 依然是 `zhihand`。
 
-## 官方托管默认值
-
-公共插件默认使用：
-
-- `controlPlaneEndpoint`: `https://api.zhihand.com`
-- `pairingTTLSeconds`: `600`
-- `appDownloadURL`: `https://zhihand.com/download`
-- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
-- `mobileAgentId`: `zhihand-mobile`
-- `updateCheckEnabled`: `true`
-- `updateCheckIntervalHours`: `24`
-
-这些默认值就是面向普通用户的官方托管路径。
+`openclaw plugins install clawhub:zhihand@<version>` 只适用于首次安装或删除扩展目录后的重装。npm 兼容路径仍然是 `openclaw plugins install @zhihand/openclaw@<version>`。
 
 ## OpenClaw 运行时最佳实践
 
-插件应保持“薄”。
+插件应该保持“薄”。
 
 推荐分工：
 
@@ -228,24 +213,33 @@ openclaw plugins update zhihand
 }
 ```
 
+## 普通用户通常不需要改什么
+
+对正常托管路径，你通常不需要配置：
+
+- 自定义 control-plane endpoint
+- 自定义 App 下载地址
+- 自定义 `mobileAgentId`
+- 手动编辑 `~/.openclaw/openclaw.json`
+- Control UI 浏览器侧的 allowed origins
+
+如果你需要移动端或服务端细节，请看这些仓库：
+
+- [zhihand-android](https://github.com/handgpt/zhihand-android)
+- [zhihand-ios](https://github.com/handgpt/zhihand-ios)
+- [zhihand-server](https://github.com/handgpt/zhihand-server)
+
 ## OpenAI Computer Tool 现状
 
-当前推荐给 ZhiHand 移动端 agent 的模型仍然是 `openai-codex/gpt-5.4`，但
-这条 OpenClaw relay 路径 **并没有** 接入 OpenAI GA 版的 `computer` 工具。
+当前推荐给 ZhiHand 移动端 agent 的模型仍然是 `openai-codex/gpt-5.4`，但这条 OpenClaw 转发路径 **并没有** 接入 OpenAI GA 版的 `computer` 工具。
 
 当前公开集成契约是：
 
-- 本地 relay 走 OpenClaw 的 `POST /v1/responses`
+- 本地转发走 OpenClaw 的 `POST /v1/responses`
 - OpenClaw 在这个面上目前只接收托管的 **function tools**
 - 所以移动端 agent 走的是 `zhihand_screen_read` 和 `zhihand_control`
 
-不要把这理解成已经启用了原生的 OpenAI `computer_call` /
-`computer_call_output`。如果要使用 OpenAI GA 版 computer tool，需要：
-
-- 上游 OpenClaw 先支持该工具类型，或
-- 另做一条绕过本地 OpenClaw `/v1/responses` 的直连 OpenAI harness
-
-而这条直连 harness 当前 **不是** ZhiHand/OpenClaw 插件的公开契约。
+不要把这理解成已经启用了原生的 OpenAI `computer_call` 或 `computer_call_output`。如果要使用 OpenAI GA 版 computer tool，需要上游 OpenClaw 先支持该工具类型，或另做一条绕过本地 OpenClaw `/v1/responses` 的直连 OpenAI harness。而这条直连 harness 当前 **不是** ZhiHand/OpenClaw 插件的公开契约。
 
 ## OpenClaw 工具
 
@@ -304,7 +298,7 @@ openclaw plugins update zhihand
 1. OpenClaw 返回二维码链接
 2. 浏览器打开二维码页面
 3. Android App 扫码
-4. App 以 JSON 模式解析描述符并完成 claim
+4. App 以 JSON 模式解析描述符并完成认领
 
 ## BLE 租约
 
