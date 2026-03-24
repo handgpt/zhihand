@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,21 +8,6 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(packageRoot, "../../..");
 const extraArgs = process.argv.slice(2);
-
-function run(command, args) {
-  const result = spawnSync(command, args, { encoding: "utf8" });
-  if (result.error) {
-    if ("code" in result.error && result.error.code === "ENOENT") {
-      throw new Error(`Missing required binary: ${command}`);
-    }
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
-    throw new Error(output || `${command} ${args.join(" ")} failed with exit code ${result.status}`);
-  }
-  return (result.stdout || "").trim();
-}
 
 function runAllowFailure(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" });
@@ -94,10 +80,17 @@ if (!remoteContains.ok || !remoteContains.output) {
   );
 }
 
+const packFilename = run("npm", ["pack", "--silent"], {
+  cwd: packageRoot,
+});
+const packPath = path.join(packageRoot, packFilename);
+const tempRoot = mkdtempSync(path.join(os.tmpdir(), "zhihand-clawhub-publish-"));
+const extractRoot = path.join(tempRoot, "extract");
+const stagedRoot = path.join(extractRoot, "package");
 const publishArgs = [
   "package",
   "publish",
-  ".",
+  stagedRoot,
   "--family",
   "code-plugin",
   "--name",
@@ -119,20 +112,33 @@ console.error(
   `Publishing ${publishName}@${version} to ClawHub from ${sourceRepo}@${commit} (source path ${sourcePath})`,
 );
 
-const publishResult = spawnSync("clawhub", publishArgs, {
-  cwd: packageRoot,
-  env: process.env,
-  stdio: "inherit",
-});
+try {
+  mkdirSync(extractRoot, { recursive: true });
+  run("tar", ["-xf", packPath, "-C", extractRoot], {
+    cwd: packageRoot,
+  });
+  const stagedPackageJsonPath = path.join(stagedRoot, "package.json");
+  const stagedPackageJson = JSON.parse(readFileSync(stagedPackageJsonPath, "utf8"));
+  stagedPackageJson.name = publishName;
+  writeFileSync(stagedPackageJsonPath, `${JSON.stringify(stagedPackageJson, null, 2)}\n`, "utf8");
 
-if (publishResult.error) {
-  if ("code" in publishResult.error && publishResult.error.code === "ENOENT") {
-    fail("ClawHub CLI not found. Install it with `npm i -g clawhub` before publishing.");
+  const publishResult = spawnSync("clawhub", publishArgs, {
+    cwd: packageRoot,
+    env: process.env,
+    stdio: "inherit",
+  });
+
+  if (publishResult.error) {
+    if ("code" in publishResult.error && publishResult.error.code === "ENOENT") {
+      fail("ClawHub CLI not found. Install it with `npm i -g clawhub` before publishing.");
+    }
+    throw publishResult.error;
   }
-  throw publishResult.error;
+  process.exit(publishResult.status ?? 0);
+} finally {
+  rmSync(tempRoot, { recursive: true, force: true });
+  rmSync(packPath, { force: true });
 }
-
-process.exit(publishResult.status ?? 0);
 
 function normalizeGitHubRepo(url) {
   if (!url) {
@@ -144,4 +150,22 @@ function normalizeGitHubRepo(url) {
     .replace(/\.git$/i, "");
   const match = /^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\/)?$/i.exec(normalized);
   return match?.[1] ?? null;
+}
+
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    ...options,
+  });
+  if (result.error) {
+    if ("code" in result.error && result.error.code === "ENOENT") {
+      throw new Error(`Missing required binary: ${command}`);
+    }
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+    throw new Error(output || `${command} ${args.join(" ")} failed with exit code ${result.status}`);
+  }
+  return (result.stdout || "").trim();
 }
