@@ -23,6 +23,7 @@ import {
   type ScreenSnapshotRecord,
   waitForCommandAck,
   enqueueCommand,
+  fetchScreenshotBinary,
   type ZhiHandPluginConfig
 } from "./index.ts";
 import {
@@ -93,7 +94,7 @@ const PROMPT_RELAY_MAX_ERROR_MS = 30_000;
 const PROMPT_CANCEL_POLL_MS = 500;
 const BRAIN_STATUS_HEARTBEAT_MS = 15_000;
 const PAIRING_RECONCILE_POLL_MS = 3_000;
-const CONTROL_SETTLE_MS = 2_000;
+// CONTROL_SETTLE_MS removed: delay is now handled App-side (2s post-action before screenshot)
 const MAX_FRESH_SCREEN_AGE_MS = 10_000;
 const RELAY_RUNTIME_KEY = Symbol.for("zhihand.promptRelay.runtime");
 const ZHIHAND_OPTIONAL_TOOL_KEYS = new Set([
@@ -102,7 +103,8 @@ const ZHIHAND_OPTIONAL_TOOL_KEYS = new Set([
   "zhihand_pair",
   "zhihand_status",
   "zhihand_screen_read",
-  "zhihand_control"
+  "zhihand_control",
+  "zhihand_screenshot"
 ]);
 
 type PromptRelayRuntime = {
@@ -125,6 +127,56 @@ type ActivePairingTransition =
 let lastRelayIdleReason = "";
 const activePromptRuns = new Map<string, AbortController>();
 let lastReportedBrainStatus: ReportedBrainStatusState | null = null;
+
+// Per-commandId callback registry for SSE-based ACK
+const commandAckCallbacks = new Map<string, (command: QueuedCommandRecord) => void>();
+
+function registerCommandAckCallback(
+  commandId: string,
+  callback: (command: QueuedCommandRecord) => void
+): () => void {
+  commandAckCallbacks.set(commandId, callback);
+  return () => { commandAckCallbacks.delete(commandId); };
+}
+
+function dispatchCommandAckEvent(event: ControlPlaneStreamEvent): void {
+  if (event.topic === "commands" && event.kind === "command.acked" && event.command) {
+    const callback = commandAckCallbacks.get(event.command.id);
+    if (callback) {
+      commandAckCallbacks.delete(event.command.id);
+      callback(event.command);
+    }
+  }
+}
+
+function isSSEStreamActive(): boolean {
+  const runtime = getPromptRelayRuntime();
+  return runtime.streamAbortController !== null && !runtime.stopped;
+}
+
+export function waitForCommandAckSSE(
+  commandId: string,
+  options: { timeoutMs?: number; signal?: AbortSignal }
+): Promise<WaitForCommandAckResult> {
+  return new Promise((resolve, reject) => {
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      resolve({ acked: false, command: { id: commandId } as QueuedCommandRecord, iterations: 0 });
+    }, timeoutMs);
+
+    const unsubscribe = registerCommandAckCallback(commandId, (ackedCommand) => {
+      clearTimeout(timeout);
+      resolve({ acked: true, command: ackedCommand, iterations: 0 });
+    });
+
+    options.signal?.addEventListener("abort", () => {
+      clearTimeout(timeout);
+      unsubscribe();
+      reject(new Error("The operation was aborted"));
+    }, { once: true });
+  });
+}
 
 export default function register(api: OpenClawPluginApi) {
   api.registerService(createPluginUpdateService(api));
@@ -280,15 +332,21 @@ export default function register(api: OpenClawPluginApi) {
           enum: [
             "click",
             "long_click",
+            "double_click",
+            "right_click",
+            "middle_click",
             "move",
             "move_to",
             "swipe",
+            "scroll",
             "back",
             "home",
             "enter",
             "input_text",
             "open_app",
             "set_clipboard",
+            "key_combo",
+            "wait",
             "start_live_capture",
             "stop_live_capture"
           ]
@@ -352,45 +410,143 @@ export default function register(api: OpenClawPluginApi) {
           type: "boolean",
           description: "If true, send Enter immediately after the text input completes."
         },
-        packageName: { type: "string" }
+        packageName: { type: "string" },
+        direction: {
+          type: "string",
+          enum: ["up", "down", "left", "right"],
+          description: "Scroll direction for the scroll action."
+        },
+        amount: {
+          type: "integer",
+          minimum: 1,
+          description: "Scroll amount (number of scroll steps). Default is 3."
+        },
+        keys: {
+          type: "string",
+          description: "Key combination string for key_combo action, e.g. \"ctrl+c\", \"alt+tab\", \"shift+a\"."
+        }
       },
       required: ["action"]
     },
     execute: async (_id: string, params: Record<string, unknown>) => {
       const active = await ensureClaimedPairing(api);
+      const controlParams = readControlParams(params);
+
+      // wait action is handled locally — no server round-trip
+      if (controlParams.action === "wait") {
+        await sleep(controlParams.durationMs);
+        const screenshot = await fetchScreenshotBinary(
+          { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+          { credentialId: active.credentialId, controllerToken: active.controllerToken }
+        );
+        const base64 = Buffer.from(screenshot).toString("base64");
+        return {
+          content: [
+            { type: "text", text: `Waited ${controlParams.durationMs}ms` },
+            { type: "image", data: base64, mimeType: "image/jpeg" }
+          ]
+        };
+      }
+
       const command = await enqueueCommand(
         { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
         {
           credentialId: active.credentialId,
           controllerToken: active.controllerToken,
-          command: createControlCommand(readControlParams(params))
+          command: createControlCommand(controlParams)
         }
       );
-      const ack = await waitForCommandAck(
-        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
-        {
-          credentialId: active.credentialId,
-          controllerToken: active.controllerToken,
-          commandId: command.id,
-          timeoutMs: 6_000,
-          pollIntervalMs: 400
+
+      // Use SSE-based ACK when stream is active, fall back to polling
+      const ack = isSSEStreamActive()
+        ? await waitForCommandAckSSE(command.id, { timeoutMs: 6_000 })
+        : await waitForCommandAck(
+            { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+            {
+              credentialId: active.credentialId,
+              controllerToken: active.controllerToken,
+              commandId: command.id,
+              timeoutMs: 6_000,
+              pollIntervalMs: 400
+            }
+          );
+
+      // Fetch screenshot after ACK (App has already waited 2s and captured)
+      const content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [
+        { type: "text", text: formatAckSummary(command, ack.command, ack.acked) }
+      ];
+
+      if (ack.acked) {
+        try {
+          const screenshot = await fetchScreenshotBinary(
+            { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+            { credentialId: active.credentialId, controllerToken: active.controllerToken }
+          );
+          const base64 = Buffer.from(screenshot).toString("base64");
+          content.push({ type: "image", data: base64, mimeType: "image/jpeg" });
+        } catch {
+          // Screenshot fetch is best-effort; command already succeeded
         }
-      );
-      if (ack.acked && requiresUiSettleDelay(ack.command?.type)) {
-        await sleep(CONTROL_SETTLE_MS);
       }
+
       return {
-        content: [
-          {
-            type: "text",
-            text: formatAckSummary(command, ack.command, ack.acked)
-          }
-        ],
+        content,
         details: {
           queued: command,
           command: ack.command,
           acked: ack.acked
         }
+      };
+    }
+  }, { optional: true });
+
+  api.registerTool({
+    name: "zhihand_screenshot",
+    label: "ZhiHand Screenshot",
+    description: "Capture the current screen immediately and return the screenshot without executing any control action.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {}
+    },
+    execute: async () => {
+      const active = await ensureClaimedPairing(api);
+
+      // Send receive_screenshot command — App captures immediately (no 2s delay)
+      const command = await enqueueCommand(
+        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+        {
+          credentialId: active.credentialId,
+          controllerToken: active.controllerToken,
+          command: { type: "receive_screenshot", payload: {} }
+        }
+      );
+
+      // Use SSE-based ACK when stream is active, fall back to polling
+      const ack = isSSEStreamActive()
+        ? await waitForCommandAckSSE(command.id, { timeoutMs: 6_000 })
+        : await waitForCommandAck(
+            { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+            {
+              credentialId: active.credentialId,
+              controllerToken: active.controllerToken,
+              commandId: command.id,
+              timeoutMs: 6_000,
+              pollIntervalMs: 400
+            }
+          );
+
+      // Fetch the screenshot as binary and return base64-encoded
+      const screenshot = await fetchScreenshotBinary(
+        { controlPlaneEndpoint: resolveControlPlaneEndpoint(api) },
+        { credentialId: active.credentialId, controllerToken: active.controllerToken }
+      );
+      const base64 = Buffer.from(screenshot).toString("base64");
+      return {
+        content: [
+          { type: "text", text: `Screenshot captured (acked: ${ack.acked})` },
+          { type: "image", data: base64, mimeType: "image/jpeg" }
+        ]
       };
     }
   }, { optional: true });
@@ -518,7 +674,7 @@ async function runPromptRelayLoop(
           {
             credentialId: active.credentialId,
             controllerToken: active.controllerToken,
-            topics: ["prompts"],
+            topics: ["prompts", "commands"],
             signal: streamAbortController.signal,
             onOpen: () => {
               streamEstablished = true;
@@ -708,6 +864,9 @@ async function handleRelayStreamEvent(
   pairing: StoredPairingState,
   event: ControlPlaneStreamEvent
 ): Promise<void> {
+  // Dispatch command ACK events to registered callbacks
+  dispatchCommandAckEvent(event);
+
   if (event.topic !== "prompts" || !event.prompt) {
     return;
   }
@@ -1201,12 +1360,6 @@ function validatePromptRelayConfig(api: OpenClawPluginApi): void {
   resolveMobileAgentId(api);
 }
 
-function requiresUiSettleDelay(commandType: unknown): boolean {
-  if (typeof commandType !== "string") {
-    return false;
-  }
-  return commandType !== "receive_clipboard";
-}
 
 function resolveGatewayResponsesEndpoint(api: OpenClawPluginApi): string {
   return (
@@ -1415,6 +1568,24 @@ function readControlParams(params: Record<string, unknown>) {
         yRatio: readRequiredRatio(params, "yRatio"),
         durationMs: readOptionalNumber(params, "durationMs")
       } as const;
+    case "double_click":
+      return {
+        action,
+        xRatio: readRequiredRatio(params, "xRatio"),
+        yRatio: readRequiredRatio(params, "yRatio")
+      } as const;
+    case "right_click":
+      return {
+        action,
+        xRatio: readRequiredRatio(params, "xRatio"),
+        yRatio: readRequiredRatio(params, "yRatio")
+      } as const;
+    case "middle_click":
+      return {
+        action,
+        xRatio: readRequiredRatio(params, "xRatio"),
+        yRatio: readRequiredRatio(params, "yRatio")
+      } as const;
     case "move":
       return {
         action,
@@ -1453,6 +1624,21 @@ function readControlParams(params: Record<string, unknown>) {
       return { action, packageName: readRequiredString(params, "packageName") } as const;
     case "set_clipboard":
       return { action, text: readRequiredString(params, "text") } as const;
+    case "scroll":
+      return {
+        action,
+        xRatio: readRequiredRatio(params, "xRatio"),
+        yRatio: readRequiredRatio(params, "yRatio"),
+        direction: readRequiredEnum(params, "direction", ["up", "down", "left", "right"] as const),
+        amount: readPositiveIntegerWithDefault(params, "amount", 3)
+      } as const;
+    case "key_combo":
+      return { action, keys: readRequiredString(params, "keys") } as const;
+    case "wait":
+      return {
+        action,
+        durationMs: readBoundedInteger(params, "durationMs", 1000, 1, 10000)
+      } as const;
     default:
       throw new Error(`Unsupported ZhiHand action: ${action}`);
   }
@@ -1523,6 +1709,50 @@ function readOptionalNumber(params: Record<string, unknown>, key: string): numbe
   }
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`Invalid number parameter: ${key}`);
+  }
+  return value;
+}
+
+function readRequiredEnum<T extends readonly string[]>(
+  params: Record<string, unknown>,
+  key: string,
+  allowed: T
+): T[number] {
+  const value = params[key];
+  if (typeof value !== "string" || !allowed.includes(value as T[number])) {
+    throw new Error(`Parameter ${key} must be one of: ${allowed.join(", ")}`);
+  }
+  return value as T[number];
+}
+
+function readPositiveIntegerWithDefault(
+  params: Record<string, unknown>,
+  key: string,
+  defaultValue: number
+): number {
+  const value = params[key];
+  if (value == null) {
+    return defaultValue;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(`Parameter ${key} must be a positive integer.`);
+  }
+  return value;
+}
+
+function readBoundedInteger(
+  params: Record<string, unknown>,
+  key: string,
+  defaultValue: number,
+  min: number,
+  max: number
+): number {
+  const value = params[key];
+  if (value == null) {
+    return defaultValue;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Parameter ${key} must be an integer in [${min}, ${max}].`);
   }
   return value;
 }
