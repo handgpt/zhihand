@@ -5,7 +5,7 @@ import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.js"
 import { executeControl } from "./tools/control.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
-const PACKAGE_VERSION = "0.12.1";
+const PACKAGE_VERSION = "0.12.2";
 export function createServer(deviceName) {
     const server = new McpServer({
         name: "zhihand",

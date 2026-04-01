@@ -152,6 +152,13 @@ export async function executePairing(
     expiresAt: session.expires_at,
   });
 
+  // Display QR code and pairing URL
+  const qr = await renderPairingQRCode(session.pair_url);
+  console.log(qr);
+  console.log(`Open this URL on your phone to pair:\n  ${session.pair_url}\n`);
+  console.log(`Expires at: ${session.expires_at}`);
+  console.log("Waiting for phone to scan...\n");
+
   // Wait for phone to scan
   const claimed = await waitForPairingClaim(endpoint, session.id);
 
