@@ -67,7 +67,7 @@ export function registerOpenClawTools(api: OpenClawPluginApi, deviceName?: strin
     parameters: zodSchemaToJsonSchema(controlSchema),
     execute: async (_id, params) => {
       const config = resolveConfig(deviceName);
-      const result = await executeControl(config, params as Parameters<typeof executeControl>[1]);
+      const result = await executeControl(config, params as unknown as Parameters<typeof executeControl>[1]);
       return result as unknown as Record<string, unknown>;
     },
   });

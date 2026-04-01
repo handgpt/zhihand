@@ -1,0 +1,5 @@
+# Override root .gitignore for packages/mcp/
+# bin/ and dist/ must be tracked — they ship in the npm package
+!bin/
+!dist/
+node_modules/

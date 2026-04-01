@@ -1,11 +1,11 @@
-#!/usr/bin/env node --experimental-strip-types
+#!/usr/bin/env node
 
 /**
  * OpenClaw Plugin entry point.
  * This script is invoked by OpenClaw when the zhihand plugin is loaded.
  * It bridges the OpenClaw Plugin API to MCP core logic via the adapter.
  */
-import { registerOpenClawTools } from "../src/openclaw.adapter.ts";
+import { registerOpenClawTools } from "../dist/openclaw.adapter.js";
 
 // OpenClaw injects the plugin API as the default export's argument
 export default function activate(api) {

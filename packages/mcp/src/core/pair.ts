@@ -2,6 +2,16 @@ import QRCode from "qrcode";
 import type { ZhiHandConfig, DeviceCredential } from "./config.ts";
 import { saveCredential, loadDefaultCredential, ensureZhiHandDir, saveState } from "./config.ts";
 
+export interface PluginRecord {
+  id: string;
+  edge_id: string;
+  adapter_kind: string;
+  display_name?: string;
+  stable_identity?: string;
+  status: string;
+  created_at: string;
+}
+
 export interface PairingSession {
   id: string;
   pair_url: string;
@@ -27,6 +37,35 @@ const DEFAULT_SCOPES = [
   "screen.capture",
   "ble.control",
 ];
+
+/**
+ * Register this MCP instance as a plugin with the server.
+ * Server requires a registered plugin (edge_id) before pairing can begin.
+ * Idempotent — re-registering with the same stable_identity returns the existing plugin.
+ */
+export async function registerPlugin(
+  endpoint: string,
+  options: {
+    stableIdentity: string;
+    displayName?: string;
+    adapterKind?: string;
+  }
+): Promise<PluginRecord> {
+  const response = await fetch(`${endpoint}/v1/plugins`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      adapter_kind: options.adapterKind ?? "mcp",
+      display_name: options.displayName ?? "ZhiHand MCP Server",
+      stable_identity: options.stableIdentity,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Register plugin failed: ${response.status} ${await response.text()}`);
+  }
+  const payload = (await response.json()) as { plugin: PluginRecord };
+  return payload.plugin;
+}
 
 export async function createPairingSession(
   endpoint: string,
@@ -93,7 +132,15 @@ export async function executePairing(
   edgeId: string,
   deviceName?: string
 ): Promise<{ session: PairingSession; credential: DeviceCredential }> {
-  const session = await createPairingSession(endpoint, { edgeId });
+  // Step 0: Register plugin first — server requires a known edge_id before pairing.
+  // Uses edgeId as stable_identity so re-runs are idempotent.
+  const plugin = await registerPlugin(endpoint, {
+    stableIdentity: edgeId,
+    displayName: deviceName ? `ZhiHand MCP — ${deviceName}` : "ZhiHand MCP Server",
+  });
+  const registeredEdgeId = plugin.edge_id;
+
+  const session = await createPairingSession(endpoint, { edgeId: registeredEdgeId });
 
   // Save pending state
   saveState({

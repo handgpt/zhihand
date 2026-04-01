@@ -1,12 +1,12 @@
-#!/usr/bin/env node --experimental-strip-types
+#!/usr/bin/env node
 
 import os from "node:os";
 import { parseArgs } from "node:util";
-import { startStdioServer } from "../src/index.ts";
-import { detectCLITools, formatDetectedTools } from "../src/cli/detect.ts";
-import { detectAndSetupOpenClaw } from "../src/cli/openclaw.ts";
-import { loadDefaultCredential } from "../src/core/config.ts";
-import { executePairing } from "../src/core/pair.ts";
+import { startStdioServer } from "../dist/index.js";
+import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
+import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
+import { loadDefaultCredential } from "../dist/core/config.js";
+import { executePairing } from "../dist/core/pair.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
 

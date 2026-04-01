@@ -4,6 +4,11 @@ import type { ControlParams } from "../core/command.ts";
 import { fetchScreenshotBinary } from "../core/screenshot.ts";
 import { waitForCommandAck } from "../core/sse.ts";
 
+type TextContent = { type: "text"; text: string };
+type ImageContent = { type: "image"; data: string; mimeType: "image/jpeg" };
+type ToolContent = TextContent | ImageContent;
+type ToolResult = { content: ToolContent[] };
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -11,15 +16,15 @@ function sleep(ms: number): Promise<void> {
 export async function executeControl(
   config: ZhiHandConfig,
   params: ControlParams
-): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+): Promise<ToolResult> {
   // wait: Plugin-local implementation, no server round-trip
   if (params.action === "wait") {
     await sleep(params.durationMs ?? 1000);
     const screenshot = await fetchScreenshotBinary(config);
     return {
       content: [
-        { type: "text", text: `Waited ${params.durationMs ?? 1000}ms` },
-        { type: "image", data: screenshot.toString("base64"), mimeType: "image/jpeg" },
+        { type: "text" as const, text: `Waited ${params.durationMs ?? 1000}ms` },
+        { type: "image" as const, data: screenshot.toString("base64"), mimeType: "image/jpeg" as const },
       ],
     };
   }
@@ -34,14 +39,14 @@ export async function executeControl(
   const queued = await enqueueCommand(config, command);
   const ack = await waitForCommandAck(config, { commandId: queued.id, timeoutMs: 15_000 });
 
-  const content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [
-    { type: "text", text: formatAckSummary(params.action, ack) },
+  const content: ToolContent[] = [
+    { type: "text" as const, text: formatAckSummary(params.action, ack) },
   ];
 
   if (ack.acked) {
     try {
       const screenshot = await fetchScreenshotBinary(config);
-      content.push({ type: "image", data: screenshot.toString("base64"), mimeType: "image/jpeg" });
+      content.push({ type: "image" as const, data: screenshot.toString("base64"), mimeType: "image/jpeg" as const });
     } catch {
       // Screenshot is best-effort after ACK
     }
@@ -52,15 +57,15 @@ export async function executeControl(
 
 export async function executeScreenshot(
   config: ZhiHandConfig
-): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }> {
+): Promise<ToolResult> {
   const command = createControlCommand({ action: "screenshot" });
   const queued = await enqueueCommand(config, command);
   const ack = await waitForCommandAck(config, { commandId: queued.id, timeoutMs: 5_000 });
   const screenshot = await fetchScreenshotBinary(config);
   return {
     content: [
-      { type: "text", text: `Screenshot captured (acked: ${ack.acked})` },
-      { type: "image", data: screenshot.toString("base64"), mimeType: "image/jpeg" },
+      { type: "text" as const, text: `Screenshot captured (acked: ${ack.acked})` },
+      { type: "image" as const, data: screenshot.toString("base64"), mimeType: "image/jpeg" as const },
     ],
   };
 }

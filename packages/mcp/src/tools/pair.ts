@@ -1,6 +1,7 @@
 import { loadDefaultCredential } from "../core/config.ts";
 import {
   createPairingSession,
+  registerPlugin,
   renderPairingQRCode,
   formatPairingStatus,
 } from "../core/pair.ts";
@@ -15,7 +16,7 @@ function generateEdgeId(): string {
 export async function handlePair(
   params: { forceNew?: boolean },
   endpoint?: string
-): Promise<{ content: Array<{ type: string; text?: string }> }> {
+) {
   const resolvedEndpoint = endpoint ?? DEFAULT_ENDPOINT;
 
   // Check existing credential
@@ -24,15 +25,21 @@ export async function handlePair(
     if (existing) {
       return {
         content: [
-          { type: "text", text: formatPairingStatus(existing) },
+          { type: "text" as const, text: formatPairingStatus(existing) },
         ],
       };
     }
   }
 
-  // Create new pairing session
+  // Register plugin first — server requires a known edge_id before pairing
+  const stableIdentity = generateEdgeId();
+  const plugin = await registerPlugin(resolvedEndpoint, {
+    stableIdentity,
+  });
+
+  // Create new pairing session with the registered edge_id
   const session = await createPairingSession(resolvedEndpoint, {
-    edgeId: generateEdgeId(),
+    edgeId: plugin.edge_id,
   });
 
   const qr = await renderPairingQRCode(session.pair_url);
@@ -40,7 +47,7 @@ export async function handlePair(
   return {
     content: [
       {
-        type: "text",
+        type: "text" as const,
         text: [
           "Scan QR code or open URL on your phone to pair:",
           "",
