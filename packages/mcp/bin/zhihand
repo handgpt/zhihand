@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 
 import os from "node:os";
-import { execSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { startStdioServer } from "../dist/index.js";
 import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
 import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
-import { loadDefaultCredential } from "../dist/core/config.js";
+import { loadDefaultCredential, loadBackendConfig, saveBackendConfig } from "../dist/core/config.js";
 import { executePairing } from "../dist/core/pair.js";
-import { launchCLI } from "../dist/cli/spawn.js";
+import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
 
@@ -41,25 +40,24 @@ Usage:
   zhihand pair               Pair with a phone device
   zhihand status             Show pairing status and device info
   zhihand detect             Detect available CLI tools
-  zhihand setup              Interactive setup: pair + configure
+  zhihand setup              Interactive setup: pair + auto-configure
 
-  zhihand claude [prompt]    Launch Claude Code with prompt
-  zhihand codex [prompt]     Launch Codex CLI with prompt
-  zhihand gemini [prompt]    Launch Gemini CLI (interactive mode)
+  zhihand claude             Switch backend to Claude Code
+  zhihand codex              Switch backend to Codex CLI
+  zhihand gemini             Switch backend to Gemini CLI
 
 Options:
   --device <name>    Use a specific paired device
-  --model <model>    Specify model (e.g. zhihand gemini --model flash)
   -h, --help         Show this help
 `);
   process.exit(0);
 }
 
-// Handle CLI tool subcommands: claude, codex, gemini
-if (command in CLI_TOOL_MAP) {
-  const toolName = CLI_TOOL_MAP[command];
+// Handle CLI tool subcommands: claude, codex, gemini → switch backend
+if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
+  const backendName = CLI_TOOL_MAP[command];
   const tools = await detectCLITools();
-  const tool = tools.find((t) => t.name === toolName);
+  const tool = tools.find((t) => t.name === backendName);
 
   if (!tool) {
     console.error(`Error: ${command} is not installed or not found in PATH.`);
@@ -67,20 +65,29 @@ if (command in CLI_TOOL_MAP) {
     process.exit(1);
   }
 
-  const prompt = positionals.slice(1).join(" ");
-  if (!prompt) {
-    console.error(`Usage: zhihand ${command} <prompt>`);
-    console.error(`Example: zhihand ${command} "take a screenshot of my phone"`);
-    process.exit(1);
+  if (!tool.loggedIn) {
+    console.error(`Warning: ${command} is installed but not logged in.`);
   }
 
-  try {
-    const code = await launchCLI(tool, prompt, { model: values.model });
-    process.exit(code);
-  } catch (err) {
-    console.error(`Error running ${command}: ${err.message}`);
-    process.exit(1);
+  const config = loadBackendConfig();
+  const previous = config.activeBackend;
+
+  if (previous === backendName) {
+    console.log(`Already using ${displayName(backendName)} as backend.`);
+    process.exit(0);
   }
+
+  console.log(`Switching backend to ${displayName(backendName)}...`);
+  const { configured, removed } = configureMCP(backendName, previous);
+
+  if (configured) {
+    saveBackendConfig({ activeBackend: backendName });
+    console.log(`\nBackend switched to ${displayName(backendName)}.`);
+    if (previous) {
+      console.log(`Previous backend: ${displayName(previous)} ${removed ? '(MCP config removed)' : '(MCP config removal skipped)'}.`);
+    }
+  }
+  process.exit(0);
 }
 
 switch (command) {
@@ -98,6 +105,7 @@ switch (command) {
 
   case "status": {
     const cred = loadDefaultCredential();
+    const backend = loadBackendConfig();
     if (cred) {
       console.log(`Paired device: ${cred.deviceName}`);
       console.log(`Credential ID: ${cred.credentialId}`);
@@ -105,6 +113,11 @@ switch (command) {
       console.log(`Paired at: ${cred.pairedAt}`);
     } else {
       console.log("No paired device. Run: zhihand pair");
+    }
+    if (backend.activeBackend) {
+      console.log(`Active backend: ${displayName(backend.activeBackend)}`);
+    } else {
+      console.log("No active backend. Run: zhihand claude / zhihand gemini / zhihand codex");
     }
     break;
   }
@@ -133,46 +146,26 @@ switch (command) {
     const tools = await detectCLITools();
     console.log(formatDetectedTools(tools));
 
-    // 3. Auto-configure MCP for detected tools
-    let configured = 0;
-    for (const tool of tools) {
-      try {
-        switch (tool.name) {
-          case "codex": {
-            console.log(`\nConfiguring MCP for Codex...`);
-            execSync('codex mcp add zhihand -- zhihand serve', { stdio: 'inherit', timeout: 10000 });
-            configured++;
-            break;
-          }
-          case "gemini": {
-            console.log(`\nConfiguring MCP for Gemini CLI...`);
-            execSync('gemini mcp add --scope user zhihand zhihand -- serve', { stdio: 'inherit', timeout: 10000 });
-            configured++;
-            break;
-          }
-          case "claudecode": {
-            console.log(`\nConfiguring MCP for Claude Code...`);
-            execSync('claude mcp add zhihand -- zhihand serve', { stdio: 'inherit', timeout: 10000 });
-            configured++;
-            break;
-          }
-          case "openclaw": {
-            await detectAndSetupOpenClaw();
-            configured++;
-            break;
-          }
-        }
-      } catch (err) {
-        console.error(`  Failed to configure ${tool.name}: ${err.message}`);
-      }
+    if (tools.length === 0) {
+      console.log("\nNo CLI tools detected. Install one of: Claude Code, Codex CLI, Gemini CLI, OpenClaw.");
+      break;
     }
 
-    if (configured > 0) {
-      console.log(`\nSetup complete. Configured ${configured} tool(s).`);
+    // 3. Auto-select best tool (logged in + highest priority) and configure
+    const best = tools.find((t) => t.loggedIn) ?? tools[0];
+    const config = loadBackendConfig();
+
+    console.log(`\nAuto-selecting backend: ${displayName(best.name)}...`);
+
+    if (best.name === "openclaw") {
+      await detectAndSetupOpenClaw();
     } else {
-      console.log("\nNo tools auto-configured. Add manually to your CLI tool's MCP config:");
-      console.log('  { "mcpServers": { "zhihand": { "command": "zhihand", "args": ["serve"] } } }');
+      configureMCP(best.name, config.activeBackend);
     }
+
+    saveBackendConfig({ activeBackend: best.name });
+    console.log(`\nSetup complete. Backend: ${displayName(best.name)}.`);
+    console.log(`To switch backend later: zhihand claude / zhihand gemini / zhihand codex`);
     break;
   }
 

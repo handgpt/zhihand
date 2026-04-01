@@ -2,7 +2,7 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前核心版本：`0.14.0`
+当前核心版本：`0.15.0`
 
 智手®让 AI 智能体（如 Claude Code, Gemini CLI, Codex CLI, OpenClaw）能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
@@ -52,62 +52,17 @@ zhihand setup
 3. 等待你用智手® App 扫码
 4. 保存凭据到 `~/.zhihand/credentials.json`
 5. 检测本机已安装的 AI 工具
-6. 打印 MCP 配置片段
+6. 自动选择最佳工具并配置 MCP
 
-### 3. 配置你的 AI 工具
-
-**Claude Code** — 运行以下命令，或编辑 `.mcp.json`：
+无需手动配置 MCP。如需切换后端：
 
 ```bash
-claude mcp add zhihand -- zhihand serve
+zhihand claude             # 切换到 Claude Code
+zhihand gemini             # 切换到 Gemini CLI
+zhihand codex              # 切换到 Codex CLI
 ```
 
-或在项目根目录创建 `.mcp.json`：
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**Gemini CLI** — 添加到 `~/.gemini/settings.json`：
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**Codex CLI** — 添加到 MCP 配置：
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**OpenClaw** — 安装插件：
-
-```bash
-openclaw plugins install @zhihand/mcp
-```
-
-### 4. 开始使用
+### 3. 开始使用
 
 配置完成后，AI 智能体可以直接控制你的手机：
 
@@ -157,14 +112,14 @@ MCP Server 为 AI 智能体提供三个工具：
 
 ```
 zhihand serve              启动 MCP Server（stdio 模式）
-zhihand setup              交互式设置：配对 + 检测工具 + 输出配置
+zhihand setup              交互式设置：配对 + 自动检测 + 自动配置
 zhihand pair               配对手机（终端显示 QR 码）
-zhihand status             查看当前配对状态和设备信息
+zhihand status             查看配对状态、设备信息和当前后端
 zhihand detect             检测本机已安装的 CLI 工具
 
-zhihand claude <prompt>    启动 Claude Code 执行任务
-zhihand codex <prompt>     启动 Codex CLI 执行任务
-zhihand gemini <prompt>    启动 Gemini CLI（交互模式）
+zhihand claude             切换后端到 Claude Code（自动配置 MCP）
+zhihand codex              切换后端到 Codex CLI（自动配置 MCP）
+zhihand gemini             切换后端到 Gemini CLI（自动配置 MCP）
 
 zhihand --help             显示帮助
 ```
@@ -172,10 +127,8 @@ zhihand --help             显示帮助
 | 选项 | 说明 |
 |---|---|
 | `--device <name>` | 使用指定的已配对设备 |
-| `--model <model>` | 指定模型（如 `zhihand gemini --model flash`） |
 | `ZHIHAND_DEVICE` | 环境变量，与 `--device` 等效 |
 | `ZHIHAND_CLI` | 覆盖 CLI 工具检测结果 |
-| `CLAUDE_GEMINI_MODEL` | 默认 Gemini 模型（默认：`gemini-3.1-pro-preview`） |
 
 ## Android & iOS App
 

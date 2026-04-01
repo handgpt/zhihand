@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.14.0`
+Version: `0.15.0`
 
 ## What is this?
 
@@ -39,7 +39,7 @@ npx @zhihand/mcp serve
 
 ## Quick Start
 
-### 1. Pair your phone
+### 1. Setup and pair
 
 ```bash
 zhihand setup
@@ -52,64 +52,11 @@ This runs the full interactive setup:
 3. Waits for you to scan the QR code with the ZhiHand mobile app
 4. Saves credentials to `~/.zhihand/credentials.json`
 5. Detects installed CLI tools (Claude Code, Codex, Gemini CLI, OpenClaw)
-6. Prints the MCP configuration snippet for your tools
+6. Auto-selects the best available tool and configures MCP automatically
 
-### 2. Configure your AI tool
+No manual MCP configuration needed — `zhihand setup` handles everything.
 
-Add the ZhiHand MCP server to your tool's configuration:
-
-**Claude Code** — Add to `.mcp.json` in your project root, or run:
-
-```bash
-claude mcp add zhihand -- zhihand serve
-```
-
-Or manually create/edit `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**Codex CLI** — Add to your MCP config:
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**Gemini CLI** — Add to `~/.gemini/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "zhihand": {
-      "command": "zhihand",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
-**OpenClaw** — Install the plugin directly:
-
-```bash
-openclaw plugins install @zhihand/mcp
-```
-
-### 3. Start using it
+### 2. Start using it
 
 Once configured, your AI agent can use ZhiHand tools directly. For example, in Claude Code:
 
@@ -124,43 +71,37 @@ Once configured, your AI agent can use ZhiHand tools directly. For example, in C
 
 ```
 zhihand serve              Start MCP Server (stdio mode, called by AI tools)
-zhihand setup              Interactive setup: pair + detect tools + print config
+zhihand setup              Interactive setup: pair + auto-detect + auto-configure
 zhihand pair               Pair with a phone (QR code in terminal)
-zhihand status             Show current pairing status and device info
+zhihand status             Show pairing status, device info, and active backend
 zhihand detect             List detected CLI tools and their login status
 zhihand --help             Show help
 
-zhihand claude <prompt>    Launch Claude Code with a prompt
-zhihand codex <prompt>     Launch Codex CLI with a prompt
-zhihand gemini <prompt>    Launch Gemini CLI in interactive mode
+zhihand claude             Switch backend to Claude Code (auto-configures MCP)
+zhihand codex              Switch backend to Codex CLI (auto-configures MCP)
+zhihand gemini             Switch backend to Gemini CLI (auto-configures MCP)
 ```
 
-### CLI Tool Subcommands
+### Switching Backends
 
-Use `zhihand claude`, `zhihand codex`, or `zhihand gemini` to launch the corresponding AI tool directly:
+Use `zhihand claude`, `zhihand codex`, or `zhihand gemini` to switch the active backend:
 
 ```bash
-zhihand gemini "review the code in src/"
-zhihand claude "explain this function"
-zhihand codex "fix the failing test"
+zhihand gemini             # Switch to Gemini CLI
+zhihand claude             # Switch to Claude Code
+zhihand codex              # Switch to Codex CLI
 ```
 
-If the tool is not installed, an error message is shown.
-
-**Options for CLI subcommands:**
-
-| Option | Description |
-|---|---|
-| `--model <model>` | Specify the model to use (e.g. `zhihand gemini --model flash`) |
-
-**Gemini interactive mode:** When using `zhihand gemini`, the tool launches in interactive mode with `--approval-mode yolo` and the specified model (default: `gemini-3.1-pro-preview`). The model can also be set via the `CLAUDE_GEMINI_MODEL` environment variable.
+When you switch:
+- MCP config is **automatically added** to the new backend
+- MCP config is **automatically removed** from the previous backend
+- If the tool is not installed, an error is shown
 
 ### Options
 
 | Option | Description |
 |---|---|
 | `--device <name>` | Use a specific paired device (if you have multiple) |
-| `--model <model>` | Specify model for CLI subcommands |
 | `-h, --help` | Show help |
 
 ### Environment Variables
@@ -169,7 +110,6 @@ If the tool is not installed, an error message is shown.
 |---|---|
 | `ZHIHAND_DEVICE` | Default device name (same as `--device`) |
 | `ZHIHAND_CLI` | Override CLI tool selection for mobile-initiated tasks |
-| `CLAUDE_GEMINI_MODEL` | Default Gemini model (default: `gemini-3.1-pro-preview`) |
 
 ## MCP Tools
 
@@ -243,6 +183,7 @@ Pairing credentials are stored at:
 ```
 ~/.zhihand/
 ├── credentials.json    # Device credentials (credentialId, controllerToken, endpoint)
+├── backend.json        # Active backend selection (claudecode/codex/gemini)
 └── state.json          # Current pairing session state
 ```
 
@@ -287,6 +228,7 @@ packages/mcp/
 │   └── cli/
 │       ├── detect.ts        # CLI tool detection (Claude Code, Codex, Gemini, OpenClaw)
 │       ├── spawn.ts         # CLI process spawning (for mobile-initiated tasks)
+│       ├── mcp-config.ts    # MCP auto-configuration (add/remove per backend)
 │       └── openclaw.ts      # OpenClaw auto-detect & plugin install
 ├── dist/                    # Compiled JavaScript (shipped in npm package)
 ├── package.json
