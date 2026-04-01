@@ -2,7 +2,7 @@
 
 ZhiHand lets AI agents (like Claude Code, Gemini CLI, Codex CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
 
-Current core version: `0.12.1`
+Current core version: `0.14.0`
 
 ## Architecture
 
@@ -159,14 +159,21 @@ zhihand setup              Interactive setup: pair + configure
 zhihand pair               Pair with a phone device
 zhihand status             Show pairing status and device info
 zhihand detect             Detect installed CLI tools
+
+zhihand claude <prompt>    Launch Claude Code with a prompt
+zhihand codex <prompt>     Launch Codex CLI with a prompt
+zhihand gemini <prompt>    Launch Gemini CLI (interactive mode)
+
 zhihand --help             Show help
 ```
 
 | Option | Description |
 |---|---|
 | `--device <name>` | Use a specific paired device |
+| `--model <model>` | Specify model for CLI subcommands (e.g. `zhihand gemini --model flash`) |
 | `ZHIHAND_DEVICE` | Environment variable, same as `--device` |
 | `ZHIHAND_CLI` | Override CLI tool detection |
+| `CLAUDE_GEMINI_MODEL` | Default Gemini model (default: `gemini-3.1-pro-preview`) |
 
 ## Android & iOS Apps
 

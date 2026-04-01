@@ -8,13 +8,22 @@ import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
 import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
 import { loadDefaultCredential } from "../dist/core/config.js";
 import { executePairing } from "../dist/core/pair.js";
+import { launchCLI } from "../dist/cli/spawn.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
 
+const CLI_TOOL_MAP = {
+  claude: "claudecode",
+  codex: "codex",
+  gemini: "gemini",
+};
+
 const { positionals, values } = parseArgs({
   allowPositionals: true,
+  strict: false,
   options: {
     device: { type: "string" },
+    model: { type: "string" },
     http: { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
@@ -34,11 +43,44 @@ Usage:
   zhihand detect             Detect available CLI tools
   zhihand setup              Interactive setup: pair + configure
 
+  zhihand claude [prompt]    Launch Claude Code with prompt
+  zhihand codex [prompt]     Launch Codex CLI with prompt
+  zhihand gemini [prompt]    Launch Gemini CLI (interactive mode)
+
 Options:
   --device <name>    Use a specific paired device
+  --model <model>    Specify model (e.g. zhihand gemini --model flash)
   -h, --help         Show this help
 `);
   process.exit(0);
+}
+
+// Handle CLI tool subcommands: claude, codex, gemini
+if (command in CLI_TOOL_MAP) {
+  const toolName = CLI_TOOL_MAP[command];
+  const tools = await detectCLITools();
+  const tool = tools.find((t) => t.name === toolName);
+
+  if (!tool) {
+    console.error(`Error: ${command} is not installed or not found in PATH.`);
+    console.error(`Install it first, then try again.`);
+    process.exit(1);
+  }
+
+  const prompt = positionals.slice(1).join(" ");
+  if (!prompt) {
+    console.error(`Usage: zhihand ${command} <prompt>`);
+    console.error(`Example: zhihand ${command} "take a screenshot of my phone"`);
+    process.exit(1);
+  }
+
+  try {
+    const code = await launchCLI(tool, prompt, { model: values.model });
+    process.exit(code);
+  } catch (err) {
+    console.error(`Error running ${command}: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 switch (command) {

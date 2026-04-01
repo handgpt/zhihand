@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.12.1`
+Version: `0.14.0`
 
 ## What is this?
 
@@ -129,13 +129,38 @@ zhihand pair               Pair with a phone (QR code in terminal)
 zhihand status             Show current pairing status and device info
 zhihand detect             List detected CLI tools and their login status
 zhihand --help             Show help
+
+zhihand claude <prompt>    Launch Claude Code with a prompt
+zhihand codex <prompt>     Launch Codex CLI with a prompt
+zhihand gemini <prompt>    Launch Gemini CLI in interactive mode
 ```
+
+### CLI Tool Subcommands
+
+Use `zhihand claude`, `zhihand codex`, or `zhihand gemini` to launch the corresponding AI tool directly:
+
+```bash
+zhihand gemini "review the code in src/"
+zhihand claude "explain this function"
+zhihand codex "fix the failing test"
+```
+
+If the tool is not installed, an error message is shown.
+
+**Options for CLI subcommands:**
+
+| Option | Description |
+|---|---|
+| `--model <model>` | Specify the model to use (e.g. `zhihand gemini --model flash`) |
+
+**Gemini interactive mode:** When using `zhihand gemini`, the tool launches in interactive mode with `--approval-mode yolo` and the specified model (default: `gemini-3.1-pro-preview`). The model can also be set via the `CLAUDE_GEMINI_MODEL` environment variable.
 
 ### Options
 
 | Option | Description |
 |---|---|
 | `--device <name>` | Use a specific paired device (if you have multiple) |
+| `--model <model>` | Specify model for CLI subcommands |
 | `-h, --help` | Show help |
 
 ### Environment Variables
@@ -144,6 +169,7 @@ zhihand --help             Show help
 |---|---|
 | `ZHIHAND_DEVICE` | Default device name (same as `--device`) |
 | `ZHIHAND_CLI` | Override CLI tool selection for mobile-initiated tasks |
+| `CLAUDE_GEMINI_MODEL` | Default Gemini model (default: `gemini-3.1-pro-preview`) |
 
 ## MCP Tools
 
