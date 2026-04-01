@@ -2,102 +2,86 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前核心版本：`0.9.14`
+当前核心版本：`0.12.0`
 
-智手®让 OpenClaw 能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
+智手®让 AI 智能体（如 Claude Code, Gemini CLI, OpenClaw）能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
-你可以把它理解成三部分协同工作：
+## 架构
 
-- `Brain`
-  OpenClaw 接收你的请求，并决定下一步该做什么。
-- `Eye`
-  Android App 在你授权后共享当前屏幕。
-- `Hand`
-  智手®设备把真正的输入动作发给手机。
+智手®基于 **Model Context Protocol (MCP)** 构建。核心实现是一个统一的 MCP Server，负责所有业务逻辑、工具定义和状态管理。
 
-## 普通用户怎么用
-
-大多数用户只需要这条流程：
-
-1. 安装 Android App
-2. 安装 OpenClaw 插件
-3. 在 OpenClaw 里执行 `/zhihand pair`
-4. 用 App 扫码
-5. 连接 `ZhiHand Device`
-6. 需要读屏时再打开 `Eye`
-7. 开始直接向 OpenClaw 提需求
-
-如果你使用官方托管默认值，首次使用时不需要先自建服务端。
+```text
+                    ┌─────────────────────────────────┐
+                    │          @zhihand/mcp            │
+                    │  (核心业务逻辑、tool 定义、状态管理)  │
+                    └──────────┬──────────────────┬────┘
+                               │                  │
+                    ┌──────────▼──────┐  ┌────────▼────────┐
+                    │  MCP stdio/HTTP  │  │  OpenClaw Plugin │
+                    │  (直接集成 CLI)   │  │  (薄包装, 调 MCP) │
+                    └──────────┬──────┘  └────────┬────────┘
+                               │                  │
+              ┌────────────────┼──────────────────┼──────┐
+              │                │                  │      │
+        Claude Code      Gemini CLI       OpenClaw    Codex CLI
+```
 
 ## 快速开始
 
+### AI 智能体用户 (MCP)
+
+使用智手®最简单的方式是通过其 MCP Server。这允许任何兼容 MCP 的工具（如 Claude Code 或 Gemini CLI）直接使用智手®工具。
+
+1.  **安装 MCP Server**:
+    ```bash
+    npm install -g @zhihand/mcp
+    ```
+
+2.  **设置与配对**:
+    运行 setup 命令并按照说明配对你的手机：
+    ```bash
+    zhihand setup
+    ```
+
+3.  **在你的工具中使用**:
+    - **Claude Code**: 如果配置正确，它会自动检测 MCP server。
+    - **Gemini CLI**: 在你的 MCP 配置中添加 `zhihand serve` 命令。
+
 ### OpenClaw 用户
 
-安装插件：
+如果你正在使用 OpenClaw，可以安装插件，它现在作为 MCP server 的薄包装运行：
 
-```bash
-openclaw plugins install @zhihand/openclaw
-```
+1.  **安装插件**:
+    ```bash
+    openclaw plugins install @zhihand/openclaw
+    ```
 
-然后把插件 id 加进 OpenClaw allowlist：
+2.  **配置与信任**:
+    ```bash
+    openclaw config set plugins.allow '["openclaw"]' --strict-json
+    openclaw config set tools.allow '["openclaw"]' --strict-json
+    ```
 
-```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-```
+3.  **配对**:
+    ```text
+    /zhihand pair
+    ```
+    在 Android App 中扫描二维码。
 
-然后把智手®插件工具开放给 OpenClaw agent 运行时：
+## Android & iOS App 用户
 
-```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
-```
+1.  下载并安装智手® **Android** 或 **iOS** App。
+2.  点击 **Scan** 扫描 AI 智能体提供的二维码。
+3.  连接你的 **ZhiHand Device**。
+4.  当你希望智能体看屏幕时，开启 **Eye**（屏幕共享）。
 
-然后把当前 OpenClaw gateway token 写进插件配置：
+## 这几部分分别在做什么
 
-```bash
-openclaw doctor --generate-gateway-token
-export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
-import json
-from pathlib import Path
-config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
-print(config['gateway']['auth']['token'])
-PY
-)"
-openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
-```
+- **移动端 App (Android/iOS)**: 负责接收用户输入、上传屏幕快照与设备画像、执行设备侧动作。
+- **智手® server**: 存储配对状态、提示词、命令和附件。
+- **MCP Server (@zhihand/mcp)**: 核心实现层，为 AI 智能体提供工具。
+- **OpenClaw plugin**: 专门为 OpenClaw 用户提供的 MCP server 包装器。
 
-按你的 OpenClaw 环境要求重启或重新加载后，执行：
-
-```text
-/zhihand pair
-```
-
-浏览器打开返回的二维码链接，再用 Android App 扫码。
-
-插件默认会在启动时检查 npm 是否有新的已发布版本。
-可以执行 `/zhihand update check` 查看最新发布版本，或执行 `/zhihand update` 输出推荐的宿主侧更新命令，再重新加载 OpenClaw。
-
-推荐直接在宿主机 shell 执行：
-
-```bash
-openclaw plugins update openclaw
-```
-
-`openclaw plugins install @zhihand/openclaw@<version>` 只适用于首次安装，或者你已经删除现有扩展目录后的重装。对已经安装的插件做升级时，请使用 `openclaw plugins update openclaw`。
-
-### Android 用户
-
-1. 打开智手® App
-2. 点击 `Scan`
-3. 扫描 OpenClaw 提供的二维码
-4. 连接 `ZhiHand Device`
-5. 当你希望智手®看屏幕时，再点开 `Eye`
-
-## 这三部分分别在做什么
-
-- **移动端 App**
-  负责接收用户输入、上传屏幕快照与设备画像、执行设备侧动作
-- **智手® server**
   负责保存配对关系、提示词、回复、命令和附件
 - **OpenClaw 插件**
   负责把 OpenClaw 接到智手®控制面，并暴露 `zhihand_*` 工具

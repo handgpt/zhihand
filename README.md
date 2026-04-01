@@ -1,103 +1,85 @@
 # ZhiHand
 
-ZhiHand lets OpenClaw see your phone and help operate it through the ZhiHand Device.
+ZhiHand lets AI agents (like Claude Code, Gemini CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
 
-Current core version: `0.9.14`
+Current core version: `0.12.0`
 
-In practice, ZhiHand brings three parts together:
+## Architecture
 
-- `Brain`
-  OpenClaw receives the request and decides what to do.
-- `Eye`
-  The Android app shares the current screen when you allow it.
-- `Hand`
-  ZhiHand Device sends the actual input to the phone.
+ZhiHand is built on the **Model Context Protocol (MCP)**. The core implementation is a unified MCP Server that handles all business logic, tool definitions, and state management.
 
-## What Users Do
-
-Most users only need this flow:
-
-1. Install the Android app.
-2. Install the OpenClaw plugin.
-3. Run `/zhihand pair` in OpenClaw.
-4. Scan the QR code in the app.
-5. Connect `ZhiHand Device`.
-6. Turn on screen sharing when you want ZhiHand to see the screen.
-7. Start asking OpenClaw to help.
-
-If you use the hosted defaults, you do not need to deploy your own server first.
+```text
+                    ┌─────────────────────────────────┐
+                    │          @zhihand/mcp            │
+                    │  (Core Logic, Tools, State)      │
+                    └──────────┬──────────────────┬────┘
+                               │                  │
+                    ┌──────────▼──────┐  ┌────────▼────────┐
+                    │  MCP stdio/HTTP  │  │  OpenClaw Plugin │
+                    │  (Direct CLI)    │  │  (Thin Wrapper)  │
+                    └──────────┬──────┘  └────────┬────────┘
+                               │                  │
+              ┌────────────────┼──────────────────┼──────┐
+              │                │                  │      │
+        Claude Code      Gemini CLI       OpenClaw    Codex CLI
+```
 
 ## Quick Start
 
-### OpenClaw user
+### AI Agent Users (MCP)
 
-Install the plugin:
+The easiest way to use ZhiHand is via its MCP Server. This allows any MCP-compatible tool (like Claude Code or Gemini CLI) to use ZhiHand tools directly.
 
-```bash
-openclaw plugins install @zhihand/openclaw
-```
+1.  **Install the MCP Server**:
+    ```bash
+    npm install -g @zhihand/mcp
+    ```
 
-Then trust the plugin id in OpenClaw:
+2.  **Setup and Pair**:
+    Run the setup command and follow the instructions to pair your phone:
+    ```bash
+    zhihand setup
+    ```
 
-```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-```
+3.  **Use with your favorite tool**:
+    - **Claude Code**: It will automatically detect the MCP server if configured.
+    - **Gemini CLI**: Add the `zhihand serve` command to your MCP configuration.
 
-Then allow the ZhiHand plugin tools in the OpenClaw agent runtime:
+### OpenClaw Users
 
-```bash
-openclaw config set tools.allow '["openclaw"]' --strict-json
-```
+If you are using OpenClaw, you can install the plugin which acts as a thin wrapper around the MCP server:
 
-Then point the plugin at the current OpenClaw gateway token:
+1.  **Install the plugin**:
+    ```bash
+    openclaw plugins install @zhihand/openclaw
+    ```
 
-```bash
-openclaw doctor --generate-gateway-token
-export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
-import json
-from pathlib import Path
-config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
-print(config['gateway']['auth']['token'])
-PY
-)"
-openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
-```
+2.  **Configure and Trust**:
+    ```bash
+    openclaw config set plugins.allow '["openclaw"]' --strict-json
+    openclaw config set tools.allow '["openclaw"]' --strict-json
+    ```
 
-Then restart or reload OpenClaw if your setup requires it, and run:
+3.  **Pair**:
+    ```text
+    /zhihand pair
+    ```
+    Scan the QR code in the Android app.
 
-```text
-/zhihand pair
-```
+## Android & iOS Apps
 
-Open the returned QR URL in a browser and scan it from the Android app.
-
-The plugin checks npm for published updates during startup by default.
-Run `/zhihand update check` to inspect the latest published version, or `/zhihand update` to print the recommended host-side update command before restarting OpenClaw.
-
-Recommended host-side update command:
-
-```bash
-openclaw plugins update openclaw
-```
-
-Use `openclaw plugins install @zhihand/openclaw@<version>` only for a first install or after removing the existing extension directory. For an installed plugin, use `openclaw plugins update openclaw`.
-
-### Android user
-
-1. Open the ZhiHand app.
-2. Tap `Scan`.
-3. Scan the QR code from OpenClaw.
-4. Connect `ZhiHand Device`.
-5. Tap `Eye` when you want ZhiHand to read the screen.
+1.  Download and install the ZhiHand app for **Android** or **iOS**.
+2.  Tap **Scan** and scan the QR code from your AI agent.
+3.  Connect your **ZhiHand Device**.
+4.  Turn on **Eye** (screen sharing) when you want the agent to see your screen.
 
 ## What Runs Where
 
-- **Mobile app**
-  Captures user input, uploads screen snapshots and device-profile context, and executes device-side actions.
-- **ZhiHand server**
-  Stores pairing state, prompts, replies, commands, and attachments.
-- **OpenClaw plugin**
+- **Mobile app (Android/iOS)**: Captures user input, uploads screen snapshots, and executes device-side actions.
+- **ZhiHand server**: Stores pairing state, prompts, commands, and attachments.
+- **MCP Server (@zhihand/mcp)**: The core implementation layer providing tools to AI agents.
+- **OpenClaw plugin**: A wrapper for the MCP server specifically for OpenClaw users.
+
   Connects OpenClaw to the ZhiHand control plane and exposes `zhihand_*` tools.
 
 ## What This Repository Contains

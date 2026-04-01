@@ -1,39 +1,115 @@
-# 智手®（ZhiHand）配置说明
+# 配置指南
 
-说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
+本页面介绍如何配置智手®（ZhiHand），重点介绍面向 AI 智能体的 **Model Context Protocol (MCP)** 以及传统的 OpenClaw 设置。
 
-这份文档说明：
+## AI 智能体 (MCP)
 
-- 大多数用户实际需要配置什么
-- 进阶用户还能覆盖什么
-- 哪些内容绝不能写进公共仓库
+大多数用户应使用统一的 MCP Server。这允许 **Claude Code**, **Gemini CLI** 等 AI 智能体直接控制你的手机。
 
-## 大多数用户
+### 1. 安装
 
-如果你使用官方托管默认值，大多数用户只需要两步：
+全局安装 `@zhihand/mcp` 包：
 
-1. 安装 Android App
-2. 安装 OpenClaw 插件
+```bash
+npm install -g @zhihand/mcp
+```
 
-正式安装命令：
+这会安装 `zhihand` 命令行工具。
+
+### 2. 交互式设置
+
+运行 setup 命令以配置你的凭据并与 Android 或 iOS 设备配对：
+
+```bash
+zhihand setup
+```
+
+按照提示扫描二维码并授权连接。
+
+### 3. 智能体配置
+
+配对完成后，你可以将智手®添加到你喜欢的 AI 智能体中。
+
+#### Claude Code
+
+如果你将其添加到配置中，Claude Code 可以自动检测 MCP server。或者直接运行：
+
+```bash
+# 如果需要手动启动的示例
+claude --mcp "zhihand serve"
+```
+
+#### Gemini CLI
+
+将以下内容添加到你的 Gemini CLI 配置中（通常在 `~/.geminirc` 或类似文件中）：
+
+```json
+{
+  "mcp": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+### 4. CLI 子命令与运行模式
+
+`zhihand` 命令提供了多个实用程序来管理 MCP server 及其生命周期。
+
+#### `zhihand serve` (主要入口)
+
+这是 AI 智能体调用以启动智手®逻辑的命令。
+
+- **stdio 模式** (默认):
+  ```bash
+  zhihand serve
+  ```
+  当 AI 智能体（如 Claude Code, Gemini CLI）将智手®作为子进程启动时使用此模式。它通过标准输入 / 输出进行通信。
+- **HTTP/SSE 模式**:
+  ```bash
+  zhihand serve --http
+  ```
+  启动一个独立的 Web 服务器，可供远程智能体或基于 Web 的工具使用。它会持续运行直到手动停止。
+
+#### `zhihand service` (后台服务管理)
+
+如果你希望智手®作为持久的后台守护进程运行（例如开机自启），请使用 service 相关命令：
+
+- `zhihand service install`: 将智手®注册为系统服务（例如在 Linux 上使用 systemd，在 macOS 上使用 launchd）。
+- `zhihand service uninstall`: 移除后台服务。
+- `zhihand service status`: 检查后台守护进程当前是否正在运行。
+- `zhihand service logs`: 查看来自后台进程的实时日志。
+
+#### 其他实用工具
+
+- `zhihand pair`: 仅执行设备配对（如果你不需要完整设置，这很有用）。
+- `zhihand status`: 显示当前的配对状态、设备信息和服务健康状况。
+- `zhihand update`: `@zhihand/mcp` 包的交互式更新管理器。
+
+## OpenClaw 用户
+
+OpenClaw 用户可以使用专用插件，该插件现在作为 MCP 逻辑的包装器运行。
+
+### 1. 安装
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-然后把插件 id 加进 OpenClaw allowlist：
+### 2. 信任与配置
+
+启用插件及其工具：
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
-```
-
-然后把智手®插件工具开放给 OpenClaw agent 运行时：
-
-```bash
 openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
-然后把当前 OpenClaw gateway token 写进插件配置：
+### 3. Gateway Token (本地中继)
+
+智手®需要回调 OpenClaw。设置 gateway token：
 
 ```bash
 openclaw doctor --generate-gateway-token
@@ -44,300 +120,25 @@ config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
 print(config['gateway']['auth']['token'])
 PY
 )"
+openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
 openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
 ```
 
-然后执行：
+### 4. 配对
 
 ```text
 /zhihand pair
 ```
 
-在默认托管路径下，插件已经默认使用：
+## 移动端 App (Android & iOS)
 
-- `https://pair.zhihand.com`
-- `https://api.zhihand.com`
-- `https://zhihand.com/download`
+**Android** 和 **iOS** App 除了初始配对之外，几乎不需要额外配置：
 
-如果你还需要查看 Android App 或 server 的说明，请直接看：
+1.  **Scan**: 与你的宿主智能体配对。
+2.  **Connect**: 连接 **ZhiHand Device**（硬件 / BLE）。
+3.  **Eye**: 开启屏幕共享。
 
-- [zhihand-android](https://github.com/handgpt/zhihand-android)
-  查看 Android 侧行为、权限和移动端设置
-- [zhihand-ios](https://github.com/handgpt/zhihand-ios)
-  查看 iPhone/iPad 侧行为和 iOS 传输细节
-- [zhihand-server](https://github.com/handgpt/zhihand-server)
-  查看控制面部署和服务端配置
+### 高级设置
 
-## 用户实际会看到什么
-
-### 在 OpenClaw 中
-
-插件会提供：
-
-- `/zhihand pair`
-- `/zhihand status`
-- `/zhihand unpair`
-- `/zhihand update`
-- `/zhihand update check`
-
-### 在移动端 App 中
-
-App 负责：
-
-- 扫配对二维码
-- claim 配对关系
-- 本地保存长期凭据
-- 在录屏开启时上传屏幕快照
-- 上传设备画像，便于宿主按 ROM / 机型 / 运行时特征做策略适配
-- 上传提示词与附件
-- 通过 SSE 接收命令与回复，再执行设备侧动作
-
-## OpenClaw 进阶配置
-
-进阶用户或自托管用户，可以在下面这组配置里覆盖默认值：
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "openclaw": {
-        "enabled": true,
-        "config": {}
-      }
-    }
-  }
-}
-```
-
-公开配置字段包括：
-
-- `controlPlaneEndpoint`
-  控制面地址。
-  默认值：`https://api.zhihand.com`
-- `originListener`
-  可选的宿主公开来源标识
-- `displayName`
-  配对时给用户看的名称
-- `stableIdentity`
-  跨重启保持同一个 `edge-id` 的稳定身份
-- `pairingTTLSeconds`
-  二维码有效期
-- `appDownloadURL`
-  配对输出中展示的 App 下载地址
-- `gatewayResponsesEndpoint`
-  本地 OpenClaw `POST /v1/responses` 地址
-- `gatewayAuthToken`
-  调用本地 OpenClaw 时使用的 Bearer Token
-- `mobileAgentId`
-  专门处理手机提示词的 OpenClaw agent id
-- `updateCheckEnabled`
-  是否在启动时自动检查 npm 已发布更新
-- `updateCheckIntervalHours`
-  两次自动 npm 更新检查之间的最小小时数
-- `requestedScopes`
-  写进配对描述符的权限申请列表
-
-公开安全的示例：
-
-```json
-{
-  "plugins": {
-    "allow": ["openclaw"],
-    "entries": {
-      "openclaw": {
-        "enabled": true,
-        "config": {
-          "gatewayAuthToken": "set-this-in-deployment"
-        }
-      }
-    }
-  }
-}
-```
-
-如果你不想手动编辑 `~/.openclaw/openclaw.json`，也可以直接用 CLI 写入 allowlist 和插件 relay token：
-
-```bash
-openclaw config set plugins.allow '["openclaw"]' --strict-json
-openclaw config set tools.allow '["openclaw"]' --strict-json
-openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-gateway-token"' --strict-json
-```
-
-这样做是推荐的，因为当非内置插件安装完成后，如果 `plugins.allow` 为空，OpenClaw 会发出 warning；如果 `tools.allow` 没有包含 `openclaw`，智手®的可选插件工具不会暴露给 agent；如果没有 `gatewayAuthToken`，智手®插件会记录 `prompt relay disabled`；而如果没有打开 `gateway.http.endpoints.responses.enabled`，本地 OpenClaw `POST /v1/responses` 会返回 `404`。
-
-插件默认也会在启动时检查 npm 是否有新的已发布版本。
-可以用 `/zhihand update check` 强制刷新检查结果，或用 `/zhihand update` 输出推荐的宿主侧更新命令，然后重新加载 OpenClaw。
-
-推荐直接在宿主机 shell 执行：
-
-```bash
-openclaw plugins update openclaw
-```
-
-`openclaw plugins install @zhihand/openclaw@<version>` 只保留给首次安装，或者删除现有扩展目录后的重装。对于已经安装的插件升级，请使用 `openclaw plugins update openclaw`。
-
-## 官方托管默认值
-
-公共插件默认使用：
-
-- `controlPlaneEndpoint`: `https://api.zhihand.com`
-- `pairingTTLSeconds`: `600`
-- `appDownloadURL`: `https://zhihand.com/download`
-- `gatewayResponsesEndpoint`: `http://127.0.0.1:18789/v1/responses`
-- `mobileAgentId`: `zhihand-mobile`
-- `updateCheckEnabled`: `true`
-- `updateCheckIntervalHours`: `24`
-
-这些默认值就是面向普通用户的官方托管路径。
-
-## OpenClaw 运行时最佳实践
-
-插件应保持“薄”。
-
-推荐分工：
-
-- **插件**
-  负责配对、控制面传输、SSE 事件接入与 `zhihand_*` 工具
-- **OpenClaw agent**
-  负责推理、工具编排与最终回复
-
-不要把插件内 planner 或直接 `codex exec` 流程当成公共契约。
-
-推荐的专用 agent 例子：
-
-```json
-{
-  "agents": {
-    "list": [
-      {
-        "id": "zhihand-mobile",
-        "model": "openai-codex/gpt-5.4",
-        "tools": {
-          "allow": ["openclaw"]
-        }
-      }
-    ]
-  }
-}
-```
-
-## OpenAI Computer Tool 现状
-
-当前推荐给 ZhiHand 移动端 agent 的模型仍然是 `openai-codex/gpt-5.4`，但
-这条 OpenClaw relay 路径 **并没有** 接入 OpenAI GA 版的 `computer` 工具。
-
-当前公开集成契约是：
-
-- 本地 relay 走 OpenClaw 的 `POST /v1/responses`
-- OpenClaw 在这个面上目前只接收托管的 **function tools**
-- 所以移动端 agent 走的是 `zhihand_screen_read` 和 `zhihand_control`
-
-不要把这理解成已经启用了原生的 OpenAI `computer_call` /
-`computer_call_output`。如果要使用 OpenAI GA 版 computer tool，需要：
-
-- 上游 OpenClaw 先支持该工具类型，或
-- 另做一条绕过本地 OpenClaw `/v1/responses` 的直连 OpenAI harness
-
-而这条直连 harness 当前 **不是** ZhiHand/OpenClaw 插件的公开契约。
-
-## OpenClaw 工具
-
-适配器当前暴露：
-
-- `zhihand_pair`
-- `zhihand_status`
-- `zhihand_screen_read`
-- `zhihand_control`
-
-`zhihand_control` 当前支持：
-
-- `click`
-- `long_click`
-- `move`
-- `move_to`
-- `swipe`
-- `back`
-- `home`
-- `enter`
-- `input_text`
-- `open_app`
-- `set_clipboard`
-- `start_live_capture`
-- `stop_live_capture`
-
-## 提示词附件
-
-手机提示词路径当前可携带：
-
-- 图片
-- 语音
-- 文档
-- 有限视频附件
-
-推荐做法：
-
-- 图片和文档直接作为附件上传
-- 语音以原始音频附件上传
-- 音频转写由 OpenClaw 宿主完成
-- 不要把“App 本地先转文字”当成公共主契约
-
-## 配对链接行为
-
-`https://pair.zhihand.com/pair?d=<base64url>` 现在有两种模式：
-
-- 浏览器模式
-  - 默认
-  - 返回 HTML 二维码页面
-- 机器模式
-  - 通过 `Accept: application/json` 或 `?format=json`
-  - 返回原始配对描述符 JSON
-
-普通用户流程是：
-
-1. OpenClaw 返回二维码链接
-2. 浏览器打开二维码页面
-3. Android App 扫码
-4. App 以 JSON 模式解析描述符并完成 claim
-
-## BLE 租约
-
-智手®设备使用 BLE 租约，确保同一时刻只有一个有效附近客户端控制硬件。
-
-公共 UUID：
-
-- 服务：`0x1815`
-- 指令特征：`0x2A56`
-- 租约特征：`0xFF02`
-
-公共操作：
-
-- `claim`
-- `renew`
-- `release`
-
-公共结果：
-
-- `free`
-- `leased`
-- `granted`
-- `renewed`
-- `busy`
-- `expired`
-
-## 读屏约束
-
-远程读屏依赖 Android App 已经持有有效的本地录屏会话。
-
-公共模型不假设可以静默绕过 Android 的 `MediaProjection` 授权。
-
-## 公共仓库安全规则
-
-以下内容不应写入本仓库：
-
-- 真实 token
-- 真实密码
-- 真实 API Key
-- 私有 SSH 入口
-- 运维凭据
-- 机器专属内部路径
+- **Control Plane**: 默认为 `https://api.zhihand.com`。如果使用自定义服务器，请在 App 设置中覆盖。
+- **BLE Lease**: App 会自动管理智手®设备的 BLE 租约。

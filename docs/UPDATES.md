@@ -2,6 +2,37 @@
 
 This document defines the recommended update detection, storage, and rollout model for ZhiHand.
 
+## MCP Server & CLI Updates
+
+The unified MCP Server (`@zhihand/mcp`) and the `zhihand` CLI are distributed via **npm**.
+
+### Update Detection
+
+By default, the `zhihand` CLI checks for updates periodically or when requested:
+
+- `zhihand update --check`: Performs a fresh lookup for the latest version on npm without installing.
+- Automatic checks: The CLI may perform background checks during startup (configurable).
+
+### Update Execution
+
+Users can update the package using standard npm commands or the built-in update utility:
+
+- **Manual update**:
+  ```bash
+  npm install -g @zhihand/mcp
+  ```
+- **CLI-guided update**:
+  ```bash
+  zhihand update
+  ```
+  This command will check for updates, ask for confirmation, perform the installation, and restart any managed services (if installed via `zhihand service install`).
+
+### Rollbacks
+
+In case of issues with a new version, the CLI supports rolling back to the previous version:
+
+- `zhihand update --rollback`: Reverts to the previously installed version of the package.
+
 ## Goals
 
 - Keep Android app updates and device firmware updates discoverable from stable, machine-readable manifests.

@@ -2,134 +2,76 @@
 
 ## Overview
 
-ZhiHand is a public shared layer built around a protocol-first control model.
+ZhiHand is a public shared layer built around a protocol-first control model, now primarily delivered via the **Model Context Protocol (MCP)**.
 
-The public core should stay neutral across host environments and runtime implementations. It should define one shared model that can be consumed by:
-
-- host adapters
-- mobile apps
-- device runtimes
-- web runtimes
-- deployment-specific services outside the public repo
+The core of ZhiHand is the unified MCP Server (`@zhihand/mcp`), which centralizes business logic, tool definitions, and state management. This allows ZhiHand to be seamlessly integrated into any MCP-compatible AI agent or host environment.
 
 ## Core Components
 
-### 1. Shared Protocol
+### 1. Unified MCP Server (`@zhihand/mcp`)
 
-`proto/zhihand/control/v1/control.proto` defines the versioned public control interface. It is the source of truth for message shapes, service methods, and compatibility boundaries.
+The MCP Server is the primary implementation layer. It handles:
+- **Tools**: Defines `zhihand_control`, `zhihand_screenshot`, `zhihand_pair`, etc.
+- **Transports**: Supports both `stdio` (for local CLI tools) and `SSE/HTTP` (for remote or web-based tools).
+- **State Management**: Manages pairing credentials, device profiles, and command queues.
+- **CLI Interface**: Provides the `zhihand` command-line tool for setup, pairing, and service management.
 
-### 2. `zhihandd`
+### 2. Shared Protocol
 
-`zhihandd` is the reference control-plane service in the public core. Its responsibilities include:
+`proto/zhihand/control/v1/control.proto` defines the versioned public control interface. It remains the source of truth for message shapes and service methods, consumed by the MCP Server and mobile apps.
 
-- accepting control requests
-- applying routing, validation, capability, and lifecycle rules
-- coordinating action execution
-- demonstrating the intended server-side model for the public protocol
+### 3. `zhihandd` (Reference Service)
 
-Current implementation status:
+`zhihandd` continues to serve as the reference control-plane service, coordinating communication between the MCP Server (acting as a client to `zhihandd`) and the mobile apps.
 
-- implemented today: HTTP JSON endpoints, SSE event streaming, per-credential device-profile storage, bounded in-memory event retention, optional bearer-token protection
-- not implemented yet: a public gRPC listener backed by generated proto bindings
+### 4. Host Adapters (Thin Wrappers)
 
-### 3. Host Adapters
-
-Host adapters translate host-specific events and APIs into the ZhiHand control model.
-
-The initial public adapter path starts with OpenClaw. Future host adapters may target environments such as Codex and Claude Code.
-
-Host adapters should stay thin. They adapt to the shared model instead of defining a second model.
-
-### 4. Runtime Categories
-
-The shared model should remain usable across these runtime categories:
-
-- host adapters
-- mobile apps
-- device runtimes
-- web runtimes
-
-The public repo intentionally does not enumerate private implementation repositories by name.
-
-## Architectural Boundaries
-
-### What Belongs In `zhihand`
-
-- shared protocol definitions
-- core action semantics
-- public architecture documentation
-- public service contracts
-- host-adapter boundaries
-- compatibility rules
-
-### What Does Not Belong In `zhihand`
-
-- private deployment infrastructure names or secrets
-- platform-native application implementation
-- hardware-specific production firmware implementation
-- secret-bearing control-plane integrations
+Host adapters are now thin wrappers around the MCP Server.
+- **OpenClaw**: A plugin that calls the MCP Server.
+- **Claude Code / Gemini CLI**: Direct integration via the MCP `stdio` transport.
 
 ## Interaction Model
 
-At a high level, the public model should look like this:
+The MCP-centric interaction model looks like this:
 
 ```text
-Host Adapter / Mobile App / Device Runtime / Web Runtime
+      AI Agents (Claude Code, Gemini CLI, etc.)
                          |
-                         v
-                      zhihandd
+                         v (MCP stdio/HTTP)
+                @zhihand/mcp (Server)
                          |
-                         v
-            Shared action and protocol model
+                         v (ZhiHand Protocol)
+                      zhihandd (Control Plane)
+                         |
+                         v (ZhiHand Protocol)
+                    Mobile App (Eye/Hand)
 ```
-
-Deployment-specific services may sit beside this model, but they should consume the public contract rather than redefine it.
 
 ## Design Principles
 
+### MCP-First Integration
+
+Integration should prioritize the Model Context Protocol to ensure compatibility with the broadest range of AI tools.
+
+### Centralized Logic
+
+Business logic resides in the MCP Server to keep host-specific adapters as thin as possible.
+
 ### Protocol-First
 
-Shared behavior starts in the protocol, not in a host-specific or app-specific implementation.
+Shared behavior starts in the protocol (`control.proto`), ensuring consistency across all components.
 
-### Versioned Contracts
-
-Breaking changes must be introduced intentionally and documented.
-
-### Thin Adapters
-
-Host adapters should map host behavior into the shared model without creating parallel semantics.
-
-### Public / Private Separation
-
-The public repo should define portable contracts. Deployment-specific services and private product infrastructure should stay outside the public repo.
-
-## Near-Term Architecture Targets
-
-- one coherent public control surface
-- one canonical action taxonomy
-- one capability and lifecycle model
-- a first end-to-end host-adapter integration
-
-## Implemented vs Planned
+## Implementation Status
 
 ### Implemented in this repository
 
-- `control.proto` as the public protocol definition
-- `zhihandd` as a reference HTTP/SSE control surface
-- OpenClaw as the first public host adapter
-- per-device profile snapshots so hosts can adapt behavior by ROM/model/runtime context
-- explicit separation between the public core and private deployment services
+- `control.proto`: Public protocol definition.
+- `zhihandd`: Reference HTTP/SSE control surface.
+- `@zhihand/mcp`: Unified MCP Server (Core logic, tools, CLI).
+- OpenClaw: MCP-based host adapter.
 
-### Planned, not yet shipped here
+### Planned, not yet shipped
 
-- generated proto bindings checked into the public repo
-- a real gRPC listener in `zhihandd`
-- persistent event storage behind an interface
-- richer compatibility negotiation beyond the current reference model
-
-## Risks
-
-- protocol drift between public contracts and private implementations
-- leaking host-specific assumptions into shared semantics
-- creating a second undocumented protocol surface in deployment-specific infrastructure
-- turning the public core into a mixed public/private catch-all
+- Native gRPC support in `zhihandd`.
+- Enhanced automated update and rollback via `zhihand update`.
+- Robust system service integration for persistent background MCP servers.

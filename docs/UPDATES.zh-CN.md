@@ -1,8 +1,37 @@
-# 智手®（ZhiHand）更新分发
-
-说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
+# 更新分发
 
 本文定义智手®（ZhiHand）的升级探测、存放与发布机制建议。
+
+## MCP Server 与 CLI 更新
+
+统一的 MCP Server (`@zhihand/mcp`) 和 `zhihand` CLI 通过 **npm** 分发。
+
+### 更新探测
+
+默认情况下，`zhihand` CLI 会定期或根据请求检查更新：
+
+- `zhihand update --check`: 在 npm 上执行最新版本的全新查找，而不进行安装。
+- 自动检查: CLI 可能会在启动期间执行后台检查（可配置）。
+
+### 执行更新
+
+用户可以使用标准的 npm 命令或内置的更新实用程序来更新包：
+
+- **手动更新**:
+  ```bash
+  npm install -g @zhihand/mcp
+  ```
+- **CLI 引导更新**:
+  ```bash
+  zhihand update
+  ```
+  该命令将检查更新、询问确认、执行安装，并重启任何已管理的系统服务（如果通过 `zhihand service install` 安装）。
+
+### 回滚
+
+如果新版本出现问题，CLI 支持回滚到上一个版本：
+
+- `zhihand update --rollback`: 回退到之前安装的包版本。
 
 ## 目标
 
