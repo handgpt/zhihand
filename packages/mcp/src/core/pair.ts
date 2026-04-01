@@ -124,7 +124,7 @@ export async function waitForPairingClaim(
 }
 
 export async function renderPairingQRCode(url: string): Promise<string> {
-  return QRCode.toString(url, { type: "utf8", margin: 1 });
+  return QRCode.toString(url, { type: "utf8", margin: 2 });
 }
 
 export async function executePairing(

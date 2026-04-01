@@ -70,7 +70,7 @@ export async function waitForPairingClaim(endpoint, sessionId, timeoutMs = 600_0
     throw new Error("Pairing timeout.");
 }
 export async function renderPairingQRCode(url) {
-    return QRCode.toString(url, { type: "utf8", margin: 1 });
+    return QRCode.toString(url, { type: "utf8", margin: 2 });
 }
 export async function executePairing(endpoint, edgeId, deviceName) {
     // Step 0: Register plugin first — server requires a known edge_id before pairing.
