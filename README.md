@@ -1,8 +1,8 @@
 # ZhiHand
 
-ZhiHand lets AI agents (like Claude Code, Gemini CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
+ZhiHand lets AI agents (like Claude Code, Gemini CLI, Codex CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
 
-Current core version: `0.12.0`
+Current core version: `0.12.1`
 
 ## Architecture
 
@@ -26,91 +26,189 @@ ZhiHand is built on the **Model Context Protocol (MCP)**. The core implementatio
 
 ## Quick Start
 
-### AI Agent Users (MCP)
+### Prerequisites
 
-The easiest way to use ZhiHand is via its MCP Server. This allows any MCP-compatible tool (like Claude Code or Gemini CLI) to use ZhiHand tools directly.
+- **Node.js >= 22**
+- A **ZhiHand mobile app** (Android or iOS) installed on your phone
 
-1.  **Install the MCP Server**:
-    ```bash
-    npm install -g @zhihand/mcp
-    ```
+### 1. Install
 
-2.  **Setup and Pair**:
-    Run the setup command and follow the instructions to pair your phone:
-    ```bash
-    zhihand setup
-    ```
+```bash
+npm install -g @zhihand/mcp
+```
 
-3.  **Use with your favorite tool**:
-    - **Claude Code**: It will automatically detect the MCP server if configured.
-    - **Gemini CLI**: Add the `zhihand serve` command to your MCP configuration.
+### 2. Setup and Pair
 
-### OpenClaw Users
+```bash
+zhihand setup
+```
 
-If you are using OpenClaw, you can install the plugin which acts as a thin wrapper around the MCP server:
+This interactive command will:
 
-1.  **Install the plugin**:
-    ```bash
-    openclaw plugins install @zhihand/openclaw
-    ```
+1. Register as a plugin with the ZhiHand server
+2. Display a QR code in your terminal
+3. Wait for you to scan it with the ZhiHand mobile app
+4. Save credentials locally to `~/.zhihand/credentials.json`
+5. Detect installed AI tools on your machine
+6. Print the MCP configuration snippet to add to your tool
 
-2.  **Configure and Trust**:
-    ```bash
-    openclaw config set plugins.allow '["openclaw"]' --strict-json
-    openclaw config set tools.allow '["openclaw"]' --strict-json
-    ```
+### 3. Configure Your AI Tool
 
-3.  **Pair**:
-    ```text
-    /zhihand pair
-    ```
-    Scan the QR code in the Android app.
+**Claude Code** — run this command or add to `.mcp.json`:
+
+```bash
+claude mcp add zhihand -- zhihand serve
+```
+
+Or create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+**Gemini CLI** — add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+**Codex CLI** — add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+**OpenClaw** — install the plugin:
+
+```bash
+openclaw plugins install @zhihand/mcp
+```
+
+### 4. Start Using
+
+Once configured, your AI agent can control your phone directly:
+
+```
+> Take a screenshot of my phone
+> Tap on the Settings icon at (0.5, 0.3)
+> Type "hello world" into the text field
+> Scroll down 5 steps
+> Swipe from bottom to top
+```
+
+## Available Tools
+
+The MCP Server provides three tools to AI agents:
+
+### `zhihand_control`
+
+Control the phone with these actions:
+
+| Action | Parameters | Description |
+|---|---|---|
+| `click` | `xRatio`, `yRatio` | Tap at position (normalized 0–1) |
+| `doubleclick` | `xRatio`, `yRatio` | Double-tap |
+| `rightclick` | `xRatio`, `yRatio` | Right-click / long press |
+| `middleclick` | `xRatio`, `yRatio` | Middle-click |
+| `type` | `text` | Type text into focused field |
+| `swipe` | `startXRatio`, `startYRatio`, `endXRatio`, `endYRatio` | Swipe gesture |
+| `scroll` | `xRatio`, `yRatio`, `direction`, `amount` | Scroll (up/down/left/right) |
+| `keycombo` | `keys` | Key combination (`"ctrl+c"`, `"alt+tab"`) |
+| `clipboard` | `clipboardAction`, `text` | Get or set clipboard |
+| `wait` | `durationMs` | Wait locally (default 1000ms, max 10000ms) |
+| `screenshot` | — | Capture screen immediately |
+
+All coordinates are **normalized ratios** from `0.0` (top-left) to `1.0` (bottom-right).
+
+Every action returns a text summary and a screenshot.
+
+### `zhihand_screenshot`
+
+Capture the current screen without any action. No parameters.
+
+### `zhihand_pair`
+
+Pair with a new phone. Set `forceNew: true` to re-pair.
+
+## CLI Commands
+
+```
+zhihand serve              Start MCP Server (stdio mode)
+zhihand setup              Interactive setup: pair + configure
+zhihand pair               Pair with a phone device
+zhihand status             Show pairing status and device info
+zhihand detect             Detect installed CLI tools
+zhihand --help             Show help
+```
+
+| Option | Description |
+|---|---|
+| `--device <name>` | Use a specific paired device |
+| `ZHIHAND_DEVICE` | Environment variable, same as `--device` |
+| `ZHIHAND_CLI` | Override CLI tool detection |
 
 ## Android & iOS Apps
 
-1.  Download and install the ZhiHand app for **Android** or **iOS**.
-2.  Tap **Scan** and scan the QR code from your AI agent.
-3.  Connect your **ZhiHand Device**.
-4.  Turn on **Eye** (screen sharing) when you want the agent to see your screen.
+1. Download and install the ZhiHand app for **Android** or **iOS**.
+2. Tap **Scan** and scan the QR code from your AI agent.
+3. Connect your **ZhiHand Device**.
+4. Turn on **Eye** (screen sharing) when you want the agent to see your screen.
 
-## What Runs Where
+## How It Works
 
-- **Mobile app (Android/iOS)**: Captures user input, uploads screen snapshots, and executes device-side actions.
-- **ZhiHand server**: Stores pairing state, prompts, commands, and attachments.
-- **MCP Server (@zhihand/mcp)**: The core implementation layer providing tools to AI agents.
-- **OpenClaw plugin**: A wrapper for the MCP server specifically for OpenClaw users.
+```
+AI Agent ←stdio→ zhihand serve (MCP Server) ←HTTPS/SSE→ ZhiHand Server ←→ Mobile App
+```
 
-  Connects OpenClaw to the ZhiHand control plane and exposes `zhihand_*` tools.
+1. AI agent calls a tool (e.g. `zhihand_control` with `action: "click"`)
+2. MCP Server creates a device command and enqueues it via the ZhiHand API
+3. Mobile app picks up the command, executes it, and sends an ACK
+4. MCP Server receives the ACK via SSE (or polling fallback)
+5. MCP Server fetches a screenshot (raw JPEG) and returns it to the agent
 
 ## What This Repository Contains
 
 This repository is the public core for ZhiHand:
 
-- public docs
-- public protocol and action model
-- the OpenClaw host adapter
-- reference service boundaries
+- `packages/mcp/` — MCP Server and OpenClaw adapter ([README](./packages/mcp/README.md))
+- `packages/host-adapters/openclaw/` — Legacy OpenClaw host adapter
+- Public docs, protocol, and action model
+- Reference service boundaries
 
 It does not include private deployment secrets or private product infrastructure.
 
 ## Where To Read Next
 
-- [Distribution](./docs/DISTRIBUTION.md)
-  How users install and start using ZhiHand.
-- [Configuration](./docs/CONFIGURATION.md)
-  What most users need, and what advanced self-hosters can override.
-- [Updates](./docs/UPDATES.md)
-  How app and device updates are detected and delivered.
-- [Android app repository](https://github.com/handgpt/zhihand-android)
-  Mobile UI, permissions, pairing, and device-side execution.
-- [ZhiHand server repository](https://github.com/handgpt/zhihand-server)
-  Hosted control-plane deployment and service configuration.
-- [README.zh-CN.md](./README.zh-CN.md)
-  Chinese version.
+- [@zhihand/mcp README](./packages/mcp/README.md) — Detailed MCP Server documentation
+- [Distribution](./docs/DISTRIBUTION.md) — How users install and start using ZhiHand
+- [Configuration](./docs/CONFIGURATION.md) — What users need, and what advanced self-hosters can override
+- [Updates](./docs/UPDATES.md) — How app and device updates are detected and delivered
+- [Android app](https://github.com/handgpt/zhihand-android) — Mobile UI, permissions, pairing
+- [ZhiHand server](https://github.com/handgpt/zhihand-server) — Hosted control-plane
+- [README.zh-CN.md](./README.zh-CN.md) — 中文版
 
 ## For Developers
-
-If you are integrating or extending ZhiHand, these docs are the main reference:
 
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [ACTIONS.md](./docs/ACTIONS.md)
