@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import os from "node:os";
+import { execSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { startStdioServer } from "../dist/index.js";
 import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
@@ -90,11 +91,46 @@ switch (command) {
     const tools = await detectCLITools();
     console.log(formatDetectedTools(tools));
 
-    // 3. Setup OpenClaw if present
-    await detectAndSetupOpenClaw();
+    // 3. Auto-configure MCP for detected tools
+    let configured = 0;
+    for (const tool of tools) {
+      try {
+        switch (tool.name) {
+          case "codex": {
+            console.log(`\nConfiguring MCP for Codex...`);
+            execSync('codex mcp add zhihand -- zhihand serve', { stdio: 'inherit', timeout: 10000 });
+            configured++;
+            break;
+          }
+          case "gemini": {
+            console.log(`\nConfiguring MCP for Gemini CLI...`);
+            execSync('gemini mcp add --scope user zhihand zhihand -- serve', { stdio: 'inherit', timeout: 10000 });
+            configured++;
+            break;
+          }
+          case "claudecode": {
+            console.log(`\nConfiguring MCP for Claude Code...`);
+            execSync('claude mcp add zhihand -- zhihand serve', { stdio: 'inherit', timeout: 10000 });
+            configured++;
+            break;
+          }
+          case "openclaw": {
+            await detectAndSetupOpenClaw();
+            configured++;
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(`  Failed to configure ${tool.name}: ${err.message}`);
+      }
+    }
 
-    console.log("\nSetup complete. Add to your CLI tool's MCP config:");
-    console.log('  { "mcpServers": { "zhihand": { "command": "zhihand", "args": ["serve"] } } }');
+    if (configured > 0) {
+      console.log(`\nSetup complete. Configured ${configured} tool(s).`);
+    } else {
+      console.log("\nNo tools auto-configured. Add manually to your CLI tool's MCP config:");
+      console.log('  { "mcpServers": { "zhihand": { "command": "zhihand", "args": ["serve"] } } }');
+    }
     break;
   }
 

@@ -30,8 +30,10 @@ async function detectGemini() {
     if (!isCommandAvailable("gemini"))
         return null;
     const version = tryExec("gemini --version") ?? "unknown";
-    // Check login: Google Cloud auth
-    const loggedIn = tryExec("gemini auth status") !== null;
+    // Check login: oauth_creds.json or GOOGLE_API_KEY env var
+    const loggedIn = !!process.env.GOOGLE_API_KEY
+        || !!process.env.GEMINI_API_KEY
+        || tryExec("ls ~/.gemini/oauth_creds.json") !== null;
     return { name: "gemini", command: "gemini", version, loggedIn, priority: 3 };
 }
 async function detectOpenClaw() {
