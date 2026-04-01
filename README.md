@@ -2,26 +2,29 @@
 
 ZhiHand lets AI agents (like Claude Code, Gemini CLI, Codex CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
 
-Current core version: `0.15.0`
+Current core version: `0.16.0`
 
 ## Architecture
 
-ZhiHand is built on the **Model Context Protocol (MCP)**. The core implementation is a unified MCP Server that handles all business logic, tool definitions, and state management.
+ZhiHand is built on the **Model Context Protocol (MCP)**. The core is a **persistent daemon** that bundles the MCP Server (HTTP Streamable transport), a Relay (heartbeat, prompt listener, CLI dispatch), and a Config API for backend switching.
 
 ```text
-                    ┌─────────────────────────────────┐
-                    │          @zhihand/mcp            │
-                    │  (Core Logic, Tools, State)      │
-                    └──────────┬──────────────────┬────┘
-                               │                  │
-                    ┌──────────▼──────┐  ┌────────▼────────┐
-                    │  MCP stdio/HTTP  │  │  OpenClaw Plugin │
-                    │  (Direct CLI)    │  │  (Thin Wrapper)  │
-                    └──────────┬──────┘  └────────┬────────┘
-                               │                  │
-              ┌────────────────┼──────────────────┼──────┐
-              │                │                  │      │
-        Claude Code      Gemini CLI       OpenClaw    Codex CLI
+                    ┌──────────────────────────────────────┐
+                    │           @zhihand/mcp daemon         │
+                    │                                      │
+                    │  MCP Server (localhost:18686/mcp)     │
+                    │  Relay (heartbeat, prompt, dispatch)  │
+                    │  Config API (backend IPC)             │
+                    └──────────┬───────────────────────┬───┘
+                               │                       │
+                    ┌──────────▼──────┐     ┌──────────▼──────┐
+                    │  HTTP Streamable │     │  OpenClaw Plugin │
+                    │  (AI agents)     │     │  (Thin Wrapper)  │
+                    └──────────┬──────┘     └──────────┬──────┘
+                               │                       │
+              ┌────────────────┼───────────────────────┼──────┐
+              │                │                       │      │
+        Claude Code      Gemini CLI             OpenClaw    Codex CLI
 ```
 
 ## Quick Start
@@ -51,6 +54,7 @@ This interactive command will:
 4. Save credentials locally to `~/.zhihand/credentials.json`
 5. Detect installed AI tools on your machine
 6. Auto-select the best tool and configure MCP automatically
+7. Start the daemon (MCP Server + Relay + Config API)
 
 No manual MCP configuration needed. To switch backend later:
 
@@ -109,15 +113,19 @@ Pair with a new phone. Set `forceNew: true` to re-pair.
 ## CLI Commands
 
 ```
-zhihand serve              Start MCP Server (stdio mode)
-zhihand setup              Interactive setup: pair + auto-configure
-zhihand pair               Pair with a phone device
-zhihand status             Show pairing status, device info, and active backend
-zhihand detect             Detect installed CLI tools
+zhihand setup              Interactive setup: pair + detect tools + auto-select + configure MCP + start daemon
+zhihand start              Start daemon (MCP Server + Relay + Config API)
+zhihand start -d           Start daemon in background (detached)
+zhihand stop               Stop the running daemon
+zhihand status             Show daemon status, pairing info, device, and active backend
 
-zhihand claude             Switch backend to Claude Code (auto-configures MCP)
-zhihand codex              Switch backend to Codex CLI (auto-configures MCP)
-zhihand gemini             Switch backend to Gemini CLI (auto-configures MCP)
+zhihand pair               Pair with a phone device
+zhihand detect             Detect installed CLI tools
+zhihand serve              Start MCP Server (stdio mode, backward compatible)
+
+zhihand claude             Switch backend to Claude Code (sends IPC to daemon, auto-configures MCP)
+zhihand codex              Switch backend to Codex CLI (sends IPC to daemon, auto-configures MCP)
+zhihand gemini             Switch backend to Gemini CLI (sends IPC to daemon, auto-configures MCP)
 
 zhihand --help             Show help
 ```

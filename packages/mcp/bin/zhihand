@@ -3,6 +3,7 @@
 import os from "node:os";
 import { parseArgs } from "node:util";
 import { startStdioServer } from "../dist/index.js";
+import { startDaemon, stopDaemon, isAlreadyRunning } from "../dist/daemon/index.js";
 import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
 import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
 import { loadDefaultCredential, loadBackendConfig, saveBackendConfig } from "../dist/core/config.js";
@@ -22,9 +23,9 @@ const { positionals, values } = parseArgs({
   strict: false,
   options: {
     device: { type: "string" },
-    model: { type: "string" },
-    http: { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
+    detach: { type: "boolean", short: "d", default: false },
+    port: { type: "string" },
   },
 });
 
@@ -32,28 +33,35 @@ const command = positionals[0] ?? "serve";
 
 if (values.help) {
   console.log(`
-zhihand — MCP Server for phone control
+zhihand — MCP Server and Relay for phone control
 
 Usage:
-  zhihand serve              Start MCP Server (stdio mode)
-  zhihand serve --http       Start MCP Server (HTTP mode)
-  zhihand pair               Pair with a phone device
-  zhihand status             Show pairing status and device info
-  zhihand detect             Detect available CLI tools
-  zhihand setup              Interactive setup: pair + auto-configure
+  zhihand start              Start daemon (MCP Server + Relay, foreground)
+  zhihand start -d           Start daemon in background (detach)
+  zhihand stop               Stop daemon
+  zhihand status             Show status (pairing, backend, brain)
 
+  zhihand gemini             Switch backend to Gemini CLI
   zhihand claude             Switch backend to Claude Code
   zhihand codex              Switch backend to Codex CLI
-  zhihand gemini             Switch backend to Gemini CLI
+
+  zhihand setup              Interactive setup: pair + configure + start
+  zhihand pair               Pair with a phone device
+  zhihand detect             Detect available CLI tools
+
+  zhihand serve              Start MCP Server (stdio mode, backward compat)
 
 Options:
   --device <name>    Use a specific paired device
+  --port <port>      Override daemon port (default: 18686)
+  -d, --detach       Run daemon in background
   -h, --help         Show this help
 `);
   process.exit(0);
 }
 
-// Handle CLI tool subcommands: claude, codex, gemini → switch backend
+// ── Backend switch commands: claude, codex, gemini ─────────
+
 if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
   const backendName = CLI_TOOL_MAP[command];
   const tools = await detectCLITools();
@@ -69,6 +77,8 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
     console.error(`Warning: ${command} is installed but not logged in.`);
   }
 
+  // Check if daemon is running — if so, notify it via HTTP
+  const daemonPid = isAlreadyRunning();
   const config = loadBackendConfig();
   const previous = config.activeBackend;
 
@@ -78,20 +88,82 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
   }
 
   console.log(`Switching backend to ${displayName(backendName)}...`);
+
+  // Configure MCP (HTTP transport)
   const { configured, removed } = configureMCP(backendName, previous);
 
   if (configured) {
-    saveBackendConfig({ activeBackend: backendName });
-    console.log(`\nBackend switched to ${displayName(backendName)}.`);
-    if (previous) {
-      console.log(`Previous backend: ${displayName(previous)} ${removed ? '(MCP config removed)' : '(MCP config removal skipped)'}.`);
+    // Notify daemon if running
+    if (daemonPid) {
+      try {
+        const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
+        const res = await fetch(`http://127.0.0.1:${port}/internal/backend`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backend: backendName }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok) {
+          console.log(`\nDaemon notified. Backend switched to ${displayName(backendName)}.`);
+        }
+      } catch {
+        // Daemon not responding, just save config
+        saveBackendConfig({ activeBackend: backendName });
+        console.log(`\nBackend config saved. Daemon not responding — restart with 'zhihand start'.`);
+      }
+    } else {
+      saveBackendConfig({ activeBackend: backendName });
+      console.log(`\nBackend switched to ${displayName(backendName)}.`);
+      console.log(`Start the daemon to receive prompts: zhihand start`);
+    }
+
+    if (previous && removed) {
+      console.log(`Previous backend: ${displayName(previous)} (MCP config removed).`);
     }
   }
   process.exit(0);
 }
 
+// ── Other commands ─────────────────────────────────────────
+
 switch (command) {
+  case "start":
+  case "relay": {
+    if (values.detach) {
+      const { spawn: spawnChild } = await import("node:child_process");
+      const args = [process.argv[1], "start"];
+      if (values.port) args.push("--port", values.port);
+      if (values.device) args.push("--device", values.device);
+
+      const child = spawnChild(process.execPath, args, {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env },
+      });
+      child.unref();
+      console.log(`Daemon starting in background (PID ${child.pid}).`);
+      process.exit(0);
+    }
+    const port = values.port ? parseInt(values.port, 10) : undefined;
+    await startDaemon({
+      port,
+      deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
+    });
+    break;
+  }
+
+  case "stop": {
+    const stopped = stopDaemon();
+    if (stopped) {
+      console.log("Daemon stopped.");
+    } else {
+      console.log("No daemon is running.");
+    }
+    break;
+  }
+
   case "serve": {
+    // Backward compatible: stdio MCP server (for old configs)
     await startStdioServer(values.device ?? process.env.ZHIHAND_DEVICE);
     break;
   }
@@ -106,18 +178,31 @@ switch (command) {
   case "status": {
     const cred = loadDefaultCredential();
     const backend = loadBackendConfig();
+    const daemonPid = isAlreadyRunning();
+
     if (cred) {
       console.log(`Paired device: ${cred.deviceName}`);
       console.log(`Credential ID: ${cred.credentialId}`);
       console.log(`Endpoint: ${cred.endpoint}`);
-      console.log(`Paired at: ${cred.pairedAt}`);
     } else {
-      console.log("No paired device. Run: zhihand pair");
+      console.log("No paired device. Run: zhihand setup");
     }
-    if (backend.activeBackend) {
-      console.log(`Active backend: ${displayName(backend.activeBackend)}`);
-    } else {
-      console.log("No active backend. Run: zhihand claude / zhihand gemini / zhihand codex");
+    console.log(`Active backend: ${backend.activeBackend ? displayName(backend.activeBackend) : "(none)"}`);
+    console.log(`Daemon: ${daemonPid ? `running (PID ${daemonPid})` : "not running"}`);
+
+    // If daemon running, get live status
+    if (daemonPid) {
+      try {
+        const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
+        const res = await fetch(`http://127.0.0.1:${port}/internal/status`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          const status = await res.json();
+          console.log(`Processing: ${status.processing ? "yes" : "idle"}`);
+          console.log(`Queue: ${status.queueLength} prompt(s)`);
+        }
+      } catch { /* daemon not responding */ }
     }
     break;
   }
@@ -129,7 +214,7 @@ switch (command) {
   }
 
   case "setup": {
-    // 1. Check/create pairing
+    // 1. Pair
     let cred = loadDefaultCredential();
     if (!cred) {
       console.log("No paired device found. Starting pairing...\n");
@@ -142,30 +227,34 @@ switch (command) {
       console.log(`\nPaired: ${cred.deviceName} (${cred.credentialId})\n`);
     }
 
-    // 2. Detect CLI tools
+    // 2. Detect tools
     const tools = await detectCLITools();
     console.log(formatDetectedTools(tools));
 
     if (tools.length === 0) {
-      console.log("\nNo CLI tools detected. Install one of: Claude Code, Codex CLI, Gemini CLI, OpenClaw.");
+      console.log("\nNo CLI tools detected. Install one of: Claude Code, Codex CLI, Gemini CLI.");
       break;
     }
 
-    // 3. Auto-select best tool (logged in + highest priority) and configure
+    // 3. Auto-select best tool and configure MCP (HTTP transport)
     const best = tools.find((t) => t.loggedIn) ?? tools[0];
     const config = loadBackendConfig();
 
     console.log(`\nAuto-selecting backend: ${displayName(best.name)}...`);
-
-    if (best.name === "openclaw") {
-      await detectAndSetupOpenClaw();
-    } else {
-      configureMCP(best.name, config.activeBackend);
+    // Ensure MCP URL uses correct port
+    if (values.port) {
+      process.env.ZHIHAND_PORT = values.port;
     }
-
+    configureMCP(best.name, config.activeBackend);
     saveBackendConfig({ activeBackend: best.name });
-    console.log(`\nSetup complete. Backend: ${displayName(best.name)}.`);
-    console.log(`To switch backend later: zhihand claude / zhihand gemini / zhihand codex`);
+
+    // 4. Start daemon
+    console.log(`\nStarting daemon...\n`);
+    const port = values.port ? parseInt(values.port, 10) : undefined;
+    await startDaemon({
+      port,
+      deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
+    });
     break;
   }
 

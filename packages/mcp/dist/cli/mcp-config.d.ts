@@ -1,6 +1,6 @@
 import type { BackendName } from "../core/config.ts";
 /**
- * Configure MCP for the selected backend and remove from others.
+ * Configure MCP (HTTP transport) for the selected backend and remove from others.
  */
 export declare function configureMCP(backend: BackendName, previousBackend: BackendName | null): {
     configured: boolean;

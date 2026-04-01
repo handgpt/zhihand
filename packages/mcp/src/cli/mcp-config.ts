@@ -1,22 +1,29 @@
 import { execSync } from "node:child_process";
 import type { BackendName } from "../core/config.ts";
 
+const DEFAULT_PORT = 18686;
+
+function mcpUrl(): string {
+  const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || DEFAULT_PORT;
+  return `http://localhost:${port}/mcp`;
+}
+
 interface MCPCommand {
-  add: string;
+  add: () => string;
   remove: string;
 }
 
 const MCP_COMMANDS: Record<Exclude<BackendName, "openclaw">, MCPCommand> = {
   claudecode: {
-    add: "claude mcp add zhihand -- zhihand serve",
+    add: () => `claude mcp add --transport http zhihand ${mcpUrl()}`,
     remove: "claude mcp remove zhihand",
   },
   codex: {
-    add: "codex mcp add zhihand -- zhihand serve",
+    add: () => `codex mcp add zhihand --url ${mcpUrl()}`,
     remove: "codex mcp remove zhihand",
   },
   gemini: {
-    add: "gemini mcp add --scope user zhihand zhihand -- serve",
+    add: () => `gemini mcp add --transport http --scope user zhihand ${mcpUrl()}`,
     remove: "gemini mcp remove --scope user zhihand",
   },
 };
@@ -38,7 +45,7 @@ function tryRun(cmd: string): boolean {
 }
 
 /**
- * Configure MCP for the selected backend and remove from others.
+ * Configure MCP (HTTP transport) for the selected backend and remove from others.
  */
 export function configureMCP(
   backend: BackendName,
@@ -62,9 +69,10 @@ export function configureMCP(
     configured = true;
   } else {
     const cmds = MCP_COMMANDS[backend];
-    console.log(`  Configuring MCP for ${DISPLAY_NAMES[backend]}...`);
+    const addCmd = cmds.add();
+    console.log(`  Configuring MCP for ${DISPLAY_NAMES[backend]} (HTTP transport)...`);
     try {
-      execSync(cmds.add, { stdio: "inherit", timeout: 10_000 });
+      execSync(addCmd, { stdio: "inherit", timeout: 10_000 });
       configured = true;
     } catch (err: any) {
       console.error(`  Failed to configure ${DISPLAY_NAMES[backend]}: ${err.message}`);
