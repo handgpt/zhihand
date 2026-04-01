@@ -1,0 +1,104 @@
+#!/usr/bin/env node --experimental-strip-types
+
+import os from "node:os";
+import { parseArgs } from "node:util";
+import { startStdioServer } from "../src/index.ts";
+import { detectCLITools, formatDetectedTools } from "../src/cli/detect.ts";
+import { detectAndSetupOpenClaw } from "../src/cli/openclaw.ts";
+import { loadDefaultCredential } from "../src/core/config.ts";
+import { executePairing } from "../src/core/pair.ts";
+
+const DEFAULT_ENDPOINT = "https://api.zhihand.com";
+
+const { positionals, values } = parseArgs({
+  allowPositionals: true,
+  options: {
+    device: { type: "string" },
+    http: { type: "boolean", default: false },
+    help: { type: "boolean", short: "h", default: false },
+  },
+});
+
+const command = positionals[0] ?? "serve";
+
+if (values.help) {
+  console.log(`
+zhihand — MCP Server for phone control
+
+Usage:
+  zhihand serve              Start MCP Server (stdio mode)
+  zhihand serve --http       Start MCP Server (HTTP mode)
+  zhihand pair               Pair with a phone device
+  zhihand status             Show pairing status and device info
+  zhihand detect             Detect available CLI tools
+  zhihand setup              Interactive setup: pair + configure
+
+Options:
+  --device <name>    Use a specific paired device
+  -h, --help         Show this help
+`);
+  process.exit(0);
+}
+
+switch (command) {
+  case "serve": {
+    await startStdioServer(values.device ?? process.env.ZHIHAND_DEVICE);
+    break;
+  }
+
+  case "pair": {
+    const edgeId = `mcp-${Date.now().toString(36)}`;
+    const deviceName = values.device ?? `mcp-${os.hostname()}`;
+    await executePairing(DEFAULT_ENDPOINT, edgeId, deviceName);
+    break;
+  }
+
+  case "status": {
+    const cred = loadDefaultCredential();
+    if (cred) {
+      console.log(`Paired device: ${cred.deviceName}`);
+      console.log(`Credential ID: ${cred.credentialId}`);
+      console.log(`Endpoint: ${cred.endpoint}`);
+      console.log(`Paired at: ${cred.pairedAt}`);
+    } else {
+      console.log("No paired device. Run: zhihand pair");
+    }
+    break;
+  }
+
+  case "detect": {
+    const tools = await detectCLITools();
+    console.log(formatDetectedTools(tools));
+    break;
+  }
+
+  case "setup": {
+    // 1. Check/create pairing
+    let cred = loadDefaultCredential();
+    if (!cred) {
+      console.log("No paired device found. Starting pairing...\n");
+      const edgeId = `mcp-${Date.now().toString(36)}`;
+      const deviceName = values.device ?? `mcp-${os.hostname()}`;
+      await executePairing(DEFAULT_ENDPOINT, edgeId, deviceName);
+      cred = loadDefaultCredential();
+    }
+    if (cred) {
+      console.log(`\nPaired: ${cred.deviceName} (${cred.credentialId})\n`);
+    }
+
+    // 2. Detect CLI tools
+    const tools = await detectCLITools();
+    console.log(formatDetectedTools(tools));
+
+    // 3. Setup OpenClaw if present
+    await detectAndSetupOpenClaw();
+
+    console.log("\nSetup complete. Add to your CLI tool's MCP config:");
+    console.log('  { "mcpServers": { "zhihand": { "command": "zhihand", "args": ["serve"] } } }');
+    break;
+  }
+
+  default:
+    console.error(`Unknown command: ${command}. Run 'zhihand --help' for usage.`);
+    process.exit(1);
+}

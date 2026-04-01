@@ -1,6 +1,6 @@
 {
   "name": "@zhihand/openclaw",
-  "version": "0.10.0",
+  "version": "0.9.15",
   "private": false,
   "type": "module",
   "openclaw": {

@@ -352,31 +352,20 @@ export type WaitForCommandAckResult = {
 export type ZhiHandControlAction =
   | "click"
   | "long_click"
-  | "double_click"
-  | "right_click"
-  | "middle_click"
   | "move"
   | "move_to"
   | "swipe"
-  | "scroll"
   | "back"
   | "home"
   | "input_text"
   | "open_app"
   | "set_clipboard"
-  | "key_combo"
-  | "wait"
   | "start_live_capture"
   | "stop_live_capture";
-
-export type ScrollDirection = "up" | "down" | "left" | "right";
 
 export type ZhiHandControlCommandInput =
   | { action: "click"; xRatio: number; yRatio: number }
   | { action: "long_click"; xRatio: number; yRatio: number; durationMs?: number }
-  | { action: "double_click"; xRatio: number; yRatio: number }
-  | { action: "right_click"; xRatio: number; yRatio: number }
-  | { action: "middle_click"; xRatio: number; yRatio: number }
   | { action: "move"; dxRatio: number; dyRatio: number }
   | { action: "move_to"; xRatio: number; yRatio: number }
   | {
@@ -387,15 +376,12 @@ export type ZhiHandControlCommandInput =
       y2Ratio: number;
       durationMs?: number;
     }
-  | { action: "scroll"; xRatio: number; yRatio: number; direction: ScrollDirection; amount: number }
   | { action: "back" }
   | { action: "home" }
   | { action: "enter" }
   | { action: "input_text"; text: string; mode?: "auto" | "paste" | "type"; submit?: boolean }
   | { action: "open_app"; packageName: string }
   | { action: "set_clipboard"; text: string }
-  | { action: "key_combo"; keys: string }
-  | { action: "wait"; durationMs: number }
   | { action: "start_live_capture" }
   | { action: "stop_live_capture" };
 
@@ -1107,38 +1093,6 @@ export async function fetchLatestScreenSnapshot(
   }
 }
 
-export async function fetchScreenshotBinary(
-  config: ZhiHandPluginConfig,
-  input: FetchScreenSnapshotInput,
-  fetchImpl: FetchLike = fetch
-): Promise<Buffer> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 10_000);
-
-  try {
-    const response = await fetchImpl(
-      `${resolveControlPlaneEndpoint(config)}/v1/credentials/${encodeURIComponent(input.credentialId)}/screen`,
-      {
-        method: "GET",
-        headers: {
-          ...buildHeaders(),
-          "x-zhihand-controller-token": input.controllerToken,
-          "Accept": "image/jpeg"
-        },
-        signal: controller.signal
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Screenshot fetch failed: ${response.status}`);
-    }
-
-    return Buffer.from(await response.arrayBuffer());
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export function createControlCommand(input: ZhiHandControlCommandInput): QueuedControlCommand {
   switch (input.action) {
     case "click":
@@ -1156,30 +1110,6 @@ export function createControlCommand(input: ZhiHandControlCommandInput): QueuedC
           x: normalizeRatio(input.xRatio, "xRatio"),
           y: normalizeRatio(input.yRatio, "yRatio"),
           time: input.durationMs ?? 600
-        }
-      };
-    case "double_click":
-      return {
-        type: "receive_doubleclick",
-        payload: {
-          x: normalizeRatio(input.xRatio, "xRatio"),
-          y: normalizeRatio(input.yRatio, "yRatio")
-        }
-      };
-    case "right_click":
-      return {
-        type: "receive_rightclick",
-        payload: {
-          x: normalizeRatio(input.xRatio, "xRatio"),
-          y: normalizeRatio(input.yRatio, "yRatio")
-        }
-      };
-    case "middle_click":
-      return {
-        type: "receive_middleclick",
-        payload: {
-          x: normalizeRatio(input.xRatio, "xRatio"),
-          y: normalizeRatio(input.yRatio, "yRatio")
         }
       };
     case "move":
@@ -1238,28 +1168,11 @@ export function createControlCommand(input: ZhiHandControlCommandInput): QueuedC
         type: "receive_app",
         payload: { app_package: input.packageName }
       };
-    case "scroll":
-      return {
-        type: "receive_scroll",
-        payload: {
-          x: normalizeRatio(input.xRatio, "xRatio"),
-          y: normalizeRatio(input.yRatio, "yRatio"),
-          direction: input.direction,
-          amount: input.amount
-        }
-      };
     case "set_clipboard":
       return {
         type: "receive_clipboard",
         payload: { clipboard: input.text }
       };
-    case "key_combo":
-      return {
-        type: "receive_key_combo",
-        payload: { keys: input.keys }
-      };
-    case "wait":
-      throw new Error("wait action should be handled locally by the Plugin, not sent to the server.");
     case "start_live_capture":
       return {
         type: "zhihand.start_live_capture",

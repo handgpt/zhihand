@@ -1,0 +1,42 @@
+{
+  "name": "@zhihand/mcp",
+  "version": "0.11.0",
+  "private": false,
+  "type": "module",
+  "description": "ZhiHand MCP Server — phone control tools for Claude Code, Codex, Gemini CLI, and OpenClaw",
+  "license": "MIT",
+  "homepage": "https://github.com/handgpt/zhihand/tree/main/packages/mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handgpt/zhihand.git",
+    "directory": "packages/mcp"
+  },
+  "bin": {
+    "zhihand": "./bin/zhihand",
+    "zhihand.openclaw": "./bin/zhihand.openclaw"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./openclaw": "./src/openclaw.adapter.ts"
+  },
+  "files": [
+    "README.md",
+    "bin/",
+    "src/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "qrcode": "^1.5.4",
+    "zod": "^3.24.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
