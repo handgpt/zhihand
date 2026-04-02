@@ -186,13 +186,9 @@ export async function startDaemon(options?: {
   const backendConfig = loadBackendConfig();
   activeBackend = (backendConfig.activeBackend as Exclude<BackendName, "openclaw">) ?? null;
 
-  // Create MCP server + single transport (MCP SDK: one connect() per server)
-  const mcpServer = createMcpServer(options?.deviceName);
-  const mcpTransport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-  });
-  await mcpServer.connect(mcpTransport);
-  log(`[mcp] Transport connected.`);
+  // MCP sessions: each client gets its own McpServer + Transport pair
+  // because McpServer.connect() can only be called once per instance
+  const mcpSessions = new Map<string, { server: ReturnType<typeof createMcpServer>; transport: StreamableHTTPServerTransport }>();
 
   // Create HTTP server
   const httpServer = createHTTPServer(async (req, res) => {
@@ -204,10 +200,40 @@ export async function startDaemon(options?: {
       return;
     }
 
-    // MCP endpoint — route all requests to the single transport
+    // MCP endpoint — per-session server + transport
     if (req.url === "/mcp" || req.url?.startsWith("/mcp")) {
       try {
-        await mcpTransport.handleRequest(req, res);
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+        if (sessionId && mcpSessions.has(sessionId)) {
+          // Existing session
+          const session = mcpSessions.get(sessionId)!;
+          await session.transport.handleRequest(req, res);
+        } else if (!sessionId) {
+          // New session: create dedicated McpServer + Transport
+          const server = createMcpServer(options?.deviceName);
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (sid) => {
+              mcpSessions.set(sid, { server, transport });
+              log(`[mcp] Session started: ${sid.slice(0, 8)}...`);
+            },
+            onsessionclosed: (sid) => {
+              mcpSessions.delete(sid);
+              log(`[mcp] Session closed: ${sid.slice(0, 8)}...`);
+            },
+          });
+          await server.connect(transport);
+          await transport.handleRequest(req, res);
+        } else {
+          // Unknown/expired session ID
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32000, message: "Invalid or expired session" },
+            id: null,
+          }));
+        }
       } catch (err) {
         if (!res.headersSent) {
           res.writeHead(500);
@@ -267,8 +293,11 @@ export async function startDaemon(options?: {
     stopHeartbeatLoop();
     await killActiveChild();
     await sendBrainOffline(config);
-    // Close MCP transport
-    try { await mcpTransport.close(); } catch { /* ignore */ }
+    // Close all MCP sessions
+    for (const session of mcpSessions.values()) {
+      try { await session.transport.close(); } catch { /* ignore */ }
+    }
+    mcpSessions.clear();
     httpServer.close();
     removePid();
     log("Daemon stopped.");
