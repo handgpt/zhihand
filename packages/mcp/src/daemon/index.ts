@@ -21,7 +21,7 @@ import {
 import { PACKAGE_VERSION } from "../index.ts";
 import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
-import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
+import { dispatchToCLI, postReply, killActiveChild, type ReplyMeta } from "./dispatcher.ts";
 
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
@@ -50,8 +50,10 @@ async function processPrompt(config: ZhiHandConfig, prompt: MobilePrompt): Promi
   const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
   log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
 
+  const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
   const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
-  const ok = await postReply(config, prompt.id, result.text);
+  const meta: ReplyMeta = { backend: activeBackend, model: effectiveModel };
+  const ok = await postReply(config, prompt.id, result.text, meta);
   const dur = (result.durationMs / 1000).toFixed(1);
 
   if (ok) {

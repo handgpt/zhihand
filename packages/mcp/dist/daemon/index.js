@@ -30,8 +30,10 @@ async function processPrompt(config, prompt) {
     }
     const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
     log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
+    const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
     const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
-    const ok = await postReply(config, prompt.id, result.text);
+    const meta = { backend: activeBackend, model: effectiveModel };
+    const ok = await postReply(config, prompt.id, result.text, meta);
     const dur = (result.durationMs / 1000).toFixed(1);
     if (ok) {
         log(`[relay] Reply posted (${dur}s, ${result.success ? "ok" : "error"}).`);

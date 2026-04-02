@@ -646,17 +646,21 @@ function collectChildOutput(child, startTime) {
         });
     });
 }
-// ── Reply ──────────────────────────────────────────────────
-export async function postReply(config, promptId, text) {
+export async function postReply(config, promptId, text, meta) {
     try {
         const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/prompts/${encodeURIComponent(promptId)}/reply`;
+        const body = { role: "assistant", text };
+        if (meta?.backend)
+            body.backend = meta.backend;
+        if (meta?.model)
+            body.model = meta.model;
         const response = await fetch(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "x-zhihand-controller-token": config.controllerToken,
             },
-            body: JSON.stringify({ role: "assistant", text }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(30_000),
         });
         return response.ok || (response.status >= 400 && response.status < 500);

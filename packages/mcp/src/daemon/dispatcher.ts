@@ -742,20 +742,31 @@ function collectChildOutput(
 
 // ── Reply ──────────────────────────────────────────────────
 
+export interface ReplyMeta {
+  /** Backend name: "gemini", "claudecode", "codex" */
+  backend?: string;
+  /** Model alias or full name as passed to the CLI (e.g. "flash", "sonnet", "gpt-5.4-mini") */
+  model?: string;
+}
+
 export async function postReply(
   config: ZhiHandConfig,
   promptId: string,
   text: string,
+  meta?: ReplyMeta,
 ): Promise<boolean> {
   try {
     const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/prompts/${encodeURIComponent(promptId)}/reply`;
+    const body: Record<string, unknown> = { role: "assistant", text };
+    if (meta?.backend) body.backend = meta.backend;
+    if (meta?.model) body.model = meta.model;
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-zhihand-controller-token": config.controllerToken,
       },
-      body: JSON.stringify({ role: "assistant", text }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
     return response.ok || (response.status >= 400 && response.status < 500);
