@@ -3,12 +3,14 @@
 requiring isatty(stdin)==True (e.g. ``gemini -i``) work from a daemon.
 
 Output is forwarded to this process's stdout in real time.
+Stdin from the parent process is forwarded to the child's PTY input,
+enabling persistent interactive sessions (send new prompts after startup).
 Exit code matches the child's exit code.
 
 Signals (SIGTERM, SIGINT) are forwarded to the child process group so that
 killing this wrapper also kills the tool underneath — no orphaned processes.
 
-Usage:  python3 pty-wrap.py gemini --approval-mode yolo -i "prompt"
+Usage:  python3 pty-wrap.py gemini --approval-mode yolo --model flash -i "prompt"
 """
 
 import os
@@ -47,6 +49,14 @@ def main() -> int:
     os.close(slave_fd)
     os.set_blocking(master_fd, False)
 
+    # Set up stdin forwarding (parent → PTY master → child stdin)
+    stdin_fd = sys.stdin.fileno()
+    stdin_open = True
+    try:
+        os.set_blocking(stdin_fd, False)
+    except OSError:
+        stdin_open = False
+
     # Forward SIGTERM/SIGINT to the child's process group
     def _forward_signal(signum: int, _frame: object) -> None:
         try:
@@ -57,13 +67,17 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGINT, _forward_signal)
 
-    # Drain PTY master while child is alive
+    # Drain PTY master while child is alive, forward stdin to child
     while proc.poll() is None:
+        fds = [master_fd]
+        if stdin_open:
+            fds.append(stdin_fd)
         try:
-            ready, _, _ = select.select([master_fd], [], [], 1.0)
+            ready, _, _ = select.select(fds, [], [], 1.0)
         except (OSError, InterruptedError):
             break
-        if ready:
+
+        if master_fd in ready:
             try:
                 data = os.read(master_fd, 8192)
                 if data:
@@ -71,6 +85,16 @@ def main() -> int:
                     sys.stdout.buffer.flush()
             except OSError:
                 break
+
+        if stdin_open and stdin_fd in ready:
+            try:
+                data = os.read(stdin_fd, 8192)
+                if data:
+                    os.write(master_fd, data)
+                else:
+                    stdin_open = False  # EOF on stdin
+            except OSError:
+                stdin_open = False
 
     # Final drain after child exits
     try:

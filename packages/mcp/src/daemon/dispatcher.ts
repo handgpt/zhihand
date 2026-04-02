@@ -7,9 +7,10 @@ import type { ZhiHandConfig, BackendName } from "../core/config.ts";
 import { DEFAULT_MODELS } from "../core/config.ts";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.ts";
 
-const CLI_TIMEOUT = 120_000; // 120s
+const CLI_TIMEOUT = 120_000; // 120s per prompt
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
-const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB
+const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB (for one-shot backends)
+const MAX_HISTORY_TURNS = 20; // keep last N exchanges in conversation history
 
 // Gemini session file polling
 const SESSION_POLL_INTERVAL = 1_000; // 1s
@@ -27,7 +28,26 @@ export interface DispatchResult {
   durationMs: number;
 }
 
-let activeChild: ChildProcess | null = null;
+// ── Persistent Session State ─────────────────────────────────
+
+interface PersistentSession {
+  child: ChildProcess;
+  backend: Exclude<BackendName, "openclaw">;
+  model: string;
+  promptCount: number;
+  alive: boolean;
+  /** Gemini: resolved session file path (found after first prompt) */
+  geminiSessionFile: string | null;
+}
+
+let session: PersistentSession | null = null;
+
+/** Conversation history — shared across all backends for context continuity */
+interface Turn {
+  role: "user" | "assistant";
+  text: string;
+}
+const conversationHistory: Turn[] = [];
 
 // ── Gemini Session File Monitoring ─────────────────────────
 
@@ -38,7 +58,6 @@ async function loadJsonFile(filePath: string): Promise<Record<string, unknown> |
     const parsed = JSON.parse(raw);
     return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : null;
   } catch {
-    // File locked or partial write — next poll cycle will retry
     return null;
   }
 }
@@ -64,7 +83,6 @@ function extractMessageText(message: Record<string, unknown>): string {
     const obj = content as Record<string, unknown>;
     if (typeof obj.text === "string") return obj.text;
   }
-  // Fallback to displayContent
   const display = message.displayContent;
   if (typeof display === "string") return display;
   return "";
@@ -91,7 +109,6 @@ function hasActiveToolCalls(message: Record<string, unknown>): boolean {
 function checkSessionOutcome(messages: Record<string, unknown>[]): [string, string] | null {
   if (messages.length === 0) return null;
 
-  // Get the latest turn messages (trailing messages from last user input)
   const trailing: Record<string, unknown>[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -100,23 +117,17 @@ function checkSessionOutcome(messages: Record<string, unknown>[]): [string, stri
   }
   if (trailing.length === 0) return null;
 
-  // If any message has active tool calls, still in progress
   for (const msg of trailing) {
     if (hasActiveToolCalls(msg)) return null;
   }
 
-  // Check from last message backwards for a result
   for (let i = trailing.length - 1; i >= 0; i--) {
     const msg = trailing[i];
     const msgType = String(msg.type ?? "").trim();
-
-    // Error/warning/info messages
     if (["error", "warning", "info"].includes(msgType)) {
       const text = extractMessageText(msg).trim();
       if (text) return ["error", text];
     }
-
-    // Gemini response message
     if (msgType === "gemini") {
       const text = extractMessageText(msg).trim();
       if (text) return ["success", text];
@@ -153,19 +164,17 @@ async function findLatestSessionFile(afterTime: number, promptText: string): Pro
       }
     }
 
-    // Sort newest first, then validate content matches our prompt
     candidates.sort((a, b) => b.mtime - a.mtime);
     const promptPrefix = promptText.slice(0, 50);
 
     for (const candidate of candidates) {
       const data = await loadJsonFile(candidate.path);
       if (!data || !Array.isArray(data.messages)) continue;
-      // Check first user message matches our prompt
       for (const msg of data.messages as Record<string, unknown>[]) {
         if (String(msg.type ?? "").trim() !== "user") continue;
         const text = extractMessageText(msg);
         if (text.startsWith(promptPrefix)) return candidate.path;
-        break; // Only check first user message
+        break;
       }
     }
     return null;
@@ -174,29 +183,39 @@ async function findLatestSessionFile(afterTime: number, promptText: string): Pro
   }
 }
 
+/** Count how many "user" type messages are in the session */
+function countUserMessages(messages: Record<string, unknown>[]): number {
+  return messages.filter(m => String(m.type ?? "").trim() === "user").length;
+}
+
 /**
- * Poll gemini session files for the response.
- * Returns the final text when gemini completes, or null on timeout.
+ * Poll gemini session file for the response to the current prompt.
+ *
+ * For persistent sessions:
+ * - First prompt: find the session file, wait for first response, keep process alive
+ * - Subsequent: session file known, wait for new user message + response
  */
 function pollGeminiSession(
   child: ChildProcess,
   startTime: number,
   promptText: string,
   log: (msg: string) => void,
+  knownSessionFile: string | null,
+  expectedUserCount: number,
 ): Promise<DispatchResult> {
   return new Promise((resolve) => {
-    let sessionFile: string | null = null;
+    let sessionFile: string | null = knownSessionFile;
     let outcomeAt: number | null = null;
     let finalResult: [string, string] | null = null;
     let settled = false;
     let pollTimeout: ReturnType<typeof setTimeout> | null = null;
+    let newUserSeen = knownSessionFile === null; // first prompt: don't wait for user msg
 
     function settle(result: DispatchResult): void {
       if (settled) return;
       settled = true;
       if (pollTimeout) clearTimeout(pollTimeout);
-      // Kill the gemini process now that we have the answer
-      closeChild(child);
+      // DON'T kill the child — persistent session keeps it alive
       resolve(result);
     }
 
@@ -204,9 +223,7 @@ function pollGeminiSession(
       if (settled) return;
       const elapsed = Date.now() - startTime;
 
-      // Timeout
       if (elapsed > CLI_TIMEOUT) {
-        closeChild(child);
         settle({
           text: "Gemini timed out after 120s.",
           success: false,
@@ -215,33 +232,43 @@ function pollGeminiSession(
         return;
       }
 
-      // Find session file if not yet found
+      // Find session file if not yet found (first prompt only)
       if (!sessionFile) {
         sessionFile = await findLatestSessionFile(startTime, promptText);
         if (sessionFile) {
           log(`[gemini] Session file found: ${path.basename(sessionFile)}`);
+          if (session) session.geminiSessionFile = sessionFile;
         }
         schedulePoll();
         return;
       }
 
-      // Read session file and check for outcome
+      // Read session file
       const conversation = await loadJsonFile(sessionFile);
       if (!conversation) { schedulePoll(); return; }
 
       const messages = conversation.messages;
       if (!Array.isArray(messages)) { schedulePoll(); return; }
 
+      // For subsequent prompts: wait until the new user message appears
+      if (!newUserSeen) {
+        const userCount = countUserMessages(messages as Record<string, unknown>[]);
+        if (userCount < expectedUserCount) {
+          schedulePoll();
+          return;
+        }
+        newUserSeen = true;
+        log(`[gemini] New user message detected (turn #${expectedUserCount})`);
+      }
+
       const outcome = checkSessionOutcome(messages as Record<string, unknown>[]);
       if (!outcome) {
-        // Still in progress, reset stability timer
         outcomeAt = null;
         finalResult = null;
         schedulePoll();
         return;
       }
 
-      // Outcome detected — wait for stability (2s) before returning
       if (!outcomeAt) {
         outcomeAt = Date.now();
         finalResult = outcome;
@@ -266,16 +293,19 @@ function pollGeminiSession(
       pollTimeout = setTimeout(() => { poll(); }, SESSION_POLL_INTERVAL);
     }
 
-    // Start polling
     schedulePoll();
 
-    // Also handle process exit (in case it crashes before producing session file)
-    child.on("close", (code) => {
+    // Handle unexpected process exit
+    const onClose = (code: number | null) => {
       if (settled) return;
+      // Mark session as dead
+      if (session?.child === child) {
+        session.alive = false;
+        log(`[gemini] Session process exited with code ${code}`);
+      }
       // Give a final chance to read the session file
       setTimeout(async () => {
         if (settled) return;
-
         if (sessionFile) {
           const conversation = await loadJsonFile(sessionFile);
           if (conversation && Array.isArray(conversation.messages)) {
@@ -290,22 +320,21 @@ function pollGeminiSession(
             }
           }
         }
-
         settle({
           text: `Gemini process exited with code ${code} before producing a response.`,
           success: false,
           durationMs: Date.now() - startTime,
         });
       }, 500);
-    });
+    };
+
+    child.on("close", onClose);
   });
 }
 
-/** Gracefully close a child process: EOF → SIGTERM → SIGKILL. */
+/** Gracefully close a child process: SIGTERM → SIGKILL. */
 function closeChild(child: ChildProcess): void {
   if (child.killed || child.exitCode !== null) return;
-
-  // Try SIGTERM first
   child.kill("SIGTERM");
   setTimeout(() => {
     if (!child.killed && child.exitCode === null) {
@@ -314,31 +343,30 @@ function closeChild(child: ChildProcess): void {
   }, SIGKILL_DELAY);
 }
 
-/**
- * Kill the active child process. Returns a promise that resolves
- * when the child has exited (or immediately if no child).
- */
-export function killActiveChild(): Promise<void> {
-  if (!activeChild || activeChild.killed) {
-    return Promise.resolve();
-  }
+/** Close the persistent session and clear conversation history. */
+function closeSession(): Promise<void> {
+  if (!session) return Promise.resolve();
+  const s = session;
+  session = null;
+  if (!s.alive) return Promise.resolve();
   return new Promise((resolve) => {
-    const child = activeChild!;
-    child.once("close", () => resolve());
-    closeChild(child);
-    // Safety: resolve after SIGKILL_DELAY + 1s even if no close event
+    s.child.once("close", () => resolve());
+    closeChild(s.child);
     setTimeout(() => resolve(), SIGKILL_DELAY + 1000);
   });
 }
 
+/**
+ * Kill the active session. Called by daemon on shutdown or backend switch.
+ */
+export async function killActiveChild(): Promise<void> {
+  await closeSession();
+  conversationHistory.length = 0;
+}
+
 // ── System Prompt ─────────────────────────────────────────
 
-/**
- * Wrap the user's raw prompt with system context so the CLI backend
- * knows about the connected phone and how to use zhihand MCP tools.
- */
-function wrapPrompt(userPrompt: string): string {
-  return `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
+const SYSTEM_CONTEXT = `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
 
 ## Available MCP Tools
 
@@ -368,10 +396,35 @@ Control the phone. Requires "action" parameter. All coordinates use normalized r
 - When the user asks to see their screen, ALWAYS call zhihand_screenshot first.
 - When the user asks to open an app (e.g. WeChat, Settings), use open_app action.
 - When the user asks to go back/home, use back/home actions.
-- For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).
+- For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).`;
 
-User message:
-${userPrompt}`;
+/**
+ * Build the full system prompt with optional conversation history.
+ * Used for first prompt in persistent sessions and all one-shot calls.
+ */
+function wrapPrompt(userPrompt: string, history?: Turn[]): string {
+  let result = SYSTEM_CONTEXT;
+  if (history && history.length > 0) {
+    result += "\n\n## Recent Conversation\n";
+    for (const turn of history) {
+      const label = turn.role === "user" ? "User" : "Assistant";
+      // Truncate long assistant responses in history to save tokens
+      const text = turn.text.length > 500 ? turn.text.slice(0, 500) + "..." : turn.text;
+      result += `\n${label}: ${text}\n`;
+    }
+  }
+  result += `\nUser message:\n${userPrompt}`;
+  return result;
+}
+
+// ── Conversation History Helpers ─────────────────────────────
+
+function recordTurn(role: "user" | "assistant", text: string): void {
+  conversationHistory.push({ role, text });
+  // Trim to keep last N exchanges (2 turns per exchange)
+  while (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+    conversationHistory.shift();
+  }
 }
 
 // ── Dispatch Entrypoint ────────────────────────────────────
@@ -383,20 +436,27 @@ export function dispatchToCLI(
   model?: string,
 ): Promise<DispatchResult> {
   const startTime = Date.now();
-  const wrappedPrompt = wrapPrompt(prompt);
-
-  // Resolve model: explicit > env > default
   const resolvedModel = resolveModel(backend, model);
-  log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}`);
+
+  // Check if existing session matches — if not, close it
+  const canReuse = session?.alive && session.backend === backend && session.model === resolvedModel;
+  if (session && !canReuse) {
+    log(`[dispatch] Session mismatch (was ${session.backend}/${session.model}), closing old session`);
+    closeSession();
+    conversationHistory.length = 0;
+  }
+
+  const sessionLabel = canReuse ? `#${session!.promptCount + 1}` : "new";
+  log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}, Session: ${sessionLabel}`);
 
   if (backend === "gemini") {
-    return dispatchGemini(wrappedPrompt, startTime, log, resolvedModel);
+    return dispatchGeminiPersistent(prompt, startTime, log, resolvedModel);
   }
   if (backend === "codex") {
-    return dispatchCodex(wrappedPrompt, startTime, resolvedModel);
+    return dispatchCodexWithHistory(prompt, startTime, log, resolvedModel);
   }
   if (backend === "claudecode") {
-    return dispatchClaude(wrappedPrompt, startTime, resolvedModel);
+    return dispatchClaudeWithHistory(prompt, startTime, log, resolvedModel);
   }
 
   return Promise.resolve({
@@ -409,20 +469,11 @@ export function dispatchToCLI(
 /**
  * Resolve the model to use for a backend.
  * Priority: explicit parameter > ZHIHAND_MODEL env > backend-specific env > default alias.
- *
- * Each backend CLI handles alias→full-name resolution natively:
- *   - Gemini CLI: "flash" → gemini-2.5-flash, "pro" → gemini-2.5-pro
- *   - Claude Code: "sonnet" → claude-sonnet-4-*, "opus" → claude-opus-4-*, "haiku" → claude-haiku-4-*
- *   - Codex CLI: no alias support — pass full model name directly (e.g. "o4-mini", "codex-mini")
  */
 function resolveModel(backend: Exclude<BackendName, "openclaw">, explicit?: string): string {
   if (explicit) return explicit;
-
-  // Global env override
   const globalEnv = process.env.ZHIHAND_MODEL;
   if (globalEnv) return globalEnv;
-
-  // Per-backend env override
   const envMap: Record<string, string | undefined> = {
     gemini: process.env.ZHIHAND_GEMINI_MODEL,
     claudecode: process.env.ZHIHAND_CLAUDE_MODEL,
@@ -430,22 +481,42 @@ function resolveModel(backend: Exclude<BackendName, "openclaw">, explicit?: stri
   };
   const perBackend = envMap[backend];
   if (perBackend) return perBackend;
-
   return DEFAULT_MODELS[backend];
 }
 
-// ── Gemini Dispatch (PTY + Session File Monitoring) ────────
+// ── Gemini Dispatch (Persistent PTY Session) ─────────────────
 
-function dispatchGemini(
+async function dispatchGeminiPersistent(
   prompt: string,
   startTime: number,
   log: (msg: string) => void,
   model: string,
 ): Promise<DispatchResult> {
+  // Reuse existing session?
+  if (session?.alive && session.backend === "gemini") {
+    session.promptCount++;
+    const turnNum = session.promptCount;
+    log(`[gemini] Reusing session — sending prompt #${turnNum}`);
+
+    // Write raw prompt to PTY stdin (gemini already has system context from first prompt)
+    session.child.stdin?.write(prompt + "\n");
+
+    const result = await pollGeminiSession(
+      session.child, startTime, prompt, log,
+      session.geminiSessionFile, turnNum,
+    );
+
+    recordTurn("user", prompt);
+    recordTurn("assistant", result.text);
+    return result;
+  }
+
+  // New session — spawn gemini with first prompt
+  const wrappedPrompt = wrapPrompt(prompt);
   const cliArgs = [
     "--approval-mode", "yolo",
     "--model", model,
-    "-i", prompt,
+    "-i", wrappedPrompt,
   ];
 
   const env = {
@@ -455,71 +526,102 @@ function dispatchGemini(
     COLORTERM: "truecolor",
   };
 
-  // Wrap with PTY so gemini sees isatty()==true
   const geminiPath = resolveGemini();
+  log(`[gemini] Starting new persistent session (model: ${model})`);
+
   const child = spawn("python3", [PTY_WRAP_SCRIPT, geminiPath, ...cliArgs], {
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"], // stdin=pipe for subsequent prompts
     detached: false,
   });
 
-  activeChild = child;
+  session = {
+    child,
+    backend: "gemini",
+    model,
+    promptCount: 1,
+    alive: true,
+    geminiSessionFile: null,
+  };
 
-  // Drain PTY output (discard — we read from session file instead)
+  // Handle unexpected exit — mark session dead
+  child.on("close", (code) => {
+    if (session?.child === child) {
+      session.alive = false;
+      log(`[gemini] Session process exited (code ${code})`);
+    }
+  });
+
+  // Drain PTY stdout/stderr (we read from session file, not stdout)
   child.stdout?.resume();
   child.stderr?.resume();
 
-  return pollGeminiSession(child, startTime, prompt, log);
+  const result = await pollGeminiSession(
+    child, startTime, wrappedPrompt, log,
+    null, // no known session file yet
+    1,    // expecting 1st user message
+  );
+
+  recordTurn("user", prompt);
+  recordTurn("assistant", result.text);
+  return result;
 }
 
-// ── Codex Dispatch ─────────────────────────────────────────
+// ── Codex Dispatch (One-shot with History) ────────────────────
 
-function dispatchCodex(
+async function dispatchCodexWithHistory(
   prompt: string,
   startTime: number,
+  log: (msg: string) => void,
   model: string,
 ): Promise<DispatchResult> {
-  // --dangerously-bypass-approvals-and-sandbox is required so MCP tool calls
-  // are not auto-cancelled in non-interactive mode (--full-auto cancels them)
+  // Include conversation history in the prompt for context
+  const fullPrompt = wrapPrompt(prompt, conversationHistory);
+
   const args = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"];
   args.push("-m", model);
-  args.push(prompt);
+  args.push(fullPrompt);
 
   const codexPath = resolveCodex();
+  log(`[codex] One-shot dispatch (history: ${conversationHistory.length} turns)`);
   const child = spawn(codexPath, args, {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
   });
 
-  activeChild = child;
-  return collectCodexOutput(child, startTime);
+  const result = await collectCodexOutput(child, startTime);
+  recordTurn("user", prompt);
+  recordTurn("assistant", result.text);
+  return result;
 }
 
-// ── Claude Dispatch ────────────────────────────────────────
+// ── Claude Dispatch (One-shot with History) ───────────────────
 
-function dispatchClaude(
+async function dispatchClaudeWithHistory(
   prompt: string,
   startTime: number,
+  log: (msg: string) => void,
   model: string,
 ): Promise<DispatchResult> {
+  const fullPrompt = wrapPrompt(prompt, conversationHistory);
   const claudePath = resolveClaude();
-  const child = spawn(claudePath, ["-p", prompt, "--model", model, "--output-format", "json"], {
+  log(`[claude] One-shot dispatch (history: ${conversationHistory.length} turns)`);
+
+  const child = spawn(claudePath, ["-p", fullPrompt, "--model", model, "--output-format", "json"], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
   });
 
-  activeChild = child;
-  return collectChildOutput(child, startTime);
+  const result = await collectChildOutput(child, startTime);
+  recordTurn("user", prompt);
+  recordTurn("assistant", result.text);
+  return result;
 }
 
+// ── Codex JSONL Output Collector ──────────────────────────────
 
-/**
- * Collect codex JSONL output with streaming line parsing.
- * Processes each JSONL line as it arrives so we extract agent text
- * without buffering large binary payloads (e.g. base64 screenshots).
- */
 function collectCodexOutput(
   child: ChildProcess,
   startTime: number,
@@ -555,55 +657,38 @@ function collectCodexOutput(
         if (type === "turn.failed") {
           hasError = true;
         }
-      } catch {
-        // Not valid JSON — skip
-      }
+      } catch { /* skip non-JSON */ }
     }
 
     const timer = setTimeout(() => { closeChild(child); }, CLI_TIMEOUT);
 
-    const onData = (data: Buffer) => {
+    child.stdout?.on("data", (data: Buffer) => {
       lineBuffer += data.toString("utf8");
       const lines = lineBuffer.split("\n");
-      // Keep the last (possibly incomplete) line in the buffer
       lineBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        processLine(line);
-      }
-    };
-
-    child.stdout?.on("data", onData);
-    // stderr is not JSONL, just discard
+      for (const line of lines) processLine(line);
+    });
     child.stderr?.resume();
 
     child.on("close", (code) => {
       clearTimeout(timer);
-      activeChild = null;
-      // Process any remaining data in the buffer
       if (lineBuffer.trim()) processLine(lineBuffer);
       const durationMs = Date.now() - startTime;
       let text = texts.join("\n\n");
       if (!text) {
-        text = code === 0
-          ? "Task completed (no output)."
-          : `CLI process exited with code ${code}.`;
+        text = code === 0 ? "Task completed (no output)." : `CLI process exited with code ${code}.`;
       }
       settle({ text, success: !hasError && code === 0, durationMs });
     });
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      activeChild = null;
-      settle({
-        text: `CLI launch failed: ${err.message}`,
-        success: false,
-        durationMs: Date.now() - startTime,
-      });
+      settle({ text: `CLI launch failed: ${err.message}`, success: false, durationMs: Date.now() - startTime });
     });
   });
 }
 
-// ── Shared: Collect stdout/stderr from a child process ─────
+// ── Shared: Collect stdout/stderr from a child process ───────
 
 function collectChildOutput(
   child: ChildProcess,
@@ -621,10 +706,7 @@ function collectChildOutput(
       resolve(result);
     }
 
-    // Timeout with two-stage kill
-    const timer = setTimeout(() => {
-      closeChild(child);
-    }, CLI_TIMEOUT);
+    const timer = setTimeout(() => { closeChild(child); }, CLI_TIMEOUT);
 
     const collectOutput = (data: Buffer) => {
       if (truncated) return;
@@ -642,28 +724,18 @@ function collectChildOutput(
 
     child.on("close", (code) => {
       clearTimeout(timer);
-      activeChild = null;
       const durationMs = Date.now() - startTime;
       let text = Buffer.concat(chunks).toString("utf8").trim();
-      if (truncated) {
-        text += "\n\n[Output truncated at 100KB]";
-      }
+      if (truncated) text += "\n\n[Output truncated at 100KB]";
       if (!text) {
-        text = code === 0
-          ? "Task completed (no output)."
-          : `CLI process exited with code ${code}.`;
+        text = code === 0 ? "Task completed (no output)." : `CLI process exited with code ${code}.`;
       }
       settle({ text, success: code === 0, durationMs });
     });
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      activeChild = null;
-      settle({
-        text: `CLI launch failed: ${err.message}`,
-        success: false,
-        durationMs: Date.now() - startTime,
-      });
+      settle({ text: `CLI launch failed: ${err.message}`, success: false, durationMs: Date.now() - startTime });
     });
   });
 }
@@ -686,7 +758,6 @@ export async function postReply(
       body: JSON.stringify({ role: "assistant", text }),
       signal: AbortSignal.timeout(30_000),
     });
-    // 4xx = prompt cancelled, that's OK
     return response.ok || (response.status >= 400 && response.status < 500);
   } catch {
     return false;

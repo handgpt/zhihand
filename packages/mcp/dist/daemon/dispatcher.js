@@ -5,9 +5,10 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS } from "../core/config.js";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
-const CLI_TIMEOUT = 120_000; // 120s
+const CLI_TIMEOUT = 120_000; // 120s per prompt
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
-const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB
+const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB (for one-shot backends)
+const MAX_HISTORY_TURNS = 20; // keep last N exchanges in conversation history
 // Gemini session file polling
 const SESSION_POLL_INTERVAL = 1_000; // 1s
 const SESSION_STABILITY_DELAY = 2_000; // wait 2s after outcome before returning
@@ -16,7 +17,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PTY_WRAP_SCRIPT = path.resolve(__dirname, "../../scripts/pty-wrap.py");
 // Gemini session directories
 const GEMINI_TMP_DIR = path.join(os.homedir(), ".gemini", "tmp");
-let activeChild = null;
+let session = null;
+const conversationHistory = [];
 // ── Gemini Session File Monitoring ─────────────────────────
 /** Safely read and parse a JSON file (single attempt, async). */
 async function loadJsonFile(filePath) {
@@ -26,7 +28,6 @@ async function loadJsonFile(filePath) {
         return typeof parsed === "object" && parsed !== null ? parsed : null;
     }
     catch {
-        // File locked or partial write — next poll cycle will retry
         return null;
     }
 }
@@ -56,7 +57,6 @@ function extractMessageText(message) {
         if (typeof obj.text === "string")
             return obj.text;
     }
-    // Fallback to displayContent
     const display = message.displayContent;
     if (typeof display === "string")
         return display;
@@ -86,7 +86,6 @@ function hasActiveToolCalls(message) {
 function checkSessionOutcome(messages) {
     if (messages.length === 0)
         return null;
-    // Get the latest turn messages (trailing messages from last user input)
     const trailing = [];
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i];
@@ -96,22 +95,18 @@ function checkSessionOutcome(messages) {
     }
     if (trailing.length === 0)
         return null;
-    // If any message has active tool calls, still in progress
     for (const msg of trailing) {
         if (hasActiveToolCalls(msg))
             return null;
     }
-    // Check from last message backwards for a result
     for (let i = trailing.length - 1; i >= 0; i--) {
         const msg = trailing[i];
         const msgType = String(msg.type ?? "").trim();
-        // Error/warning/info messages
         if (["error", "warning", "info"].includes(msgType)) {
             const text = extractMessageText(msg).trim();
             if (text)
                 return ["error", text];
         }
-        // Gemini response message
         if (msgType === "gemini") {
             const text = extractMessageText(msg).trim();
             if (text)
@@ -152,21 +147,19 @@ async function findLatestSessionFile(afterTime, promptText) {
                 }
             }
         }
-        // Sort newest first, then validate content matches our prompt
         candidates.sort((a, b) => b.mtime - a.mtime);
         const promptPrefix = promptText.slice(0, 50);
         for (const candidate of candidates) {
             const data = await loadJsonFile(candidate.path);
             if (!data || !Array.isArray(data.messages))
                 continue;
-            // Check first user message matches our prompt
             for (const msg of data.messages) {
                 if (String(msg.type ?? "").trim() !== "user")
                     continue;
                 const text = extractMessageText(msg);
                 if (text.startsWith(promptPrefix))
                     return candidate.path;
-                break; // Only check first user message
+                break;
             }
         }
         return null;
@@ -175,34 +168,39 @@ async function findLatestSessionFile(afterTime, promptText) {
         return null;
     }
 }
+/** Count how many "user" type messages are in the session */
+function countUserMessages(messages) {
+    return messages.filter(m => String(m.type ?? "").trim() === "user").length;
+}
 /**
- * Poll gemini session files for the response.
- * Returns the final text when gemini completes, or null on timeout.
+ * Poll gemini session file for the response to the current prompt.
+ *
+ * For persistent sessions:
+ * - First prompt: find the session file, wait for first response, keep process alive
+ * - Subsequent: session file known, wait for new user message + response
  */
-function pollGeminiSession(child, startTime, promptText, log) {
+function pollGeminiSession(child, startTime, promptText, log, knownSessionFile, expectedUserCount) {
     return new Promise((resolve) => {
-        let sessionFile = null;
+        let sessionFile = knownSessionFile;
         let outcomeAt = null;
         let finalResult = null;
         let settled = false;
         let pollTimeout = null;
+        let newUserSeen = knownSessionFile === null; // first prompt: don't wait for user msg
         function settle(result) {
             if (settled)
                 return;
             settled = true;
             if (pollTimeout)
                 clearTimeout(pollTimeout);
-            // Kill the gemini process now that we have the answer
-            closeChild(child);
+            // DON'T kill the child — persistent session keeps it alive
             resolve(result);
         }
         async function poll() {
             if (settled)
                 return;
             const elapsed = Date.now() - startTime;
-            // Timeout
             if (elapsed > CLI_TIMEOUT) {
-                closeChild(child);
                 settle({
                     text: "Gemini timed out after 120s.",
                     success: false,
@@ -210,16 +208,18 @@ function pollGeminiSession(child, startTime, promptText, log) {
                 });
                 return;
             }
-            // Find session file if not yet found
+            // Find session file if not yet found (first prompt only)
             if (!sessionFile) {
                 sessionFile = await findLatestSessionFile(startTime, promptText);
                 if (sessionFile) {
                     log(`[gemini] Session file found: ${path.basename(sessionFile)}`);
+                    if (session)
+                        session.geminiSessionFile = sessionFile;
                 }
                 schedulePoll();
                 return;
             }
-            // Read session file and check for outcome
+            // Read session file
             const conversation = await loadJsonFile(sessionFile);
             if (!conversation) {
                 schedulePoll();
@@ -230,15 +230,23 @@ function pollGeminiSession(child, startTime, promptText, log) {
                 schedulePoll();
                 return;
             }
+            // For subsequent prompts: wait until the new user message appears
+            if (!newUserSeen) {
+                const userCount = countUserMessages(messages);
+                if (userCount < expectedUserCount) {
+                    schedulePoll();
+                    return;
+                }
+                newUserSeen = true;
+                log(`[gemini] New user message detected (turn #${expectedUserCount})`);
+            }
             const outcome = checkSessionOutcome(messages);
             if (!outcome) {
-                // Still in progress, reset stability timer
                 outcomeAt = null;
                 finalResult = null;
                 schedulePoll();
                 return;
             }
-            // Outcome detected — wait for stability (2s) before returning
             if (!outcomeAt) {
                 outcomeAt = Date.now();
                 finalResult = outcome;
@@ -262,12 +270,16 @@ function pollGeminiSession(child, startTime, promptText, log) {
                 return;
             pollTimeout = setTimeout(() => { poll(); }, SESSION_POLL_INTERVAL);
         }
-        // Start polling
         schedulePoll();
-        // Also handle process exit (in case it crashes before producing session file)
-        child.on("close", (code) => {
+        // Handle unexpected process exit
+        const onClose = (code) => {
             if (settled)
                 return;
+            // Mark session as dead
+            if (session?.child === child) {
+                session.alive = false;
+                log(`[gemini] Session process exited with code ${code}`);
+            }
             // Give a final chance to read the session file
             setTimeout(async () => {
                 if (settled)
@@ -292,14 +304,14 @@ function pollGeminiSession(child, startTime, promptText, log) {
                     durationMs: Date.now() - startTime,
                 });
             }, 500);
-        });
+        };
+        child.on("close", onClose);
     });
 }
-/** Gracefully close a child process: EOF → SIGTERM → SIGKILL. */
+/** Gracefully close a child process: SIGTERM → SIGKILL. */
 function closeChild(child) {
     if (child.killed || child.exitCode !== null)
         return;
-    // Try SIGTERM first
     child.kill("SIGTERM");
     setTimeout(() => {
         if (!child.killed && child.exitCode === null) {
@@ -307,29 +319,29 @@ function closeChild(child) {
         }
     }, SIGKILL_DELAY);
 }
-/**
- * Kill the active child process. Returns a promise that resolves
- * when the child has exited (or immediately if no child).
- */
-export function killActiveChild() {
-    if (!activeChild || activeChild.killed) {
+/** Close the persistent session and clear conversation history. */
+function closeSession() {
+    if (!session)
         return Promise.resolve();
-    }
+    const s = session;
+    session = null;
+    if (!s.alive)
+        return Promise.resolve();
     return new Promise((resolve) => {
-        const child = activeChild;
-        child.once("close", () => resolve());
-        closeChild(child);
-        // Safety: resolve after SIGKILL_DELAY + 1s even if no close event
+        s.child.once("close", () => resolve());
+        closeChild(s.child);
         setTimeout(() => resolve(), SIGKILL_DELAY + 1000);
     });
 }
-// ── System Prompt ─────────────────────────────────────────
 /**
- * Wrap the user's raw prompt with system context so the CLI backend
- * knows about the connected phone and how to use zhihand MCP tools.
+ * Kill the active session. Called by daemon on shutdown or backend switch.
  */
-function wrapPrompt(userPrompt) {
-    return `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
+export async function killActiveChild() {
+    await closeSession();
+    conversationHistory.length = 0;
+}
+// ── System Prompt ─────────────────────────────────────────
+const SYSTEM_CONTEXT = `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
 
 ## Available MCP Tools
 
@@ -359,26 +371,54 @@ Control the phone. Requires "action" parameter. All coordinates use normalized r
 - When the user asks to see their screen, ALWAYS call zhihand_screenshot first.
 - When the user asks to open an app (e.g. WeChat, Settings), use open_app action.
 - When the user asks to go back/home, use back/home actions.
-- For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).
-
-User message:
-${userPrompt}`;
+- For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).`;
+/**
+ * Build the full system prompt with optional conversation history.
+ * Used for first prompt in persistent sessions and all one-shot calls.
+ */
+function wrapPrompt(userPrompt, history) {
+    let result = SYSTEM_CONTEXT;
+    if (history && history.length > 0) {
+        result += "\n\n## Recent Conversation\n";
+        for (const turn of history) {
+            const label = turn.role === "user" ? "User" : "Assistant";
+            // Truncate long assistant responses in history to save tokens
+            const text = turn.text.length > 500 ? turn.text.slice(0, 500) + "..." : turn.text;
+            result += `\n${label}: ${text}\n`;
+        }
+    }
+    result += `\nUser message:\n${userPrompt}`;
+    return result;
+}
+// ── Conversation History Helpers ─────────────────────────────
+function recordTurn(role, text) {
+    conversationHistory.push({ role, text });
+    // Trim to keep last N exchanges (2 turns per exchange)
+    while (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+        conversationHistory.shift();
+    }
 }
 // ── Dispatch Entrypoint ────────────────────────────────────
 export function dispatchToCLI(backend, prompt, log, model) {
     const startTime = Date.now();
-    const wrappedPrompt = wrapPrompt(prompt);
-    // Resolve model: explicit > env > default
     const resolvedModel = resolveModel(backend, model);
-    log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}`);
+    // Check if existing session matches — if not, close it
+    const canReuse = session?.alive && session.backend === backend && session.model === resolvedModel;
+    if (session && !canReuse) {
+        log(`[dispatch] Session mismatch (was ${session.backend}/${session.model}), closing old session`);
+        closeSession();
+        conversationHistory.length = 0;
+    }
+    const sessionLabel = canReuse ? `#${session.promptCount + 1}` : "new";
+    log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}, Session: ${sessionLabel}`);
     if (backend === "gemini") {
-        return dispatchGemini(wrappedPrompt, startTime, log, resolvedModel);
+        return dispatchGeminiPersistent(prompt, startTime, log, resolvedModel);
     }
     if (backend === "codex") {
-        return dispatchCodex(wrappedPrompt, startTime, resolvedModel);
+        return dispatchCodexWithHistory(prompt, startTime, log, resolvedModel);
     }
     if (backend === "claudecode") {
-        return dispatchClaude(wrappedPrompt, startTime, resolvedModel);
+        return dispatchClaudeWithHistory(prompt, startTime, log, resolvedModel);
     }
     return Promise.resolve({
         text: `Unsupported backend: ${backend}`,
@@ -389,20 +429,13 @@ export function dispatchToCLI(backend, prompt, log, model) {
 /**
  * Resolve the model to use for a backend.
  * Priority: explicit parameter > ZHIHAND_MODEL env > backend-specific env > default alias.
- *
- * Each backend CLI handles alias→full-name resolution natively:
- *   - Gemini CLI: "flash" → gemini-2.5-flash, "pro" → gemini-2.5-pro
- *   - Claude Code: "sonnet" → claude-sonnet-4-*, "opus" → claude-opus-4-*, "haiku" → claude-haiku-4-*
- *   - Codex CLI: no alias support — pass full model name directly (e.g. "o4-mini", "codex-mini")
  */
 function resolveModel(backend, explicit) {
     if (explicit)
         return explicit;
-    // Global env override
     const globalEnv = process.env.ZHIHAND_MODEL;
     if (globalEnv)
         return globalEnv;
-    // Per-backend env override
     const envMap = {
         gemini: process.env.ZHIHAND_GEMINI_MODEL,
         claudecode: process.env.ZHIHAND_CLAUDE_MODEL,
@@ -413,12 +446,26 @@ function resolveModel(backend, explicit) {
         return perBackend;
     return DEFAULT_MODELS[backend];
 }
-// ── Gemini Dispatch (PTY + Session File Monitoring) ────────
-function dispatchGemini(prompt, startTime, log, model) {
+// ── Gemini Dispatch (Persistent PTY Session) ─────────────────
+async function dispatchGeminiPersistent(prompt, startTime, log, model) {
+    // Reuse existing session?
+    if (session?.alive && session.backend === "gemini") {
+        session.promptCount++;
+        const turnNum = session.promptCount;
+        log(`[gemini] Reusing session — sending prompt #${turnNum}`);
+        // Write raw prompt to PTY stdin (gemini already has system context from first prompt)
+        session.child.stdin?.write(prompt + "\n");
+        const result = await pollGeminiSession(session.child, startTime, prompt, log, session.geminiSessionFile, turnNum);
+        recordTurn("user", prompt);
+        recordTurn("assistant", result.text);
+        return result;
+    }
+    // New session — spawn gemini with first prompt
+    const wrappedPrompt = wrapPrompt(prompt);
     const cliArgs = [
         "--approval-mode", "yolo",
         "--model", model,
-        "-i", prompt,
+        "-i", wrappedPrompt,
     ];
     const env = {
         ...process.env,
@@ -426,51 +473,72 @@ function dispatchGemini(prompt, startTime, log, model) {
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
     };
-    // Wrap with PTY so gemini sees isatty()==true
     const geminiPath = resolveGemini();
+    log(`[gemini] Starting new persistent session (model: ${model})`);
     const child = spawn("python3", [PTY_WRAP_SCRIPT, geminiPath, ...cliArgs], {
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"], // stdin=pipe for subsequent prompts
         detached: false,
     });
-    activeChild = child;
-    // Drain PTY output (discard — we read from session file instead)
+    session = {
+        child,
+        backend: "gemini",
+        model,
+        promptCount: 1,
+        alive: true,
+        geminiSessionFile: null,
+    };
+    // Handle unexpected exit — mark session dead
+    child.on("close", (code) => {
+        if (session?.child === child) {
+            session.alive = false;
+            log(`[gemini] Session process exited (code ${code})`);
+        }
+    });
+    // Drain PTY stdout/stderr (we read from session file, not stdout)
     child.stdout?.resume();
     child.stderr?.resume();
-    return pollGeminiSession(child, startTime, prompt, log);
+    const result = await pollGeminiSession(child, startTime, wrappedPrompt, log, null, // no known session file yet
+    1);
+    recordTurn("user", prompt);
+    recordTurn("assistant", result.text);
+    return result;
 }
-// ── Codex Dispatch ─────────────────────────────────────────
-function dispatchCodex(prompt, startTime, model) {
-    // --dangerously-bypass-approvals-and-sandbox is required so MCP tool calls
-    // are not auto-cancelled in non-interactive mode (--full-auto cancels them)
+// ── Codex Dispatch (One-shot with History) ────────────────────
+async function dispatchCodexWithHistory(prompt, startTime, log, model) {
+    // Include conversation history in the prompt for context
+    const fullPrompt = wrapPrompt(prompt, conversationHistory);
     const args = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"];
     args.push("-m", model);
-    args.push(prompt);
+    args.push(fullPrompt);
     const codexPath = resolveCodex();
+    log(`[codex] One-shot dispatch (history: ${conversationHistory.length} turns)`);
     const child = spawn(codexPath, args, {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
     });
-    activeChild = child;
-    return collectCodexOutput(child, startTime);
+    const result = await collectCodexOutput(child, startTime);
+    recordTurn("user", prompt);
+    recordTurn("assistant", result.text);
+    return result;
 }
-// ── Claude Dispatch ────────────────────────────────────────
-function dispatchClaude(prompt, startTime, model) {
+// ── Claude Dispatch (One-shot with History) ───────────────────
+async function dispatchClaudeWithHistory(prompt, startTime, log, model) {
+    const fullPrompt = wrapPrompt(prompt, conversationHistory);
     const claudePath = resolveClaude();
-    const child = spawn(claudePath, ["-p", prompt, "--model", model, "--output-format", "json"], {
+    log(`[claude] One-shot dispatch (history: ${conversationHistory.length} turns)`);
+    const child = spawn(claudePath, ["-p", fullPrompt, "--model", model, "--output-format", "json"], {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
     });
-    activeChild = child;
-    return collectChildOutput(child, startTime);
+    const result = await collectChildOutput(child, startTime);
+    recordTurn("user", prompt);
+    recordTurn("assistant", result.text);
+    return result;
 }
-/**
- * Collect codex JSONL output with streaming line parsing.
- * Processes each JSONL line as it arrives so we extract agent text
- * without buffering large binary payloads (e.g. base64 screenshots).
- */
+// ── Codex JSONL Output Collector ──────────────────────────────
 function collectCodexOutput(child, startTime) {
     return new Promise((resolve) => {
         const texts = [];
@@ -505,50 +573,35 @@ function collectCodexOutput(child, startTime) {
                     hasError = true;
                 }
             }
-            catch {
-                // Not valid JSON — skip
-            }
+            catch { /* skip non-JSON */ }
         }
         const timer = setTimeout(() => { closeChild(child); }, CLI_TIMEOUT);
-        const onData = (data) => {
+        child.stdout?.on("data", (data) => {
             lineBuffer += data.toString("utf8");
             const lines = lineBuffer.split("\n");
-            // Keep the last (possibly incomplete) line in the buffer
             lineBuffer = lines.pop() ?? "";
-            for (const line of lines) {
+            for (const line of lines)
                 processLine(line);
-            }
-        };
-        child.stdout?.on("data", onData);
-        // stderr is not JSONL, just discard
+        });
         child.stderr?.resume();
         child.on("close", (code) => {
             clearTimeout(timer);
-            activeChild = null;
-            // Process any remaining data in the buffer
             if (lineBuffer.trim())
                 processLine(lineBuffer);
             const durationMs = Date.now() - startTime;
             let text = texts.join("\n\n");
             if (!text) {
-                text = code === 0
-                    ? "Task completed (no output)."
-                    : `CLI process exited with code ${code}.`;
+                text = code === 0 ? "Task completed (no output)." : `CLI process exited with code ${code}.`;
             }
             settle({ text, success: !hasError && code === 0, durationMs });
         });
         child.on("error", (err) => {
             clearTimeout(timer);
-            activeChild = null;
-            settle({
-                text: `CLI launch failed: ${err.message}`,
-                success: false,
-                durationMs: Date.now() - startTime,
-            });
+            settle({ text: `CLI launch failed: ${err.message}`, success: false, durationMs: Date.now() - startTime });
         });
     });
 }
-// ── Shared: Collect stdout/stderr from a child process ─────
+// ── Shared: Collect stdout/stderr from a child process ───────
 function collectChildOutput(child, startTime) {
     return new Promise((resolve) => {
         const chunks = [];
@@ -561,10 +614,7 @@ function collectChildOutput(child, startTime) {
             settled = true;
             resolve(result);
         }
-        // Timeout with two-stage kill
-        const timer = setTimeout(() => {
-            closeChild(child);
-        }, CLI_TIMEOUT);
+        const timer = setTimeout(() => { closeChild(child); }, CLI_TIMEOUT);
         const collectOutput = (data) => {
             if (truncated)
                 return;
@@ -581,27 +631,18 @@ function collectChildOutput(child, startTime) {
         child.stderr?.on("data", collectOutput);
         child.on("close", (code) => {
             clearTimeout(timer);
-            activeChild = null;
             const durationMs = Date.now() - startTime;
             let text = Buffer.concat(chunks).toString("utf8").trim();
-            if (truncated) {
+            if (truncated)
                 text += "\n\n[Output truncated at 100KB]";
-            }
             if (!text) {
-                text = code === 0
-                    ? "Task completed (no output)."
-                    : `CLI process exited with code ${code}.`;
+                text = code === 0 ? "Task completed (no output)." : `CLI process exited with code ${code}.`;
             }
             settle({ text, success: code === 0, durationMs });
         });
         child.on("error", (err) => {
             clearTimeout(timer);
-            activeChild = null;
-            settle({
-                text: `CLI launch failed: ${err.message}`,
-                success: false,
-                durationMs: Date.now() - startTime,
-            });
+            settle({ text: `CLI launch failed: ${err.message}`, success: false, durationMs: Date.now() - startTime });
         });
     });
 }
@@ -618,7 +659,6 @@ export async function postReply(config, promptId, text) {
             body: JSON.stringify({ role: "assistant", text }),
             signal: AbortSignal.timeout(30_000),
         });
-        // 4xx = prompt cancelled, that's OK
         return response.ok || (response.status >= 400 && response.status < 500);
     }
     catch {

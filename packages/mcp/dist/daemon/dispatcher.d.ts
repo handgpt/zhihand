@@ -5,8 +5,7 @@ export interface DispatchResult {
     durationMs: number;
 }
 /**
- * Kill the active child process. Returns a promise that resolves
- * when the child has exited (or immediately if no child).
+ * Kill the active session. Called by daemon on shutdown or backend switch.
  */
 export declare function killActiveChild(): Promise<void>;
 export declare function dispatchToCLI(backend: Exclude<BackendName, "openclaw">, prompt: string, log: (msg: string) => void, model?: string): Promise<DispatchResult>;
