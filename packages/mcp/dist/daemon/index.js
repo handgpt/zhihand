@@ -5,7 +5,8 @@ import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 // Transport type used only for cleanup interface
 import { createServer as createMcpServer } from "../index.js";
-import { resolveConfig, loadBackendConfig, saveBackendConfig, resolveZhiHandDir, ensureZhiHandDir, } from "../core/config.js";
+import { resolveConfig, loadBackendConfig, saveBackendConfig, resolveZhiHandDir, ensureZhiHandDir, DEFAULT_MODELS, } from "../core/config.js";
+import { PACKAGE_VERSION } from "../index.js";
 import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline } from "./heartbeat.js";
 import { PromptListener } from "./prompt-listener.js";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.js";
@@ -13,6 +14,7 @@ const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
 // ── State ──────────────────────────────────────────────────
 let activeBackend = null;
+let activeModel = null; // user-selected model alias, null = use default
 let isProcessing = false;
 const promptQueue = [];
 function log(msg) {
@@ -28,7 +30,7 @@ async function processPrompt(config, prompt) {
     }
     const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
     log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
-    const result = await dispatchToCLI(activeBackend, prompt.text, log);
+    const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
     const ok = await postReply(config, prompt.id, result.text);
     const dur = (result.durationMs / 1000).toFixed(1);
     if (ok) {
@@ -69,7 +71,7 @@ function handleInternalAPI(req, res) {
         });
         req.on("end", () => {
             try {
-                const { backend } = JSON.parse(body);
+                const { backend, model } = JSON.parse(body);
                 const allowed = ["claudecode", "codex", "gemini"];
                 if (!allowed.includes(backend)) {
                     res.writeHead(400, { "Content-Type": "application/json" });
@@ -77,10 +79,12 @@ function handleInternalAPI(req, res) {
                     return;
                 }
                 activeBackend = backend;
-                saveBackendConfig({ activeBackend });
-                log(`[config] Backend switched to ${activeBackend}.`);
+                activeModel = model ?? null;
+                saveBackendConfig({ activeBackend, model: activeModel });
+                const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+                log(`[config] Backend switched to ${activeBackend}, model: ${effectiveModel}`);
                 res.writeHead(200, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ ok: true, backend: activeBackend }));
+                res.end(JSON.stringify({ ok: true, backend: activeBackend, model: effectiveModel }));
             }
             catch {
                 res.writeHead(400, { "Content-Type": "application/json" });
@@ -90,9 +94,12 @@ function handleInternalAPI(req, res) {
         return true;
     }
     if (url === "/internal/status" && req.method === "GET") {
+        const effectiveModel = activeBackend ? (activeModel ?? DEFAULT_MODELS[activeBackend]) : null;
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
+            version: PACKAGE_VERSION,
             backend: activeBackend,
+            model: effectiveModel,
             processing: isProcessing,
             queueLength: promptQueue.length,
             pid: process.pid,
@@ -155,9 +162,19 @@ export async function startDaemon(options) {
         log("Run 'zhihand setup' to pair a device first.");
         process.exit(1);
     }
-    // Load backend
+    // Load backend + model
     const backendConfig = loadBackendConfig();
     activeBackend = backendConfig.activeBackend ?? null;
+    activeModel = backendConfig.model ?? null;
+    // Log startup info
+    log(`ZhiHand v${PACKAGE_VERSION} starting...`);
+    if (activeBackend) {
+        const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+        log(`[config] Backend: ${activeBackend}, Model: ${effectiveModel}`);
+    }
+    else {
+        log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
+    }
     // MCP sessions: each client gets its own McpServer + Transport pair
     // because McpServer.connect() can only be called once per instance
     const MAX_MCP_SESSIONS = 20;

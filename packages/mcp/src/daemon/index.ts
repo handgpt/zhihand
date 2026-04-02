@@ -14,9 +14,11 @@ import {
   saveBackendConfig,
   resolveZhiHandDir,
   ensureZhiHandDir,
+  DEFAULT_MODELS,
   type BackendName,
   type ZhiHandConfig,
 } from "../core/config.ts";
+import { PACKAGE_VERSION } from "../index.ts";
 import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
@@ -27,6 +29,7 @@ const PID_FILE = "daemon.pid";
 // ── State ──────────────────────────────────────────────────
 
 let activeBackend: Exclude<BackendName, "openclaw"> | null = null;
+let activeModel: string | null = null;  // user-selected model alias, null = use default
 let isProcessing = false;
 const promptQueue: MobilePrompt[] = [];
 
@@ -47,7 +50,7 @@ async function processPrompt(config: ZhiHandConfig, prompt: MobilePrompt): Promi
   const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
   log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
 
-  const result = await dispatchToCLI(activeBackend, prompt.text, log);
+  const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
   const ok = await postReply(config, prompt.id, result.text);
   const dur = (result.durationMs / 1000).toFixed(1);
 
@@ -93,7 +96,7 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
     });
     req.on("end", () => {
       try {
-        const { backend } = JSON.parse(body) as { backend: string };
+        const { backend, model } = JSON.parse(body) as { backend: string; model?: string };
         const allowed = ["claudecode", "codex", "gemini"];
         if (!allowed.includes(backend)) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -101,10 +104,12 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
           return;
         }
         activeBackend = backend as Exclude<BackendName, "openclaw">;
-        saveBackendConfig({ activeBackend });
-        log(`[config] Backend switched to ${activeBackend}.`);
+        activeModel = model ?? null;
+        saveBackendConfig({ activeBackend, model: activeModel });
+        const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+        log(`[config] Backend switched to ${activeBackend}, model: ${effectiveModel}`);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, backend: activeBackend }));
+        res.end(JSON.stringify({ ok: true, backend: activeBackend, model: effectiveModel }));
       } catch {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Invalid JSON" }));
@@ -114,9 +119,12 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
   }
 
   if (url === "/internal/status" && req.method === "GET") {
+    const effectiveModel = activeBackend ? (activeModel ?? DEFAULT_MODELS[activeBackend]) : null;
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
+      version: PACKAGE_VERSION,
       backend: activeBackend,
+      model: effectiveModel,
       processing: isProcessing,
       queueLength: promptQueue.length,
       pid: process.pid,
@@ -182,9 +190,19 @@ export async function startDaemon(options?: {
     process.exit(1);
   }
 
-  // Load backend
+  // Load backend + model
   const backendConfig = loadBackendConfig();
   activeBackend = (backendConfig.activeBackend as Exclude<BackendName, "openclaw">) ?? null;
+  activeModel = backendConfig.model ?? null;
+
+  // Log startup info
+  log(`ZhiHand v${PACKAGE_VERSION} starting...`);
+  if (activeBackend) {
+    const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+    log(`[config] Backend: ${activeBackend}, Model: ${effectiveModel}`);
+  } else {
+    log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
+  }
 
   // MCP sessions: each client gets its own McpServer + Transport pair
   // because McpServer.connect() can only be called once per instance

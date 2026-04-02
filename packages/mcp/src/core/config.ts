@@ -27,7 +27,21 @@ export type BackendName = "claudecode" | "codex" | "gemini" | "openclaw";
 
 export interface BackendConfig {
   activeBackend: BackendName | null;
+  model?: string | null;          // user-selected model alias (e.g. "flash", "sonnet", "o4-mini")
 }
+
+/**
+ * Default model aliases per backend.
+ * These are generic aliases that the respective CLIs resolve to the latest version:
+ *   - Gemini CLI: "flash" → latest flash model (e.g. gemini-2.5-flash)
+ *   - Claude Code: "sonnet" → latest sonnet (e.g. claude-sonnet-4-20250514)
+ *   - Codex CLI: requires full model name, no alias support
+ */
+export const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string> = {
+  gemini: "flash",            // Gemini CLI resolves to latest flash
+  claudecode: "sonnet",       // Claude Code resolves to latest sonnet
+  codex: "o4-mini",           // Codex default cheap fast model
+};
 
 const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
 const CREDENTIALS_PATH = path.join(ZHIHAND_DIR, "credentials.json");

@@ -3,6 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_MODELS } from "../core/config.js";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
 const CLI_TIMEOUT = 120_000; // 120s
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
@@ -367,14 +368,17 @@ ${userPrompt}`;
 export function dispatchToCLI(backend, prompt, log, model) {
     const startTime = Date.now();
     const wrappedPrompt = wrapPrompt(prompt);
+    // Resolve model: explicit > env > default
+    const resolvedModel = resolveModel(backend, model);
+    log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}`);
     if (backend === "gemini") {
-        return dispatchGemini(wrappedPrompt, startTime, log, model);
+        return dispatchGemini(wrappedPrompt, startTime, log, resolvedModel);
     }
     if (backend === "codex") {
-        return dispatchCodex(wrappedPrompt, startTime, model);
+        return dispatchCodex(wrappedPrompt, startTime, resolvedModel);
     }
     if (backend === "claudecode") {
-        return dispatchClaude(wrappedPrompt, startTime, model);
+        return dispatchClaude(wrappedPrompt, startTime, resolvedModel);
     }
     return Promise.resolve({
         text: `Unsupported backend: ${backend}`,
@@ -382,12 +386,38 @@ export function dispatchToCLI(backend, prompt, log, model) {
         durationMs: 0,
     });
 }
+/**
+ * Resolve the model to use for a backend.
+ * Priority: explicit parameter > ZHIHAND_MODEL env > backend-specific env > default alias.
+ *
+ * Each backend CLI handles alias→full-name resolution natively:
+ *   - Gemini CLI: "flash" → gemini-2.5-flash, "pro" → gemini-2.5-pro
+ *   - Claude Code: "sonnet" → claude-sonnet-4-*, "opus" → claude-opus-4-*, "haiku" → claude-haiku-4-*
+ *   - Codex CLI: no alias support — pass full model name directly (e.g. "o4-mini", "codex-mini")
+ */
+function resolveModel(backend, explicit) {
+    if (explicit)
+        return explicit;
+    // Global env override
+    const globalEnv = process.env.ZHIHAND_MODEL;
+    if (globalEnv)
+        return globalEnv;
+    // Per-backend env override
+    const envMap = {
+        gemini: process.env.ZHIHAND_GEMINI_MODEL,
+        claudecode: process.env.ZHIHAND_CLAUDE_MODEL,
+        codex: process.env.ZHIHAND_CODEX_MODEL,
+    };
+    const perBackend = envMap[backend];
+    if (perBackend)
+        return perBackend;
+    return DEFAULT_MODELS[backend];
+}
 // ── Gemini Dispatch (PTY + Session File Monitoring) ────────
 function dispatchGemini(prompt, startTime, log, model) {
-    const geminiModel = model ?? process.env.CLAUDE_GEMINI_MODEL ?? "gemini-3.1-pro-preview";
     const cliArgs = [
         "--approval-mode", "yolo",
-        "--model", geminiModel,
+        "--model", model,
         "-i", prompt,
     ];
     const env = {
@@ -414,10 +444,7 @@ function dispatchCodex(prompt, startTime, model) {
     // --dangerously-bypass-approvals-and-sandbox is required so MCP tool calls
     // are not auto-cancelled in non-interactive mode (--full-auto cancels them)
     const args = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"];
-    const codexModel = model ?? process.env.CLAUDE_CODEX_MODEL;
-    if (codexModel) {
-        args.push("-m", codexModel);
-    }
+    args.push("-m", model);
     args.push(prompt);
     const codexPath = resolveCodex();
     const child = spawn(codexPath, args, {
@@ -431,7 +458,7 @@ function dispatchCodex(prompt, startTime, model) {
 // ── Claude Dispatch ────────────────────────────────────────
 function dispatchClaude(prompt, startTime, model) {
     const claudePath = resolveClaude();
-    const child = spawn(claudePath, ["-p", prompt, "--output-format", "json"], {
+    const child = spawn(claudePath, ["-p", prompt, "--model", model, "--output-format", "json"], {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,

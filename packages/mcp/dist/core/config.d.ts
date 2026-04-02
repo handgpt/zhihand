@@ -19,7 +19,16 @@ export interface ZhiHandConfig {
 export type BackendName = "claudecode" | "codex" | "gemini" | "openclaw";
 export interface BackendConfig {
     activeBackend: BackendName | null;
+    model?: string | null;
 }
+/**
+ * Default model aliases per backend.
+ * These are generic aliases that the respective CLIs resolve to the latest version:
+ *   - Gemini CLI: "flash" → latest flash model (e.g. gemini-2.5-flash)
+ *   - Claude Code: "sonnet" → latest sonnet (e.g. claude-sonnet-4-20250514)
+ *   - Codex CLI: requires full model name, no alias support
+ */
+export declare const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string>;
 export declare function resolveZhiHandDir(): string;
 export declare function ensureZhiHandDir(): void;
 export declare function loadCredentialStore(): CredentialStore | null;

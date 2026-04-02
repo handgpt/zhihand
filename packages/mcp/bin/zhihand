@@ -6,7 +6,7 @@ import { startStdioServer } from "../dist/index.js";
 import { startDaemon, stopDaemon, isAlreadyRunning } from "../dist/daemon/index.js";
 import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
 import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
-import { loadDefaultCredential, loadBackendConfig, saveBackendConfig } from "../dist/core/config.js";
+import { loadDefaultCredential, loadBackendConfig, saveBackendConfig, DEFAULT_MODELS } from "../dist/core/config.js";
 import { executePairing } from "../dist/core/pair.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
@@ -23,6 +23,7 @@ const { positionals, values } = parseArgs({
   strict: false,
   options: {
     device: { type: "string" },
+    model: { type: "string", short: "m" },
     help: { type: "boolean", short: "h", default: false },
     detach: { type: "boolean", short: "d", default: false },
     port: { type: "string" },
@@ -41,9 +42,10 @@ Usage:
   zhihand stop               Stop daemon
   zhihand status             Show status (pairing, backend, brain)
 
-  zhihand gemini             Switch backend to Gemini CLI
-  zhihand claude             Switch backend to Claude Code
-  zhihand codex              Switch backend to Codex CLI
+  zhihand gemini             Switch backend to Gemini CLI (default model: flash)
+  zhihand claude             Switch backend to Claude Code (default model: sonnet)
+  zhihand codex              Switch backend to Codex CLI (default model: o4-mini)
+  zhihand gemini --model pro Switch backend with custom model
 
   zhihand setup              Interactive setup: pair + configure + start
   zhihand pair               Pair with a phone device
@@ -53,6 +55,7 @@ Usage:
 
 Options:
   --device <name>    Use a specific paired device
+  --model, -m <name> Set model alias (e.g. flash, pro, sonnet, opus, o4-mini)
   --port <port>      Override daemon port (default: 18686)
   -d, --detach       Run daemon in background
   -h, --help         Show this help
@@ -82,12 +85,15 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
   const config = loadBackendConfig();
   const previous = config.activeBackend;
 
-  if (previous === backendName) {
-    console.log(`Already using ${displayName(backendName)} as backend.`);
+  const userModel = values.model ?? null;
+  const effectiveModel = userModel ?? DEFAULT_MODELS[backendName];
+
+  if (previous === backendName && !userModel) {
+    console.log(`Already using ${displayName(backendName)} as backend (model: ${effectiveModel}).`);
     process.exit(0);
   }
 
-  console.log(`Switching backend to ${displayName(backendName)}...`);
+  console.log(`Switching backend to ${displayName(backendName)} (model: ${effectiveModel})...`);
 
   // Configure MCP (HTTP transport)
   const { configured, removed } = configureMCP(backendName, previous);
@@ -100,7 +106,7 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
         const res = await fetch(`http://127.0.0.1:${port}/internal/backend`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ backend: backendName }),
+          body: JSON.stringify({ backend: backendName, model: userModel }),
           signal: AbortSignal.timeout(5000),
         });
         if (res.ok) {
@@ -108,11 +114,11 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
         }
       } catch {
         // Daemon not responding, just save config
-        saveBackendConfig({ activeBackend: backendName });
+        saveBackendConfig({ activeBackend: backendName, model: userModel });
         console.log(`\nBackend config saved. Daemon not responding — restart with 'zhihand start'.`);
       }
     } else {
-      saveBackendConfig({ activeBackend: backendName });
+      saveBackendConfig({ activeBackend: backendName, model: userModel });
       console.log(`\nBackend switched to ${displayName(backendName)}.`);
       console.log(`Start the daemon to receive prompts: zhihand start`);
     }
@@ -199,7 +205,11 @@ switch (command) {
     } else {
       console.log("No paired device. Run: zhihand setup");
     }
-    console.log(`Active backend: ${backend.activeBackend ? displayName(backend.activeBackend) : "(none)"}`);
+    const backendLabel = backend.activeBackend ? displayName(backend.activeBackend) : "(none)";
+    const modelLabel = backend.activeBackend
+      ? (backend.model ?? DEFAULT_MODELS[backend.activeBackend])
+      : "-";
+    console.log(`Active backend: ${backendLabel} (model: ${modelLabel})`);
     console.log(`Daemon: ${daemonPid ? `running (PID ${daemonPid})` : "not running"}`);
 
     // If daemon running, get live status
