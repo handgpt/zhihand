@@ -8,7 +8,7 @@ import { executeControl } from "./tools/control.ts";
 import { handleScreenshot } from "./tools/screenshot.ts";
 import { handlePair } from "./tools/pair.ts";
 
-const PACKAGE_VERSION = "0.18.0";
+const PACKAGE_VERSION = "0.18.1";
 
 export function createServer(deviceName?: string): McpServer {
   const server = new McpServer({

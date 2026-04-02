@@ -61,6 +61,9 @@ export function createControlCommand(params) {
                 appPayload.url_scheme = params.urlScheme;
             if (params.appName)
                 appPayload.app_name = params.appName;
+            if (!appPayload.app_package && !appPayload.bundle_id && !appPayload.url_scheme) {
+                throw new Error("open_app requires at least one of: appPackage, bundleId, urlScheme");
+            }
             return { type: "receive_app", payload: appPayload };
         }
         case "screenshot":

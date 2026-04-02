@@ -14,7 +14,7 @@ export const controlSchema = {
     amount: z.number().int().positive().default(3).optional().describe("Scroll steps (default 3)"),
     keys: z.string().optional().describe("Key combo string, e.g. 'ctrl+c', 'alt+tab'"),
     clipboardAction: z.enum(["get", "set"]).optional().describe("Clipboard action"),
-    durationMs: z.number().int().positive().max(10000).default(1000).optional().describe("Duration in ms for wait, longclick, or swipe (default 1000, max 10000)"),
+    durationMs: z.number().int().positive().max(10000).optional().describe("Duration in ms: wait (default 1000), longclick (default 800), swipe (default 300). Max 10000"),
     startXRatio: z.number().min(0).max(1).optional().describe("Swipe start X [0,1]"),
     startYRatio: z.number().min(0).max(1).optional().describe("Swipe start Y [0,1]"),
     endXRatio: z.number().min(0).max(1).optional().describe("Swipe end X [0,1]"),
