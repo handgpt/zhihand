@@ -19,9 +19,9 @@ import {
   type ZhiHandConfig,
 } from "../core/config.ts";
 import { PACKAGE_VERSION } from "../index.ts";
-import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline } from "./heartbeat.ts";
+import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
-import { dispatchToCLI, postReply, killActiveChild, type ReplyMeta } from "./dispatcher.ts";
+import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
 
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
@@ -50,10 +50,8 @@ async function processPrompt(config: ZhiHandConfig, prompt: MobilePrompt): Promi
   const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
   log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
 
-  const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
   const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
-  const meta: ReplyMeta = { backend: activeBackend, model: effectiveModel };
-  const ok = await postReply(config, prompt.id, result.text, meta);
+  const ok = await postReply(config, prompt.id, result.text);
   const dur = (result.durationMs / 1000).toFixed(1);
 
   if (ok) {
@@ -109,6 +107,7 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
         activeModel = model ?? null;
         saveBackendConfig({ activeBackend, model: activeModel });
         const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+        setBrainMeta({ backend: activeBackend, model: effectiveModel });
         log(`[config] Backend switched to ${activeBackend}, model: ${effectiveModel}`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, backend: activeBackend, model: effectiveModel }));
@@ -197,11 +196,12 @@ export async function startDaemon(options?: {
   activeBackend = (backendConfig.activeBackend as Exclude<BackendName, "openclaw">) ?? null;
   activeModel = backendConfig.model ?? null;
 
-  // Log startup info
+  // Log startup info + set brain meta for heartbeat
   log(`ZhiHand v${PACKAGE_VERSION} starting...`);
   if (activeBackend) {
     const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
     log(`[config] Backend: ${activeBackend}, Model: ${effectiveModel}`);
+    setBrainMeta({ backend: activeBackend, model: effectiveModel });
   } else {
     log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
   }

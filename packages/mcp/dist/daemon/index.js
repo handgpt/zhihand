@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer as createMcpServer } from "../index.js";
 import { resolveConfig, loadBackendConfig, saveBackendConfig, resolveZhiHandDir, ensureZhiHandDir, DEFAULT_MODELS, } from "../core/config.js";
 import { PACKAGE_VERSION } from "../index.js";
-import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline } from "./heartbeat.js";
+import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta } from "./heartbeat.js";
 import { PromptListener } from "./prompt-listener.js";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.js";
 const DEFAULT_PORT = 18686;
@@ -30,10 +30,8 @@ async function processPrompt(config, prompt) {
     }
     const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
     log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
-    const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
     const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
-    const meta = { backend: activeBackend, model: effectiveModel };
-    const ok = await postReply(config, prompt.id, result.text, meta);
+    const ok = await postReply(config, prompt.id, result.text);
     const dur = (result.durationMs / 1000).toFixed(1);
     if (ok) {
         log(`[relay] Reply posted (${dur}s, ${result.success ? "ok" : "error"}).`);
@@ -84,6 +82,7 @@ function handleInternalAPI(req, res) {
                 activeModel = model ?? null;
                 saveBackendConfig({ activeBackend, model: activeModel });
                 const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
+                setBrainMeta({ backend: activeBackend, model: effectiveModel });
                 log(`[config] Backend switched to ${activeBackend}, model: ${effectiveModel}`);
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ ok: true, backend: activeBackend, model: effectiveModel }));
@@ -168,11 +167,12 @@ export async function startDaemon(options) {
     const backendConfig = loadBackendConfig();
     activeBackend = backendConfig.activeBackend ?? null;
     activeModel = backendConfig.model ?? null;
-    // Log startup info
+    // Log startup info + set brain meta for heartbeat
     log(`ZhiHand v${PACKAGE_VERSION} starting...`);
     if (activeBackend) {
         const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
         log(`[config] Backend: ${activeBackend}, Model: ${effectiveModel}`);
+        setBrainMeta({ backend: activeBackend, model: effectiveModel });
     }
     else {
         log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);

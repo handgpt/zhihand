@@ -6,19 +6,35 @@ const HEARTBEAT_RETRY_INTERVAL = 5_000; // 5s on failure
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 
+/** Brain metadata included in every heartbeat, so the app always knows the current backend/model. */
+export interface BrainMeta {
+  backend?: string | null;  // "gemini" | "claudecode" | "codex"
+  model?: string | null;    // "flash" | "sonnet" | "gpt-5.4-mini" | ...
+}
+
+let currentMeta: BrainMeta = {};
+
+/** Update the backend/model metadata that will be sent with the next heartbeat. */
+export function setBrainMeta(meta: BrainMeta): void {
+  currentMeta = meta;
+}
+
 function buildUrl(config: ZhiHandConfig): string {
   return `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/brain-status`;
 }
 
 async function sendHeartbeat(config: ZhiHandConfig, online: boolean): Promise<boolean> {
   try {
+    const body: Record<string, unknown> = { plugin_online: online };
+    if (currentMeta.backend) body.backend = currentMeta.backend;
+    if (currentMeta.model) body.model = currentMeta.model;
     const response = await fetch(buildUrl(config), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-zhihand-controller-token": config.controllerToken,
       },
-      body: JSON.stringify({ plugin_online: online }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });
     return response.ok;

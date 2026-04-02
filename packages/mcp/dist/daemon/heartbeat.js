@@ -2,18 +2,28 @@ const HEARTBEAT_INTERVAL = 30_000; // 30s
 const HEARTBEAT_RETRY_INTERVAL = 5_000; // 5s on failure
 let heartbeatTimer;
 let retryTimer;
+let currentMeta = {};
+/** Update the backend/model metadata that will be sent with the next heartbeat. */
+export function setBrainMeta(meta) {
+    currentMeta = meta;
+}
 function buildUrl(config) {
     return `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/brain-status`;
 }
 async function sendHeartbeat(config, online) {
     try {
+        const body = { plugin_online: online };
+        if (currentMeta.backend)
+            body.backend = currentMeta.backend;
+        if (currentMeta.model)
+            body.model = currentMeta.model;
         const response = await fetch(buildUrl(config), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "x-zhihand-controller-token": config.controllerToken,
             },
-            body: JSON.stringify({ plugin_online: online }),
+            body: JSON.stringify(body),
             signal: AbortSignal.timeout(10_000),
         });
         return response.ok;
