@@ -17,6 +17,10 @@ export interface ControlParams {
   startYRatio?: number;
   endXRatio?: number;
   endYRatio?: number;
+  appPackage?: string;
+  bundleId?: string;
+  urlScheme?: string;
+  appName?: string;
 }
 
 export interface QueuedControlCommand {
@@ -54,20 +58,23 @@ export function createControlCommand(params: ControlParams): QueuedControlComman
       return { type: "receive_click", payload: { x: params.xRatio, y: params.yRatio } };
     case "doubleclick":
       return { type: "receive_doubleclick", payload: { x: params.xRatio, y: params.yRatio } };
+    case "longclick":
+      return { type: "receive_longclick", payload: { x: params.xRatio, y: params.yRatio, time: params.durationMs ?? 800 } };
     case "rightclick":
       return { type: "receive_rightclick", payload: { x: params.xRatio, y: params.yRatio } };
     case "middleclick":
       return { type: "receive_middleclick", payload: { x: params.xRatio, y: params.yRatio } };
     case "type":
-      return { type: "receive_type", payload: { text: params.text } };
+      return { type: "receive_input", payload: { input: params.text, mode: "auto", submit: false } };
     case "swipe":
       return {
-        type: "receive_swipe",
+        type: "receive_slide",
         payload: {
-          startX: params.startXRatio,
-          startY: params.startYRatio,
-          endX: params.endXRatio,
-          endY: params.endYRatio,
+          x1: params.startXRatio,
+          y1: params.startYRatio,
+          x2: params.endXRatio,
+          y2: params.endYRatio,
+          time: params.durationMs ?? 300,
         },
       };
     case "scroll":
@@ -81,12 +88,26 @@ export function createControlCommand(params: ControlParams): QueuedControlComman
         },
       };
     case "keycombo":
-      return { type: "receive_keycombo", payload: { keys: params.keys } };
+      return { type: "receive_key_combo", payload: { keys: params.keys } };
+    case "back":
+      return { type: "receive_back", payload: {} };
+    case "home":
+      return { type: "receive_home", payload: {} };
+    case "enter":
+      return { type: "receive_enter", payload: {} };
     case "clipboard":
       return {
         type: "receive_clipboard",
         payload: { action: params.clipboardAction, text: params.text },
       };
+    case "open_app": {
+      const appPayload: Record<string, unknown> = {};
+      if (params.appPackage) appPayload.app_package = params.appPackage;
+      if (params.bundleId) appPayload.bundle_id = params.bundleId;
+      if (params.urlScheme) appPayload.url_scheme = params.urlScheme;
+      if (params.appName) appPayload.app_name = params.appName;
+      return { type: "receive_app", payload: appPayload };
+    }
     case "screenshot":
       return { type: "receive_screenshot", payload: {} };
     default:

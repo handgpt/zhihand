@@ -15,6 +15,10 @@ export interface ControlParams {
     startYRatio?: number;
     endXRatio?: number;
     endYRatio?: number;
+    appPackage?: string;
+    bundleId?: string;
+    urlScheme?: string;
+    appName?: string;
 }
 export interface QueuedControlCommand {
     type: string;
