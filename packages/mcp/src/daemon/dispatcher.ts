@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -16,6 +16,108 @@ const SESSION_STABILITY_DELAY = 2_000; // wait 2s after outcome before returning
 // Resolve pty-wrap.py relative to this file (works from both src/ and dist/)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PTY_WRAP_SCRIPT = path.resolve(__dirname, "../../scripts/pty-wrap.py");
+
+// ── Executable Path Resolution ───────────────────────────────
+
+/** Cache of resolved executable paths to avoid repeated lookups */
+const executableCache = new Map<string, string>();
+
+/**
+ * Resolve the full path of a CLI executable.
+ * Searches PATH first via `which`, then falls back to platform-specific known locations.
+ */
+function resolveExecutable(name: string, fallbackPaths: string[]): string {
+  const cached = executableCache.get(name);
+  if (cached) return cached;
+
+  // Try `which` first (works when the binary is in PATH)
+  try {
+    const resolved = execSync(`which ${name}`, { encoding: "utf8", timeout: 5000 }).trim();
+    if (resolved) {
+      executableCache.set(name, resolved);
+      return resolved;
+    }
+  } catch {
+    // Not in PATH, try fallback locations
+  }
+
+  // Try known platform-specific paths
+  for (const candidate of fallbackPaths) {
+    // Support glob-like patterns with * (e.g. version directories)
+    if (candidate.includes("*")) {
+      try {
+        const dir = path.dirname(candidate);
+        const pattern = path.basename(candidate);
+        // Walk one level of glob for version directories
+        const parentDir = path.dirname(dir);
+        const globSegment = path.basename(dir);
+        if (globSegment === "*") {
+          const entries = fs.readdirSync(parentDir, { withFileTypes: true });
+          // Sort descending to prefer latest version
+          const dirs = entries
+            .filter(e => e.isDirectory())
+            .map(e => e.name)
+            .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+          for (const d of dirs) {
+            const full = path.join(parentDir, d, pattern);
+            if (fs.existsSync(full)) {
+              executableCache.set(name, full);
+              return full;
+            }
+          }
+        }
+      } catch {
+        // Glob resolution failed, skip
+      }
+    } else {
+      if (fs.existsSync(candidate)) {
+        executableCache.set(name, candidate);
+        return candidate;
+      }
+    }
+  }
+
+  // Last resort: return bare name and let spawn fail with a clear error
+  return name;
+}
+
+/** Resolve gemini executable path */
+function resolveGemini(): string {
+  return resolveExecutable("gemini", [
+    "/opt/homebrew/bin/gemini",          // macOS ARM (Homebrew)
+    "/usr/local/bin/gemini",             // macOS Intel / Linux
+    path.join(os.homedir(), ".local/bin/gemini"),  // pip --user install
+    path.join(os.homedir(), "bin/gemini"),
+  ]);
+}
+
+/** Resolve claude executable path */
+function resolveClaude(): string {
+  const platform = process.platform;
+  const fallbacks: string[] = [];
+
+  if (platform === "darwin") {
+    // macOS: Claude Code installed via Claude desktop app
+    fallbacks.push(
+      path.join(os.homedir(), "Library/Application Support/Claude/claude-code/*/claude.app/Contents/MacOS/claude"),
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+    );
+  } else if (platform === "linux") {
+    fallbacks.push(
+      "/usr/local/bin/claude",
+      path.join(os.homedir(), ".local/bin/claude"),
+      "/snap/bin/claude",
+    );
+  } else if (platform === "win32") {
+    fallbacks.push(
+      path.join(process.env.LOCALAPPDATA ?? "", "Programs/Claude/claude.exe"),
+      path.join(process.env.APPDATA ?? "", "npm/claude.cmd"),
+    );
+  }
+
+  return resolveExecutable("claude", fallbacks);
+}
 
 // Gemini session directories
 const GEMINI_TMP_DIR = path.join(os.homedir(), ".gemini", "tmp");
@@ -424,7 +526,8 @@ function dispatchGemini(
   };
 
   // Wrap with PTY so gemini sees isatty()==true
-  const child = spawn("python3", [PTY_WRAP_SCRIPT, "gemini", ...cliArgs], {
+  const geminiPath = resolveGemini();
+  const child = spawn("python3", [PTY_WRAP_SCRIPT, geminiPath, ...cliArgs], {
     env,
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
@@ -472,7 +575,8 @@ function dispatchClaude(
   startTime: number,
   model?: string,
 ): Promise<DispatchResult> {
-  const child = spawn("claude", ["-p", prompt, "--output-format", "json"], {
+  const claudePath = resolveClaude();
+  const child = spawn(claudePath, ["-p", prompt, "--output-format", "json"], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
