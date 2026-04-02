@@ -47,7 +47,7 @@ export function connectSSE(config: ZhiHandConfig): void {
   sseAbortController = new AbortController();
   const { signal } = sseAbortController;
 
-  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/events?topic=commands`;
+  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/events/stream?topic=commands`;
 
   (async () => {
     while (!signal.aborted) {
