@@ -2,28 +2,31 @@
 
 说明：智手®是 ZhiHand 的中文名称；ZhiHand 由 HandGPT 更名而来。文档中的域名、包名、命令与代码标识保持英文。
 
-当前核心版本：`0.15.0`
+当前核心版本：`0.16.0`
 
 智手®让 AI 智能体（如 Claude Code, Gemini CLI, Codex CLI, OpenClaw）能看懂你的手机，并通过 `ZhiHand Device` 帮你操作手机。
 
 ## 架构
 
-智手®基于 **Model Context Protocol (MCP)** 构建。核心实现是一个统一的 MCP Server，负责所有业务逻辑、工具定义和状态管理。
+智手®基于 **Model Context Protocol (MCP)** 构建。核心是一个**常驻守护进程 (daemon)**，内含 MCP Server（HTTP Streamable 传输）、Relay（心跳、提示词监听、CLI 分发）和 Config API（后端切换）。
 
 ```text
-                    ┌─────────────────────────────────┐
-                    │          @zhihand/mcp            │
-                    │  (核心业务逻辑、tool 定义、状态管理)  │
-                    └──────────┬──────────────────┬────┘
-                               │                  │
-                    ┌──────────▼──────┐  ┌────────▼────────┐
-                    │  MCP stdio/HTTP  │  │  OpenClaw Plugin │
-                    │  (直接集成 CLI)   │  │  (薄包装, 调 MCP) │
-                    └──────────┬──────┘  └────────┬────────┘
-                               │                  │
-              ┌────────────────┼──────────────────┼──────┐
-              │                │                  │      │
-        Claude Code      Gemini CLI       OpenClaw    Codex CLI
+                    ┌──────────────────────────────────────┐
+                    │           @zhihand/mcp daemon         │
+                    │                                      │
+                    │  MCP Server (localhost:18686/mcp)     │
+                    │  Relay (心跳、提示词、CLI 分发)          │
+                    │  Config API (后端 IPC)                 │
+                    └──────────┬───────────────────────┬───┘
+                               │                       │
+                    ┌──────────▼──────┐     ┌──────────▼──────┐
+                    │  HTTP Streamable │     │  OpenClaw Plugin │
+                    │  (AI 智能体)      │     │  (薄包装, 调 MCP) │
+                    └──────────┬──────┘     └──────────┬──────┘
+                               │                       │
+              ┌────────────────┼───────────────────────┼──────┐
+              │                │                       │      │
+        Claude Code      Gemini CLI             OpenClaw    Codex CLI
 ```
 
 ## 前提条件
@@ -53,6 +56,7 @@ zhihand setup
 4. 保存凭据到 `~/.zhihand/credentials.json`
 5. 检测本机已安装的 AI 工具
 6. 自动选择最佳工具并配置 MCP
+7. 启动守护进程（MCP Server + Relay + Config API）
 
 无需手动配置 MCP。如需切换后端：
 
@@ -111,15 +115,19 @@ MCP Server 为 AI 智能体提供三个工具：
 ## CLI 命令
 
 ```
-zhihand serve              启动 MCP Server（stdio 模式）
-zhihand setup              交互式设置：配对 + 自动检测 + 自动配置
-zhihand pair               配对手机（终端显示 QR 码）
-zhihand status             查看配对状态、设备信息和当前后端
-zhihand detect             检测本机已安装的 CLI 工具
+zhihand setup              交互式设置：配对 + 检测工具 + 自动选择 + 配置 MCP + 启动守护进程
+zhihand start              启动守护进程（MCP Server + Relay + Config API）
+zhihand start -d           后台启动守护进程
+zhihand stop               停止守护进程
+zhihand status             查看守护进程状态、配对信息、设备和当前后端
 
-zhihand claude             切换后端到 Claude Code（自动配置 MCP）
-zhihand codex              切换后端到 Codex CLI（自动配置 MCP）
-zhihand gemini             切换后端到 Gemini CLI（自动配置 MCP）
+zhihand pair               配对手机（终端显示 QR 码）
+zhihand detect             检测本机已安装的 CLI 工具
+zhihand serve              启动 MCP Server（stdio 模式，向后兼容）
+
+zhihand claude             切换后端到 Claude Code（向守护进程发送 IPC，自动配置 MCP）
+zhihand codex              切换后端到 Codex CLI（向守护进程发送 IPC，自动配置 MCP）
+zhihand gemini             切换后端到 Gemini CLI（向守护进程发送 IPC，自动配置 MCP）
 
 zhihand --help             显示帮助
 ```
@@ -140,8 +148,10 @@ zhihand --help             显示帮助
 ## 工作原理
 
 ```
-AI 智能体 ←stdio→ zhihand serve (MCP Server) ←HTTPS/SSE→ 智手® Server ←→ 手机 App
+AI 智能体 ←HTTP Streamable→ 守护进程 (localhost:18686/mcp) ←HTTPS/SSE→ 智手® Server ←→ 手机 App
 ```
+
+**智能体发起的流程**（AI 智能体调用工具）：
 
 1. AI 智能体调用工具（如 `zhihand_control`，`action: "click"`）
 2. MCP Server 创建设备命令，通过智手® API 入队
@@ -149,11 +159,20 @@ AI 智能体 ←stdio→ zhihand serve (MCP Server) ←HTTPS/SSE→ 智手® Ser
 4. MCP Server 通过 SSE 实时接收 ACK（或 polling 回退）
 5. MCP Server 获取截屏（原始 JPEG）并返回给智能体
 
+**手机发起的流程**（用户在手机上说话或输入）：
+
+1. 手机将提示词发送到智手® Server
+2. 守护进程通过 SSE 接收提示词
+3. 守护进程启动当前活跃的 CLI 工具（如 `claude`、`codex`、`gemini`）执行提示词
+4. CLI 工具执行完毕，结果返回到手机
+
+守护进程每 30 秒发送一次 **Brain 心跳**，使手机上的 Brain 指示灯保持绿色，表示 AI 后端已连接就绪。
+
 ## 这几部分分别在做什么
 
 - **移动端 App (Android/iOS)**: 负责接收用户输入、上传屏幕快照、执行设备侧动作
 - **智手® Server**: 存储配对状态、提示词、命令和附件
-- **MCP Server (@zhihand/mcp)**: 核心实现层，为 AI 智能体提供工具
+- **守护进程 (@zhihand/mcp daemon)**: 核心实现层，包含 MCP Server、Relay 和 Config API，为 AI 智能体提供工具
 - **OpenClaw Plugin**: 专门为 OpenClaw 用户提供的 MCP Server 薄包装
 
 ## 这个仓库里有什么

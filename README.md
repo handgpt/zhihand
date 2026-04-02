@@ -146,14 +146,25 @@ zhihand --help             Show help
 ## How It Works
 
 ```
-AI Agent ←stdio→ zhihand serve (MCP Server) ←HTTPS/SSE→ ZhiHand Server ←→ Mobile App
+AI Agent ←HTTP Streamable→ Daemon (localhost:18686/mcp) ←HTTPS/SSE→ ZhiHand Server ←→ Mobile App
 ```
 
+**Agent-initiated flow** (AI agent calls tools):
+
 1. AI agent calls a tool (e.g. `zhihand_control` with `action: "click"`)
-2. MCP Server creates a device command and enqueues it via the ZhiHand API
+2. MCP Server translates to a device command and enqueues it via the ZhiHand API
 3. Mobile app picks up the command, executes it, and sends an ACK
 4. MCP Server receives the ACK via SSE (or polling fallback)
 5. MCP Server fetches a screenshot (raw JPEG) and returns it to the agent
+
+**Phone-initiated flow** (user speaks/types on phone):
+
+1. Phone sends prompt to ZhiHand Server
+2. Daemon receives prompt via SSE
+3. Daemon spawns the active CLI tool (e.g. `claude`, `codex`, `gemini`) with the prompt
+4. CLI tool executes, result is sent back to the phone
+
+The daemon sends a **brain heartbeat** every 30 seconds, keeping the phone Brain indicator green to show an AI backend is connected.
 
 ## What This Repository Contains
 
