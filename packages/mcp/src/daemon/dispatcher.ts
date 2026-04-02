@@ -224,6 +224,12 @@ function pollGeminiSession(
       const elapsed = Date.now() - startTime;
 
       if (elapsed > CLI_TIMEOUT) {
+        // Kill the timed-out session to prevent zombie processes
+        if (session?.child === child) {
+          session.alive = false;
+          log(`[gemini] Session timed out — killing process`);
+        }
+        closeChild(child);
         settle({
           text: "Gemini timed out after 120s.",
           success: false,
@@ -580,15 +586,20 @@ async function dispatchCodexWithHistory(
 
   const args = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"];
   args.push("-m", model);
-  args.push(fullPrompt);
+  // Pass prompt via stdin to avoid ARG_MAX limit with long conversation history
+  args.push("-");
 
   const codexPath = resolveCodex();
   log(`[codex] One-shot dispatch (history: ${conversationHistory.length} turns)`);
   const child = spawn(codexPath, args, {
     env: process.env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     detached: false,
   });
+
+  // Write prompt to stdin, then close to signal EOF
+  child.stdin?.write(fullPrompt);
+  child.stdin?.end();
 
   const result = await collectCodexOutput(child, startTime);
   recordTurn("user", prompt);
@@ -608,11 +619,16 @@ async function dispatchClaudeWithHistory(
   const claudePath = resolveClaude();
   log(`[claude] One-shot dispatch (history: ${conversationHistory.length} turns)`);
 
-  const child = spawn(claudePath, ["-p", fullPrompt, "--model", model, "--output-format", "json"], {
+  // Pass prompt via stdin (-p -) to avoid ARG_MAX limit with long conversation history
+  const child = spawn(claudePath, ["-p", "-", "--model", model, "--output-format", "json"], {
     env: process.env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     detached: false,
   });
+
+  // Write prompt to stdin, then close to signal EOF
+  child.stdin?.write(fullPrompt);
+  child.stdin?.end();
 
   const result = await collectChildOutput(child, startTime);
   recordTurn("user", prompt);

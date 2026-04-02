@@ -90,9 +90,20 @@ def main() -> int:
             try:
                 data = os.read(stdin_fd, 8192)
                 if data:
-                    os.write(master_fd, data)
+                    # Write all bytes, handling partial writes
+                    offset = 0
+                    while offset < len(data):
+                        try:
+                            written = os.write(master_fd, data[offset:])
+                            offset += written
+                        except BlockingIOError:
+                            # PTY buffer full — wait briefly and retry
+                            time.sleep(0.01)
                 else:
                     stdin_open = False  # EOF on stdin
+            except BlockingIOError:
+                # read() got EAGAIN — no data yet, not an error
+                pass
             except OSError:
                 stdin_open = False
 

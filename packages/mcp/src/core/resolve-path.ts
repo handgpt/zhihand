@@ -2,7 +2,7 @@
  * Platform-aware executable path resolution.
  * Shared by both the CLI detection layer and the daemon dispatcher.
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -21,7 +21,7 @@ export function resolveExecutable(name: string, fallbackPaths: string[]): string
 
   // Try `which` first (works when the binary is in PATH)
   try {
-    const resolved = execSync(`which ${name}`, { encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }).trim();
+    const resolved = execFileSync("which", [name], { encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }).trim();
     if (resolved) {
       cache.set(name, resolved);
       return resolved;

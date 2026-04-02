@@ -1,6 +1,6 @@
 {
   "name": "@zhihand/mcp",
-  "version": "0.21.2",
+  "version": "0.22.0",
   "private": false,
   "type": "module",
   "description": "ZhiHand MCP Server — phone control tools for Claude Code, Codex, Gemini CLI, and OpenClaw",
