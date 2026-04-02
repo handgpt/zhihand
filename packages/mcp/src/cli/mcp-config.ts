@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import type { BackendName } from "../core/config.ts";
+import { resolveClaude, resolveCodex, resolveGemini } from "../core/resolve-path.ts";
 
 const DEFAULT_PORT = 18686;
 
@@ -8,23 +9,28 @@ function mcpUrl(): string {
   return `http://localhost:${port}/mcp`;
 }
 
+/** Quote a path for shell execution (handles spaces in paths) */
+function q(p: string): string {
+  return `"${p}"`;
+}
+
 interface MCPCommand {
   add: () => string;
-  remove: string;
+  remove: () => string;
 }
 
 const MCP_COMMANDS: Record<Exclude<BackendName, "openclaw">, MCPCommand> = {
   claudecode: {
-    add: () => `claude mcp add --transport http zhihand ${mcpUrl()}`,
-    remove: "claude mcp remove zhihand",
+    add: () => `${q(resolveClaude())} mcp add --transport http zhihand ${mcpUrl()}`,
+    remove: () => `${q(resolveClaude())} mcp remove zhihand`,
   },
   codex: {
-    add: () => `codex mcp add zhihand --url ${mcpUrl()}`,
-    remove: "codex mcp remove zhihand",
+    add: () => `${q(resolveCodex())} mcp add zhihand --url ${mcpUrl()}`,
+    remove: () => `${q(resolveCodex())} mcp remove zhihand`,
   },
   gemini: {
-    add: () => `gemini mcp add --transport http --scope user zhihand ${mcpUrl()}`,
-    remove: "gemini mcp remove --scope user zhihand",
+    add: () => `${q(resolveGemini())} mcp add --transport http --scope user zhihand ${mcpUrl()}`,
+    remove: () => `${q(resolveGemini())} mcp remove --scope user zhihand`,
   },
 };
 
@@ -59,7 +65,7 @@ export function configureMCP(
     const cmds = MCP_COMMANDS[previousBackend as keyof typeof MCP_COMMANDS];
     if (cmds) {
       console.log(`  Removing MCP config from ${DISPLAY_NAMES[previousBackend]}...`);
-      removed = tryRun(cmds.remove);
+      removed = tryRun(cmds.remove());
     }
   }
 

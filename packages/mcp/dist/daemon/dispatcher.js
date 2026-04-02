@@ -3,6 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
 const CLI_TIMEOUT = 120_000; // 120s
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB
@@ -396,7 +397,8 @@ function dispatchGemini(prompt, startTime, log, model) {
         COLORTERM: "truecolor",
     };
     // Wrap with PTY so gemini sees isatty()==true
-    const child = spawn("python3", [PTY_WRAP_SCRIPT, "gemini", ...cliArgs], {
+    const geminiPath = resolveGemini();
+    const child = spawn("python3", [PTY_WRAP_SCRIPT, geminiPath, ...cliArgs], {
         env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
@@ -417,7 +419,8 @@ function dispatchCodex(prompt, startTime, model) {
         args.push("-m", codexModel);
     }
     args.push(prompt);
-    const child = spawn("codex", args, {
+    const codexPath = resolveCodex();
+    const child = spawn(codexPath, args, {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
@@ -427,7 +430,8 @@ function dispatchCodex(prompt, startTime, model) {
 }
 // ── Claude Dispatch ────────────────────────────────────────
 function dispatchClaude(prompt, startTime, model) {
-    const child = spawn("claude", ["-p", prompt, "--output-format", "json"], {
+    const claudePath = resolveClaude();
+    const child = spawn(claudePath, ["-p", prompt, "--output-format", "json"], {
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,

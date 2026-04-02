@@ -131,17 +131,29 @@ switch (command) {
   case "relay": {
     if (values.detach) {
       const { spawn: spawnChild } = await import("node:child_process");
+      const fsSync = await import("node:fs");
+      const pathMod = await import("node:path");
+      const osMod = await import("node:os");
+
       const args = [process.argv[1], "start"];
       if (values.port) args.push("--port", values.port);
       if (values.device) args.push("--device", values.device);
 
+      // Write daemon logs to ~/.zhihand/daemon.log
+      const zhihandDir = pathMod.default.join(osMod.default.homedir(), ".zhihand");
+      fsSync.default.mkdirSync(zhihandDir, { recursive: true });
+      const logPath = pathMod.default.join(zhihandDir, "daemon.log");
+      const logFd = fsSync.default.openSync(logPath, "a");
+
       const child = spawnChild(process.execPath, args, {
         detached: true,
-        stdio: "ignore",
+        stdio: ["ignore", logFd, logFd],
         env: { ...process.env },
       });
       child.unref();
+      fsSync.default.closeSync(logFd);
       console.log(`Daemon starting in background (PID ${child.pid}).`);
+      console.log(`Logs: ${logPath}`);
       process.exit(0);
     }
     const port = values.port ? parseInt(values.port, 10) : undefined;

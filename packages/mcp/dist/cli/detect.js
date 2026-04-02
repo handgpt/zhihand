@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { resolveExecutable, resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
 function tryExec(cmd) {
     try {
         return execSync(cmd, { encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }).trim();
@@ -7,41 +8,39 @@ function tryExec(cmd) {
         return null;
     }
 }
-function isCommandAvailable(cmd) {
-    return tryExec(`which ${cmd}`) !== null;
-}
 async function detectClaudeCode() {
-    if (!isCommandAvailable("claude"))
-        return null;
-    const version = tryExec("claude --version") ?? "unknown";
-    // Check login: claude has config in ~/.claude/
+    const resolved = resolveClaude();
+    if (resolved === "claude")
+        return null; // bare name = not found
+    const version = tryExec(`"${resolved}" --version`) ?? "unknown";
     const loggedIn = tryExec("ls ~/.claude/settings.json") !== null;
-    return { name: "claudecode", command: "claude", version, loggedIn, priority: 1 };
+    return { name: "claudecode", command: "claude", resolvedPath: resolved, version, loggedIn, priority: 1 };
 }
 async function detectCodex() {
-    if (!isCommandAvailable("codex"))
+    const resolved = resolveCodex();
+    if (resolved === "codex")
         return null;
-    const version = tryExec("codex --version") ?? "unknown";
-    // Check login: OPENAI_API_KEY env var or config
+    const version = tryExec(`"${resolved}" --version`) ?? "unknown";
     const loggedIn = !!process.env.OPENAI_API_KEY || tryExec("ls ~/.codex/") !== null;
-    return { name: "codex", command: "codex", version, loggedIn, priority: 2 };
+    return { name: "codex", command: "codex", resolvedPath: resolved, version, loggedIn, priority: 2 };
 }
 async function detectGemini() {
-    if (!isCommandAvailable("gemini"))
+    const resolved = resolveGemini();
+    if (resolved === "gemini")
         return null;
-    const version = tryExec("gemini --version") ?? "unknown";
-    // Check login: oauth_creds.json or GOOGLE_API_KEY env var
+    const version = tryExec(`"${resolved}" --version`) ?? "unknown";
     const loggedIn = !!process.env.GOOGLE_API_KEY
         || !!process.env.GEMINI_API_KEY
         || tryExec("ls ~/.gemini/oauth_creds.json") !== null;
-    return { name: "gemini", command: "gemini", version, loggedIn, priority: 3 };
+    return { name: "gemini", command: "gemini", resolvedPath: resolved, version, loggedIn, priority: 3 };
 }
 async function detectOpenClaw() {
-    if (!isCommandAvailable("openclaw"))
+    const resolved = resolveExecutable("openclaw", []);
+    if (resolved === "openclaw")
         return null;
-    const version = tryExec("openclaw --version") ?? "unknown";
+    const version = tryExec(`"${resolved}" --version`) ?? "unknown";
     const loggedIn = tryExec("ls ~/.openclaw/openclaw.json") !== null;
-    return { name: "openclaw", command: "openclaw", version, loggedIn, priority: 4 };
+    return { name: "openclaw", command: "openclaw", resolvedPath: resolved, version, loggedIn, priority: 4 };
 }
 export async function detectCLITools() {
     const results = await Promise.allSettled([
