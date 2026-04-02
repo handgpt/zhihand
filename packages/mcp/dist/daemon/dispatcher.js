@@ -321,17 +321,37 @@ export function killActiveChild() {
         setTimeout(() => resolve(), SIGKILL_DELAY + 1000);
     });
 }
+// ── System Prompt ─────────────────────────────────────────
+/**
+ * Wrap the user's raw prompt with system context so the CLI backend
+ * knows about the connected phone and how to use zhihand MCP tools.
+ */
+function wrapPrompt(userPrompt) {
+    return `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
+
+You have the following MCP tools to interact with the phone:
+- zhihand_screenshot: Take a screenshot of the phone screen. Use this when the user asks to see, check, or look at their screen.
+- zhihand_control: Control the phone — click, type, swipe, scroll, key combos, clipboard, wait. Requires "action" parameter. For clicks, provide xRatio/yRatio (0-1 normalized coordinates).
+- zhihand_pair: Pair a new device (rarely needed).
+
+When the user asks you to see their screen, look at something, or check what's on the phone, ALWAYS call zhihand_screenshot first.
+When the user asks you to tap, click, type, swipe, or interact with the phone, use zhihand_control.
+
+User message:
+${userPrompt}`;
+}
 // ── Dispatch Entrypoint ────────────────────────────────────
 export function dispatchToCLI(backend, prompt, log, model) {
     const startTime = Date.now();
+    const wrappedPrompt = wrapPrompt(prompt);
     if (backend === "gemini") {
-        return dispatchGemini(prompt, startTime, log, model);
+        return dispatchGemini(wrappedPrompt, startTime, log, model);
     }
     if (backend === "codex") {
-        return dispatchCodex(prompt, startTime, model);
+        return dispatchCodex(wrappedPrompt, startTime, model);
     }
     if (backend === "claudecode") {
-        return dispatchClaude(prompt, startTime, model);
+        return dispatchClaude(wrappedPrompt, startTime, model);
     }
     return Promise.resolve({
         text: `Unsupported backend: ${backend}`,
