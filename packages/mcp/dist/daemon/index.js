@@ -28,7 +28,7 @@ async function processPrompt(config, prompt) {
     }
     const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
     log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
-    const result = await dispatchToCLI(activeBackend, prompt.text);
+    const result = await dispatchToCLI(activeBackend, prompt.text, log);
     const ok = await postReply(config, prompt.id, result.text);
     const dur = (result.durationMs / 1000).toFixed(1);
     if (ok) {
@@ -158,10 +158,13 @@ export async function startDaemon(options) {
     // Load backend
     const backendConfig = loadBackendConfig();
     activeBackend = backendConfig.activeBackend ?? null;
-    // Create MCP server
+    // Create MCP server + single transport (MCP SDK: one connect() per server)
     const mcpServer = createMcpServer(options?.deviceName);
-    // Track active transports for cleanup
-    const activeTransports = new Map();
+    const mcpTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+    });
+    await mcpServer.connect(mcpTransport);
+    log(`[mcp] Transport connected.`);
     // Create HTTP server
     const httpServer = createHTTPServer(async (req, res) => {
         // Internal API
@@ -172,37 +175,10 @@ export async function startDaemon(options) {
             res.end();
             return;
         }
-        // MCP endpoint
+        // MCP endpoint — route all requests to the single transport
         if (req.url === "/mcp" || req.url?.startsWith("/mcp")) {
             try {
-                // Check for existing session
-                const sessionId = req.headers["mcp-session-id"];
-                if (sessionId && activeTransports.has(sessionId)) {
-                    // Route to existing transport
-                    const transport = activeTransports.get(sessionId);
-                    await transport.handleRequest(req, res);
-                }
-                else if (req.method === "POST" || !sessionId) {
-                    // New session: create transport, connect to MCP server
-                    const transport = new StreamableHTTPServerTransport({
-                        sessionIdGenerator: () => randomUUID(),
-                        onsessioninitialized: (sid) => {
-                            activeTransports.set(sid, transport);
-                            log(`[mcp] Session started: ${sid.slice(0, 8)}...`);
-                        },
-                        onsessionclosed: (sid) => {
-                            activeTransports.delete(sid);
-                            log(`[mcp] Session closed: ${sid.slice(0, 8)}...`);
-                        },
-                    });
-                    await mcpServer.connect(transport);
-                    await transport.handleRequest(req, res);
-                }
-                else {
-                    // Unknown session ID
-                    res.writeHead(400, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: "Invalid or expired session" }));
-                }
+                await mcpTransport.handleRequest(req, res);
             }
             catch (err) {
                 if (!res.headersSent) {
@@ -251,13 +227,11 @@ export async function startDaemon(options) {
         stopHeartbeatLoop();
         await killActiveChild();
         await sendBrainOffline(config);
-        // Close all active MCP transports
-        for (const transport of activeTransports.values()) {
-            try {
-                await transport.close();
-            }
-            catch { /* ignore */ }
+        // Close MCP transport
+        try {
+            await mcpTransport.close();
         }
+        catch { /* ignore */ }
         httpServer.close();
         removePid();
         log("Daemon stopped.");

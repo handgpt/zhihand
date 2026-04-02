@@ -9,5 +9,5 @@ export interface DispatchResult {
  * when the child has exited (or immediately if no child).
  */
 export declare function killActiveChild(): Promise<void>;
-export declare function dispatchToCLI(backend: Exclude<BackendName, "openclaw">, prompt: string, model?: string): Promise<DispatchResult>;
+export declare function dispatchToCLI(backend: Exclude<BackendName, "openclaw">, prompt: string, log: (msg: string) => void, model?: string): Promise<DispatchResult>;
 export declare function postReply(config: ZhiHandConfig, promptId: string, text: string): Promise<boolean>;
