@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.16.0`
+Version: `0.20.0`
 
 ## What is this?
 
@@ -74,6 +74,8 @@ zhihand start -d           # Start daemon in background (detached)
 
 The daemon runs the MCP Server on `localhost:18686/mcp` (HTTP Streamable transport), maintains a brain heartbeat every 30 seconds (keeps the phone Brain indicator green), and listens for phone-initiated prompts.
 
+When started with `-d`, daemon logs are written to `~/.zhihand/daemon.log`.
+
 ### 3. Start using it
 
 Once configured, your AI agent can use ZhiHand tools directly. For example, in Claude Code:
@@ -90,18 +92,19 @@ Once configured, your AI agent can use ZhiHand tools directly. For example, in C
 ```
 zhihand setup              Interactive setup: pair + detect tools + auto-select + configure MCP + start daemon
 zhihand start              Start daemon (MCP Server + Relay + Config API)
-zhihand start -d           Start daemon in background (detached)
+zhihand start -d           Start daemon in background (logs to ~/.zhihand/daemon.log)
 zhihand stop               Stop the running daemon
-zhihand status             Show daemon status, pairing info, device, and active backend
+zhihand status             Show daemon status, pairing info, device, backend, and model
 
 zhihand pair               Pair with a phone (QR code in terminal)
 zhihand detect             List detected CLI tools and their login status
 zhihand serve              Start MCP Server (stdio mode, backward compatible)
 zhihand --help             Show help
 
-zhihand claude             Switch backend to Claude Code (sends IPC to daemon, auto-configures MCP)
-zhihand codex              Switch backend to Codex CLI (sends IPC to daemon, auto-configures MCP)
-zhihand gemini             Switch backend to Gemini CLI (sends IPC to daemon, auto-configures MCP)
+zhihand gemini             Switch backend to Gemini CLI (default model: flash)
+zhihand claude             Switch backend to Claude Code (default model: sonnet)
+zhihand codex              Switch backend to Codex CLI (default model: gpt-5.4-mini)
+zhihand gemini --model pro Switch backend with custom model
 ```
 
 ### Daemon Lifecycle
@@ -123,15 +126,28 @@ The daemon is a single persistent process that runs:
 Use `zhihand claude`, `zhihand codex`, or `zhihand gemini` to switch the active backend:
 
 ```bash
-zhihand gemini             # Switch to Gemini CLI
-zhihand claude             # Switch to Claude Code
-zhihand codex              # Switch to Codex CLI
+zhihand gemini                # Switch to Gemini CLI (model: flash)
+zhihand claude                # Switch to Claude Code (model: sonnet)
+zhihand codex                 # Switch to Codex CLI (model: gpt-5.4-mini)
+zhihand gemini --model pro    # Use a custom model
+zhihand claude -m opus        # Short flag form
 ```
+
+Each backend has a **default model alias** that resolves to the latest version:
+
+| Backend | Default | Alias examples | Resolution |
+|---------|---------|---------------|------------|
+| Gemini CLI | `flash` | `flash`, `pro` | Gemini CLI resolves natively (e.g. flash → gemini-2.5-flash) |
+| Claude Code | `sonnet` | `sonnet`, `opus`, `haiku` | Claude Code resolves natively (e.g. sonnet → claude-sonnet-4) |
+| Codex CLI | `gpt-5.4-mini` | any full model name | Codex requires full model names |
+
+Model resolution priority: `--model` flag > `ZHIHAND_MODEL` env > `ZHIHAND_<BACKEND>_MODEL` env > default.
 
 When you switch:
 - The command sends an **IPC message to the running daemon**
 - MCP config is **automatically added** to the new backend
 - MCP config is **automatically removed** from the previous backend
+- The model selection is **persisted** to `~/.zhihand/backend.json`
 - If the tool is not installed, an error is shown
 
 ### Options
@@ -139,6 +155,9 @@ When you switch:
 | Option | Description |
 |---|---|
 | `--device <name>` | Use a specific paired device (if you have multiple) |
+| `--model, -m <name>` | Set model alias (e.g. `flash`, `pro`, `sonnet`, `opus`, `gpt-5.4-mini`) |
+| `--port <port>` | Override daemon port (default: 18686) |
+| `-d, --detach` | Run daemon in background |
 | `-h, --help` | Show help |
 
 ### Environment Variables
@@ -147,6 +166,10 @@ When you switch:
 |---|---|
 | `ZHIHAND_DEVICE` | Default device name (same as `--device`) |
 | `ZHIHAND_CLI` | Override CLI tool selection for mobile-initiated tasks |
+| `ZHIHAND_MODEL` | Override model for all backends |
+| `ZHIHAND_GEMINI_MODEL` | Override model for Gemini only |
+| `ZHIHAND_CLAUDE_MODEL` | Override model for Claude only |
+| `ZHIHAND_CODEX_MODEL` | Override model for Codex only |
 
 ## MCP Tools
 
@@ -160,12 +183,17 @@ The main phone control tool. Supports these actions:
 |---|---|---|
 | `click` | `xRatio`, `yRatio` | Tap at normalized coordinates [0,1] |
 | `doubleclick` | `xRatio`, `yRatio` | Double-tap |
-| `rightclick` | `xRatio`, `yRatio` | Right-click (long press) |
-| `middleclick` | `xRatio`, `yRatio` | Middle-click |
+| `longclick` | `xRatio`, `yRatio`, `durationMs` | Long press (default 800ms) |
+| `rightclick` | `xRatio`, `yRatio` | Right-click (desktop/BLE HID) |
+| `middleclick` | `xRatio`, `yRatio` | Middle-click (desktop/BLE HID) |
 | `type` | `text` | Type text into the focused field |
-| `swipe` | `startXRatio`, `startYRatio`, `endXRatio`, `endYRatio` | Swipe gesture |
+| `swipe` | `startXRatio`, `startYRatio`, `endXRatio`, `endYRatio`, `durationMs` | Swipe gesture (default 300ms) |
 | `scroll` | `xRatio`, `yRatio`, `direction`, `amount` | Scroll up/down/left/right |
 | `keycombo` | `keys` | Key combination (e.g. `"ctrl+c"`, `"alt+tab"`) |
+| `back` | — | Press system Back button |
+| `home` | — | Press system Home button |
+| `enter` | — | Press Enter key |
+| `open_app` | `appPackage`, `bundleId`, `urlScheme`, `appName` | Open an application |
 | `clipboard` | `clipboardAction` (`get`/`set`), `text` | Read or write clipboard |
 | `wait` | `durationMs` | Wait (local sleep, no server round-trip) |
 | `screenshot` | — | Capture screen immediately |
@@ -234,8 +262,9 @@ Pairing credentials are stored at:
 ```
 ~/.zhihand/
 ├── credentials.json    # Device credentials (credentialId, controllerToken, endpoint)
-├── backend.json        # Active backend selection (claudecode/codex/gemini)
+├── backend.json        # Active backend + model selection
 ├── daemon.pid          # Daemon PID file (for zhihand stop)
+├── daemon.log          # Daemon log output (when started with -d)
 └── state.json          # Current pairing session state
 ```
 
@@ -267,7 +296,8 @@ packages/mcp/
 │   ├── index.ts             # MCP Server (stdio transport, legacy)
 │   ├── openclaw.adapter.ts  # OpenClaw Plugin adapter (thin wrapper)
 │   ├── core/
-│   │   ├── config.ts        # Credential & config management (~/.zhihand/)
+│   │   ├── config.ts        # Credential & config management (~/.zhihand/), default models
+│   │   ├── resolve-path.ts  # Platform-aware executable path resolution (gemini/claude/codex)
 │   │   ├── command.ts       # Command creation, enqueue, ACK formatting
 │   │   ├── screenshot.ts    # Binary screenshot fetch (JPEG)
 │   │   ├── sse.ts           # SSE client + hybrid ACK (SSE push + polling fallback)

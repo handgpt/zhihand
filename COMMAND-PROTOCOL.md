@@ -1,7 +1,7 @@
 # ZhiHand Command Protocol — Unified Specification
 
-> **Version**: 1.0.0 (2026-04-02)
-> **Status**: Draft — all 4 endpoints (Android, iOS, Server, MCP) must align to this spec.
+> **Version**: 1.1.0 (2026-04-02)
+> **Status**: All 4 endpoints (Android, iOS, Server, MCP) are aligned to this spec.
 
 ## Overview
 
@@ -276,31 +276,35 @@ This table shows the mapping between high-level MCP `zhihand_control` action nam
 | `receive_doubleclick` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_rightclick` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_middleclick` | ✅ | ✅ | ✅ relay | ✅ |
-| `receive_longclick` | ✅ | ✅ | ✅ relay | ⬜ add |
+| `receive_longclick` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_slide` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_scroll` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_input` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_key_combo` | ✅ | ✅ | ✅ relay | ✅ |
-| `receive_key` | ✅ | ✅ | ✅ relay | ⬜ low-level |
-| `receive_back` | ✅ | ✅ | ✅ relay | ⬜ add |
-| `receive_home` | ✅ | ✅ | ✅ relay | ⬜ add |
-| `receive_enter` | ✅ | ✅ | ✅ relay | ⬜ add |
+| `receive_key` | ✅ | ✅ | ✅ relay | — low-level |
+| `receive_back` | ✅ | ✅ | ✅ relay | ✅ |
+| `receive_home` | ✅ | ✅ | ✅ relay | ✅ |
+| `receive_enter` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_screenshot` | ✅ | ✅ | ✅ relay | ✅ |
-| `receive_app` | ✅ | ✅ | ✅ relay | ⬜ add |
+| `receive_app` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_clipboard` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_message` | ✅ | ✅ | ✅ relay | — internal |
 
-**Legend**: ✅ implemented, ⬜ not yet in MCP (to be added)
+**Legend**: ✅ implemented, — not applicable
 
 ---
 
-## Changes Required
+## Implementation Status
 
-### MCP (`zhihand/packages/mcp`)
-1. **Add MCP actions**: `longclick`, `back`, `home`, `enter`, `open_app`
-2. **Fix wire type names**: ~~`receive_swipe`~~ → `receive_slide`, ~~`receive_keycombo`~~ → `receive_key_combo`, ~~`receive_type`~~ → `receive_input` (done in v0.17.2)
-3. **Fix payload field names**: swipe `startX/endX` → `x1/x2/y1/y2/time`, type `text` → `input` (done in v0.17.2)
-4. **Update `controlSchema`**: add new actions to enum, add `appPackage`, `bundleId`, `urlScheme`, `appName` params
+### MCP (`zhihand/packages/mcp`) — All done as of v0.20.0
+1. ~~**Add MCP actions**: `longclick`, `back`, `home`, `enter`, `open_app`~~ ✅ (v0.18.0)
+2. ~~**Fix wire type names**: `receive_swipe` → `receive_slide`, `receive_keycombo` → `receive_key_combo`, `receive_type` → `receive_input`~~ ✅ (v0.18.0)
+3. ~~**Fix payload field names**: swipe `startX/endX` → `x1/x2/y1/y2/time`, type `text` → `input`~~ ✅ (v0.18.0)
+4. ~~**Update `controlSchema`**: add new actions to enum, add `appPackage`, `bundleId`, `urlScheme`, `appName` params~~ ✅ (v0.18.0)
+5. ~~**Fix `durationMs` default regression**~~ ✅ (v0.18.1)
+6. ~~**Fix SSE command ACK URL**~~ ✅ (v0.18.2)
+7. ~~**Platform-aware executable resolution for gemini/claude/codex**~~ ✅ (v0.19.0)
+8. ~~**Default model aliases + `--model` flag + version/model logging**~~ ✅ (v0.20.0)
 
 ### Server (`zhihand-server`)
 - No changes needed — server is a passthrough relay. Any `type` + `payload` object is accepted and forwarded.
