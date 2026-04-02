@@ -539,7 +539,13 @@ async function dispatchClaudeWithHistory(prompt, startTime, log, model) {
     const claudePath = resolveClaude();
     log(`[claude] One-shot dispatch (history: ${conversationHistory.length} turns)`);
     // Pass prompt via stdin (-p -) to avoid ARG_MAX limit with long conversation history
-    const child = spawn(claudePath, ["-p", "-", "--model", model, "--output-format", "json"], {
+    // --permission-mode bypassPermissions: auto-approve all tool calls (like gemini's --approval-mode yolo)
+    const child = spawn(claudePath, [
+        "-p", "-",
+        "--model", model,
+        "--output-format", "json",
+        "--permission-mode", "bypassPermissions",
+    ], {
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],
         detached: false,
