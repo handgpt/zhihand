@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { glob } from "node:fs/promises";
 import type { ZhiHandConfig, BackendName } from "../core/config.ts";
 
 const CLI_TIMEOUT = 120_000; // 120s
@@ -13,9 +13,6 @@ const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB
 // Gemini session file polling
 const SESSION_POLL_INTERVAL = 1_000; // 1s
 const SESSION_STABILITY_DELAY = 2_000; // wait 2s after outcome before returning
-const JSON_READ_RETRIES = 3;
-const JSON_READ_RETRY_DELAY = 50; // ms
-
 // Resolve pty-wrap.py relative to this file (works from both src/ and dist/)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PTY_WRAP_SCRIPT = path.resolve(__dirname, "../../scripts/pty-wrap.py");
@@ -33,21 +30,16 @@ let activeChild: ChildProcess | null = null;
 
 // ── Gemini Session File Monitoring ─────────────────────────
 
-/** Safely read and parse a JSON file with retries (handles file lock contention). */
-function loadJsonFile(filePath: string): Record<string, unknown> | null {
-  for (let attempt = 0; attempt < JSON_READ_RETRIES; attempt++) {
-    try {
-      const raw = fs.readFileSync(filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : null;
-    } catch {
-      if (attempt + 1 >= JSON_READ_RETRIES) return null;
-      // Busy-wait for retry delay (small enough not to matter)
-      const end = Date.now() + JSON_READ_RETRY_DELAY;
-      while (Date.now() < end) { /* spin */ }
-    }
+/** Safely read and parse a JSON file (single attempt, async). */
+async function loadJsonFile(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await fsp.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : null;
+  } catch {
+    // File locked or partial write — next poll cycle will retry
+    return null;
   }
-  return null;
 }
 
 /** Extract text content from a gemini session message. */
@@ -136,31 +128,46 @@ function checkSessionOutcome(messages: Record<string, unknown>[]): [string, stri
 
 /**
  * Find the most recently created session file in the gemini tmp directory
- * that was created after `afterTime`.
+ * that was created after `afterTime`. Validates that the session contains
+ * our prompt text to avoid picking up unrelated gemini sessions.
  */
-function findLatestSessionFile(afterTime: number): string | null {
+async function findLatestSessionFile(afterTime: number, promptText: string): Promise<string | null> {
   try {
-    // Search all project dirs under ~/.gemini/tmp/
-    const entries = fs.readdirSync(GEMINI_TMP_DIR, { withFileTypes: true });
-    let newest: { path: string; mtime: number } | null = null;
+    const entries = await fsp.readdir(GEMINI_TMP_DIR, { withFileTypes: true });
+    const candidates: { path: string; mtime: number }[] = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const chatsDir = path.join(GEMINI_TMP_DIR, entry.name, "chats");
-      if (!fs.existsSync(chatsDir)) continue;
+      try { await fsp.access(chatsDir); } catch { continue; }
 
-      const chatFiles = fs.readdirSync(chatsDir);
+      const chatFiles = await fsp.readdir(chatsDir);
       for (const f of chatFiles) {
         if (!f.startsWith("session-") || !f.endsWith(".json")) continue;
         const fullPath = path.join(chatsDir, f);
-        const stat = fs.statSync(fullPath);
-        const mtime = stat.mtimeMs;
-        if (mtime > afterTime && (!newest || mtime > newest.mtime)) {
-          newest = { path: fullPath, mtime };
+        const stat = await fsp.stat(fullPath);
+        if (stat.mtimeMs > afterTime) {
+          candidates.push({ path: fullPath, mtime: stat.mtimeMs });
         }
       }
     }
-    return newest?.path ?? null;
+
+    // Sort newest first, then validate content matches our prompt
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    const promptPrefix = promptText.slice(0, 50);
+
+    for (const candidate of candidates) {
+      const data = await loadJsonFile(candidate.path);
+      if (!data || !Array.isArray(data.messages)) continue;
+      // Check first user message matches our prompt
+      for (const msg of data.messages as Record<string, unknown>[]) {
+        if (String(msg.type ?? "").trim() !== "user") continue;
+        const text = extractMessageText(msg);
+        if (text.startsWith(promptPrefix)) return candidate.path;
+        break; // Only check first user message
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -173,6 +180,7 @@ function findLatestSessionFile(afterTime: number): string | null {
 function pollGeminiSession(
   child: ChildProcess,
   startTime: number,
+  promptText: string,
   log: (msg: string) => void,
 ): Promise<DispatchResult> {
   return new Promise((resolve) => {
@@ -180,17 +188,19 @@ function pollGeminiSession(
     let outcomeAt: number | null = null;
     let finalResult: [string, string] | null = null;
     let settled = false;
+    let pollTimeout: ReturnType<typeof setTimeout> | null = null;
 
     function settle(result: DispatchResult): void {
       if (settled) return;
       settled = true;
-      clearInterval(pollTimer);
+      if (pollTimeout) clearTimeout(pollTimeout);
       // Kill the gemini process now that we have the answer
       closeChild(child);
       resolve(result);
     }
 
-    const pollTimer = setInterval(() => {
+    async function poll(): Promise<void> {
+      if (settled) return;
       const elapsed = Date.now() - startTime;
 
       // Timeout
@@ -206,25 +216,27 @@ function pollGeminiSession(
 
       // Find session file if not yet found
       if (!sessionFile) {
-        sessionFile = findLatestSessionFile(startTime);
+        sessionFile = await findLatestSessionFile(startTime, promptText);
         if (sessionFile) {
           log(`[gemini] Session file found: ${path.basename(sessionFile)}`);
         }
-        return; // Wait for next poll
+        schedulePoll();
+        return;
       }
 
       // Read session file and check for outcome
-      const conversation = loadJsonFile(sessionFile);
-      if (!conversation) return;
+      const conversation = await loadJsonFile(sessionFile);
+      if (!conversation) { schedulePoll(); return; }
 
       const messages = conversation.messages;
-      if (!Array.isArray(messages)) return;
+      if (!Array.isArray(messages)) { schedulePoll(); return; }
 
       const outcome = checkSessionOutcome(messages as Record<string, unknown>[]);
       if (!outcome) {
         // Still in progress, reset stability timer
         outcomeAt = null;
         finalResult = null;
+        schedulePoll();
         return;
       }
 
@@ -232,6 +244,7 @@ function pollGeminiSession(
       if (!outcomeAt) {
         outcomeAt = Date.now();
         finalResult = outcome;
+        schedulePoll();
         return;
       }
 
@@ -242,18 +255,28 @@ function pollGeminiSession(
           success: status === "success",
           durationMs: Date.now() - startTime,
         });
+      } else {
+        schedulePoll();
       }
-    }, SESSION_POLL_INTERVAL);
+    }
+
+    function schedulePoll(): void {
+      if (settled) return;
+      pollTimeout = setTimeout(() => { poll(); }, SESSION_POLL_INTERVAL);
+    }
+
+    // Start polling
+    schedulePoll();
 
     // Also handle process exit (in case it crashes before producing session file)
     child.on("close", (code) => {
       if (settled) return;
       // Give a final chance to read the session file
-      setTimeout(() => {
+      setTimeout(async () => {
         if (settled) return;
 
         if (sessionFile) {
-          const conversation = loadJsonFile(sessionFile);
+          const conversation = await loadJsonFile(sessionFile);
           if (conversation && Array.isArray(conversation.messages)) {
             const outcome = checkSessionOutcome(conversation.messages as Record<string, unknown>[]);
             if (outcome) {
@@ -369,7 +392,7 @@ function dispatchGemini(
   child.stdout?.resume();
   child.stderr?.resume();
 
-  return pollGeminiSession(child, startTime, log);
+  return pollGeminiSession(child, startTime, prompt, log);
 }
 
 // ── Codex Dispatch ─────────────────────────────────────────
@@ -445,7 +468,7 @@ function parseCodexJsonl(raw: string): { text: string; success: boolean } {
         hasError = true;
       }
     } catch {
-      // Not JSON — skip (stderr mixed in)
+      // Not valid JSON — skip (truncated line or stderr mixed in)
     }
   }
 

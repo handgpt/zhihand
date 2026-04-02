@@ -160,7 +160,20 @@ export async function startDaemon(options) {
     activeBackend = backendConfig.activeBackend ?? null;
     // MCP sessions: each client gets its own McpServer + Transport pair
     // because McpServer.connect() can only be called once per instance
+    const MAX_MCP_SESSIONS = 20;
+    const SESSION_IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
     const mcpSessions = new Map();
+    // Evict idle MCP sessions periodically
+    const sessionCleanupTimer = setInterval(() => {
+        const now = Date.now();
+        for (const [sid, session] of mcpSessions) {
+            if (session.activeRequests === 0 && now - session.lastActivity > SESSION_IDLE_TIMEOUT) {
+                log(`[mcp] Evicting idle session: ${sid.slice(0, 8)}...`);
+                session.transport.close().catch(() => { });
+                mcpSessions.delete(sid);
+            }
+        }
+    }, 60_000);
     // Create HTTP server
     const httpServer = createHTTPServer(async (req, res) => {
         // Internal API
@@ -178,7 +191,14 @@ export async function startDaemon(options) {
                 if (sessionId && mcpSessions.has(sessionId)) {
                     // Existing session
                     const session = mcpSessions.get(sessionId);
-                    await session.transport.handleRequest(req, res);
+                    session.lastActivity = Date.now();
+                    session.activeRequests++;
+                    try {
+                        await session.transport.handleRequest(req, res);
+                    }
+                    finally {
+                        session.activeRequests--;
+                    }
                 }
                 else if (!sessionId) {
                     // New session: create dedicated McpServer + Transport
@@ -186,7 +206,23 @@ export async function startDaemon(options) {
                     const transport = new StreamableHTTPServerTransport({
                         sessionIdGenerator: () => randomUUID(),
                         onsessioninitialized: (sid) => {
-                            mcpSessions.set(sid, { server, transport });
+                            // Evict oldest session if at capacity
+                            if (mcpSessions.size >= MAX_MCP_SESSIONS) {
+                                let oldestSid = null;
+                                let oldestTime = Infinity;
+                                for (const [s, sess] of mcpSessions) {
+                                    if (sess.activeRequests === 0 && sess.lastActivity < oldestTime) {
+                                        oldestTime = sess.lastActivity;
+                                        oldestSid = s;
+                                    }
+                                }
+                                if (oldestSid) {
+                                    log(`[mcp] Evicting oldest session (at cap): ${oldestSid.slice(0, 8)}...`);
+                                    mcpSessions.get(oldestSid)?.transport.close().catch(() => { });
+                                    mcpSessions.delete(oldestSid);
+                                }
+                            }
+                            mcpSessions.set(sid, { server, transport, lastActivity: Date.now(), activeRequests: 0 });
                             log(`[mcp] Session started: ${sid.slice(0, 8)}...`);
                         },
                         onsessionclosed: (sid) => {
@@ -252,6 +288,7 @@ export async function startDaemon(options) {
         log("\nShutting down...");
         promptListener.stop();
         stopHeartbeatLoop();
+        clearInterval(sessionCleanupTimer);
         await killActiveChild();
         await sendBrainOffline(config);
         // Close all MCP sessions
