@@ -424,8 +424,9 @@ function dispatchCodex(
   startTime: number,
   model?: string,
 ): Promise<DispatchResult> {
-  // codex exec --full-auto --skip-git-repo-check --json [-m model] <prompt>
-  const args = ["exec", "--full-auto", "--skip-git-repo-check", "--json"];
+  // --dangerously-bypass-approvals-and-sandbox is required so MCP tool calls
+  // are not auto-cancelled in non-interactive mode (--full-auto cancels them)
+  const args = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"];
   const codexModel = model ?? process.env.CLAUDE_CODEX_MODEL;
   if (codexModel) {
     args.push("-m", codexModel);
