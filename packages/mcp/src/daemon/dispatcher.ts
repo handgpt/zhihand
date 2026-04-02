@@ -460,55 +460,20 @@ function dispatchClaude(
   return collectChildOutput(child, startTime);
 }
 
-// ── Codex JSONL Output Parser ──────────────────────────────
 
-/** Parse codex JSONL output and extract agent message text. */
-function parseCodexJsonl(raw: string): { text: string; success: boolean } {
-  const lines = raw.split("\n").filter(Boolean);
-  const texts: string[] = [];
-  let hasError = false;
-
-  for (const line of lines) {
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      const type = String(event.type ?? "");
-
-      // Extract text from completed agent messages
-      if (type === "item.completed") {
-        const item = event.item as Record<string, unknown> | undefined;
-        if (item && typeof item.text === "string" && item.text.trim()) {
-          texts.push(item.text.trim());
-        }
-      }
-
-      // Capture errors
-      if (type === "error") {
-        const msg = String(event.message ?? "");
-        if (msg) texts.push(`Error: ${msg}`);
-        hasError = true;
-      }
-      if (type === "turn.failed") {
-        hasError = true;
-      }
-    } catch {
-      // Not valid JSON — skip (truncated line or stderr mixed in)
-    }
-  }
-
-  if (texts.length > 0) {
-    return { text: texts.join("\n\n"), success: !hasError };
-  }
-  return { text: raw.trim(), success: false };
-}
-
+/**
+ * Collect codex JSONL output with streaming line parsing.
+ * Processes each JSONL line as it arrives so we extract agent text
+ * without buffering large binary payloads (e.g. base64 screenshots).
+ */
 function collectCodexOutput(
   child: ChildProcess,
   startTime: number,
 ): Promise<DispatchResult> {
   return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-    let truncated = false;
+    const texts: string[] = [];
+    let hasError = false;
+    let lineBuffer = "";
     let settled = false;
 
     function settle(result: DispatchResult): void {
@@ -517,36 +482,59 @@ function collectCodexOutput(
       resolve(result);
     }
 
+    function processLine(line: string): void {
+      if (!line.trim()) return;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        const type = String(event.type ?? "");
+        if (type === "item.completed") {
+          const item = event.item as Record<string, unknown> | undefined;
+          if (item && typeof item.text === "string" && item.text.trim()) {
+            texts.push(item.text.trim());
+          }
+        }
+        if (type === "error") {
+          const msg = String(event.message ?? "");
+          if (msg) texts.push(`Error: ${msg}`);
+          hasError = true;
+        }
+        if (type === "turn.failed") {
+          hasError = true;
+        }
+      } catch {
+        // Not valid JSON — skip
+      }
+    }
+
     const timer = setTimeout(() => { closeChild(child); }, CLI_TIMEOUT);
 
-    const collectOutput = (data: Buffer) => {
-      if (truncated) return;
-      totalBytes += data.length;
-      if (totalBytes > MAX_OUTPUT_BYTES) {
-        truncated = true;
-        chunks.push(data.subarray(0, MAX_OUTPUT_BYTES - (totalBytes - data.length)));
-      } else {
-        chunks.push(data);
+    const onData = (data: Buffer) => {
+      lineBuffer += data.toString("utf8");
+      const lines = lineBuffer.split("\n");
+      // Keep the last (possibly incomplete) line in the buffer
+      lineBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        processLine(line);
       }
     };
 
-    child.stdout?.on("data", collectOutput);
-    child.stderr?.on("data", collectOutput);
+    child.stdout?.on("data", onData);
+    // stderr is not JSONL, just discard
+    child.stderr?.resume();
 
     child.on("close", (code) => {
       clearTimeout(timer);
       activeChild = null;
+      // Process any remaining data in the buffer
+      if (lineBuffer.trim()) processLine(lineBuffer);
       const durationMs = Date.now() - startTime;
-      const raw = Buffer.concat(chunks).toString("utf8").trim();
-      const parsed = parseCodexJsonl(raw);
-      let text = parsed.text;
-      if (truncated) text += "\n\n[Output truncated at 100KB]";
+      let text = texts.join("\n\n");
       if (!text) {
         text = code === 0
           ? "Task completed (no output)."
           : `CLI process exited with code ${code}.`;
       }
-      settle({ text, success: parsed.success && code === 0, durationMs });
+      settle({ text, success: !hasError && code === 0, durationMs });
     });
 
     child.on("error", (err) => {
