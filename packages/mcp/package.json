@@ -22,7 +22,8 @@
   "files": [
     "README.md",
     "bin/",
-    "dist/"
+    "dist/",
+    "scripts/"
   ],
   "publishConfig": {
     "access": "public"
