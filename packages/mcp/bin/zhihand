@@ -44,7 +44,7 @@ Usage:
 
   zhihand gemini             Switch backend to Gemini CLI (default model: flash)
   zhihand claude             Switch backend to Claude Code (default model: sonnet)
-  zhihand codex              Switch backend to Codex CLI (default model: o4-mini)
+  zhihand codex              Switch backend to Codex CLI (default model: gpt-5.4-mini)
   zhihand gemini --model pro Switch backend with custom model
 
   zhihand setup              Interactive setup: pair + configure + start
@@ -55,7 +55,7 @@ Usage:
 
 Options:
   --device <name>    Use a specific paired device
-  --model, -m <name> Set model alias (e.g. flash, pro, sonnet, opus, o4-mini)
+  --model, -m <name> Set model alias (e.g. flash, pro, sonnet, opus, gpt-5.4-mini)
   --port <port>      Override daemon port (default: 18686)
   -d, --detach       Run daemon in background
   -h, --help         Show this help

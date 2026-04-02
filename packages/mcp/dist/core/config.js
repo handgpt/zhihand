@@ -11,7 +11,7 @@ import os from "node:os";
 export const DEFAULT_MODELS = {
     gemini: "flash", // Gemini CLI resolves to latest flash
     claudecode: "sonnet", // Claude Code resolves to latest sonnet
-    codex: "o4-mini", // Codex default cheap fast model
+    codex: "gpt-5.4-mini", // Codex default: latest GPT mini model
 };
 const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
 const CREDENTIALS_PATH = path.join(ZHIHAND_DIR, "credentials.json");
