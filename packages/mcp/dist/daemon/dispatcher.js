@@ -558,10 +558,25 @@ async function dispatchClaudeWithHistory(prompt, startTime, log, model) {
     // Write prompt to stdin, then close to signal EOF
     child.stdin?.write(fullPrompt);
     child.stdin?.end();
-    const result = await collectChildOutput(child, startTime);
+    const raw = await collectChildOutput(child, startTime);
+    // Claude --output-format json wraps the result in a JSON envelope — extract the actual text
+    const result = extractClaudeResult(raw);
     recordTurn("user", prompt);
     recordTurn("assistant", result.text);
     return result;
+}
+/** Parse Claude JSON output and extract the result text. */
+function extractClaudeResult(raw) {
+    try {
+        const parsed = JSON.parse(raw.text);
+        const resultText = typeof parsed.result === "string" ? parsed.result : raw.text;
+        const isError = parsed.is_error === true || parsed.subtype === "error";
+        return { text: resultText, success: !isError, durationMs: raw.durationMs };
+    }
+    catch {
+        // Not JSON — return as-is
+        return raw;
+    }
 }
 // ── Codex JSONL Output Collector ──────────────────────────────
 function collectCodexOutput(child, startTime) {

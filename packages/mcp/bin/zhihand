@@ -51,6 +51,7 @@ Usage:
   zhihand pair               Pair with a phone device
   zhihand detect             Detect available CLI tools
 
+  zhihand test               Test device connectivity (sends click + type commands)
   zhihand serve              Start MCP Server (stdio mode, backward compat)
 
 Options:
@@ -278,6 +279,66 @@ switch (command) {
       deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
     });
     break;
+  }
+
+  case "test": {
+    const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
+    const { createControlCommand, enqueueCommand } = await import("../dist/core/command.js");
+    const { waitForCommandAck } = await import("../dist/core/sse.js");
+
+    let testConfig;
+    try {
+      testConfig = resolveTestConfig(values.device ?? process.env.ZHIHAND_DEVICE);
+    } catch (err) {
+      console.error(`Error: ${err.message}`);
+      console.error("Run 'zhihand setup' to pair a device first.");
+      process.exit(1);
+    }
+
+    console.log("🧪 ZhiHand Device Test");
+    console.log(`   Device: ${testConfig.credentialId}`);
+    console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
+
+    const steps = [
+      { label: "1. Click center of screen", action: "click", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
+      { label: "2. Swipe up (scroll)", action: "swipe", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
+      { label: "3. Swipe down (scroll back)", action: "swipe", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
+      { label: "4. Press Home", action: "home", params: { action: "home" } },
+      { label: "5. Click center again", action: "click", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
+      { label: "6. Press Back", action: "back", params: { action: "back" } },
+    ];
+
+    let passed = 0;
+    let failed = 0;
+
+    for (const step of steps) {
+      process.stdout.write(`   ${step.label}... `);
+      try {
+        const cmd = createControlCommand(step.params);
+        const queued = await enqueueCommand(testConfig, cmd);
+        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+        if (ack.acked) {
+          console.log("✅ ACK");
+          passed++;
+        } else {
+          console.log("⏱️  Timeout (no ACK within 10s)");
+          failed++;
+        }
+      } catch (err) {
+        console.log(`❌ Error: ${err.message}`);
+        failed++;
+      }
+      // Pause between commands: let phone process + user can observe
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+
+    console.log(`\n   Result: ${passed} passed, ${failed} failed`);
+    if (failed === 0) {
+      console.log("   ✅ Device is responding to all commands!");
+    } else {
+      console.log("   ⚠️  Some commands failed. Check phone connectivity.");
+    }
+    process.exit(failed > 0 ? 1 : 0);
   }
 
   default:
