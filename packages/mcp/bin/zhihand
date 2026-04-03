@@ -285,6 +285,7 @@ switch (command) {
     const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
     const { createControlCommand, enqueueCommand } = await import("../dist/core/command.js");
     const { waitForCommandAck } = await import("../dist/core/sse.js");
+    const { fetchScreenshotBinary } = await import("../dist/core/screenshot.js");
 
     let testConfig;
     try {
@@ -300,12 +301,13 @@ switch (command) {
     console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
 
     const steps = [
-      { label: "1. Click center of screen", action: "click", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
-      { label: "2. Swipe up (scroll)", action: "swipe", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
-      { label: "3. Swipe down (scroll back)", action: "swipe", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
-      { label: "4. Press Home", action: "home", params: { action: "home" } },
-      { label: "5. Click center again", action: "click", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
-      { label: "6. Press Back", action: "back", params: { action: "back" } },
+      { label: "1. Screenshot", type: "screenshot" },
+      { label: "2. Click center", type: "hid", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
+      { label: "3. Swipe up", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
+      { label: "4. Swipe down", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
+      { label: "5. Press Home", type: "hid", params: { action: "home" } },
+      { label: "6. Press Back", type: "hid", params: { action: "back" } },
+      { label: "7. Screenshot", type: "screenshot" },
     ];
 
     let passed = 0;
@@ -313,26 +315,45 @@ switch (command) {
 
     for (const step of steps) {
       process.stdout.write(`   ${step.label}... `);
+      const t0 = Date.now();
       try {
-        const cmd = createControlCommand(step.params);
-        const queued = await enqueueCommand(testConfig, cmd);
-        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-        if (ack.acked) {
-          console.log("✅ ACK");
-          passed++;
+        if (step.type === "screenshot") {
+          // Screenshot: send receive_screenshot command, then fetch binary
+          const cmd = createControlCommand({ action: "screenshot" });
+          const queued = await enqueueCommand(testConfig, cmd);
+          const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+          if (ack.acked) {
+            const buf = await fetchScreenshotBinary(testConfig);
+            const ms = Date.now() - t0;
+            console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${ms}ms)`);
+            passed++;
+          } else {
+            console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
+            failed++;
+          }
         } else {
-          console.log("⏱️  Timeout (no ACK within 10s)");
-          failed++;
+          const cmd = createControlCommand(step.params);
+          const queued = await enqueueCommand(testConfig, cmd);
+          const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+          const ms = Date.now() - t0;
+          if (ack.acked) {
+            console.log(`✅ (${ms}ms)`);
+            passed++;
+          } else {
+            console.log(`⏱️  Timeout (${ms}ms)`);
+            failed++;
+          }
         }
       } catch (err) {
-        console.log(`❌ Error: ${err.message}`);
+        const ms = Date.now() - t0;
+        console.log(`❌ ${err.message} (${ms}ms)`);
         failed++;
       }
       // Pause between commands: let phone process + user can observe
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
-    console.log(`\n   Result: ${passed} passed, ${failed} failed`);
+    console.log(`\n   Result: ${passed}/${steps.length} passed`);
     if (failed === 0) {
       console.log("   ✅ Device is responding to all commands!");
     } else {

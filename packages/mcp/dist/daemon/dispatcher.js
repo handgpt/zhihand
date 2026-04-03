@@ -569,9 +569,12 @@ async function dispatchClaudeWithHistory(prompt, startTime, log, model) {
 function extractClaudeResult(raw) {
     try {
         const parsed = JSON.parse(raw.text);
+        if (!parsed || typeof parsed !== "object")
+            return raw;
         const resultText = typeof parsed.result === "string" ? parsed.result : raw.text;
         const isError = parsed.is_error === true || parsed.subtype === "error";
-        return { text: resultText, success: !isError, durationMs: raw.durationMs };
+        // Preserve process exit failure: only succeed if both JSON and process agree
+        return { text: resultText, success: raw.success && !isError, durationMs: raw.durationMs };
     }
     catch {
         // Not JSON — return as-is

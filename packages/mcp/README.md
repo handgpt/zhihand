@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.23.0`
+Version: `0.24.1`
 
 ## What is this?
 
@@ -96,6 +96,7 @@ zhihand start -d           Start daemon in background (logs to ~/.zhihand/daemon
 zhihand stop               Stop the running daemon
 zhihand status             Show daemon status, pairing info, device, backend, and model
 
+zhihand test               Test device connectivity (screenshot, click, swipe, home, back)
 zhihand pair               Pair with a phone (QR code in terminal)
 zhihand detect             List detected CLI tools and their login status
 zhihand serve              Start MCP Server (stdio mode, backward compatible)
