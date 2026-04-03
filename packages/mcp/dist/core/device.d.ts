@@ -40,7 +40,7 @@ export declare function getDynamicContext(): DynamicContext;
 export declare function isDeviceProfileLoaded(): boolean;
 export declare function extractStatic(profile: Record<string, unknown>): StaticContext;
 export declare function extractDynamic(profile: Record<string, unknown>): DynamicContext;
-export declare function updateDeviceProfile(profile: Record<string, unknown>): void;
+export declare function updateDeviceProfile(raw: Record<string, unknown>): void;
 export declare function fetchDeviceProfile(config: ZhiHandConfig): Promise<void>;
 export declare function buildControlToolDescription(): string;
 export declare function buildScreenshotToolDescription(): string;

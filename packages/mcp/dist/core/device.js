@@ -57,16 +57,37 @@ function bool(v, fallback) {
     return typeof v === "boolean" ? v : fallback;
 }
 export function extractStatic(profile) {
+    // Build OS version string from platform + system_release + api_level
+    const platform = str(profile.platform, DEFAULT_STATIC.platform);
+    const sysRelease = str(profile.system_release, "");
+    const apiLevel = typeof profile.api_level === "number" ? profile.api_level : null;
+    let osVersion;
+    if (platform === "android" && sysRelease && apiLevel) {
+        osVersion = `Android ${sysRelease} (API ${apiLevel})`;
+    }
+    else if (platform === "ios" && sysRelease) {
+        osVersion = `iOS ${sysRelease}`;
+    }
+    else {
+        osVersion = sysRelease || DEFAULT_STATIC.osVersion;
+    }
+    // Screen size: Android uses display_width_px/display_height_px, iOS uses display_width_pixels/display_height_pixels
+    const screenW = num(profile.display_width_px, num(profile.display_width_pixels, DEFAULT_STATIC.screenWidthPx));
+    const screenH = num(profile.display_height_px, num(profile.display_height_pixels, DEFAULT_STATIC.screenHeightPx));
+    // Density: Android uses density, iOS uses display_scale
+    const density = num(profile.density, num(profile.display_scale, DEFAULT_STATIC.density));
+    // Text direction: rtl is boolean
+    const textDirection = profile.rtl === true ? "rtl" : "ltr";
     return {
-        platform: str(profile.platform, DEFAULT_STATIC.platform),
+        platform,
         model: str(profile.model, DEFAULT_STATIC.model),
-        osVersion: str(profile.os_version, DEFAULT_STATIC.osVersion),
-        screenWidthPx: num(profile.screen_width_px, DEFAULT_STATIC.screenWidthPx),
-        screenHeightPx: num(profile.screen_height_px, DEFAULT_STATIC.screenHeightPx),
-        density: num(profile.density, DEFAULT_STATIC.density),
+        osVersion,
+        screenWidthPx: screenW,
+        screenHeightPx: screenH,
+        density,
         formFactor: str(profile.form_factor, DEFAULT_STATIC.formFactor),
         locale: str(profile.locale, DEFAULT_STATIC.locale),
-        textDirection: str(profile.text_direction, DEFAULT_STATIC.textDirection),
+        textDirection,
         timezone: str(profile.timezone, DEFAULT_STATIC.timezone),
         navigationMode: typeof profile.navigation_mode === "string" ? profile.navigation_mode : undefined,
         romFamily: typeof profile.rom_family === "string" ? profile.rom_family : undefined,
@@ -88,7 +109,16 @@ export function extractDynamic(profile) {
     };
 }
 // ── Update from SSE event ─────────────────────────────────
-export function updateDeviceProfile(profile) {
+export function updateDeviceProfile(raw) {
+    // SSE events may also wrap in { platform, attributes: {...} } — flatten if needed
+    let profile;
+    if (typeof raw.attributes === "object" && raw.attributes !== null) {
+        const attrs = raw.attributes;
+        profile = { ...attrs, platform: raw.platform ?? attrs.platform };
+    }
+    else {
+        profile = raw;
+    }
     staticCtx = extractStatic(profile);
     dynamicCtx = extractDynamic(profile);
     loaded = true;
@@ -108,10 +138,16 @@ export async function fetchDeviceProfile(config) {
             return;
         }
         const data = await response.json();
-        // API may wrap in { device_profile: {...} } or return flat
-        const profile = (typeof data.device_profile === "object" && data.device_profile !== null)
-            ? data.device_profile
+        // API returns { profile: { credential_id, platform, attributes: {...} } }
+        const wrapper = (typeof data.profile === "object" && data.profile !== null)
+            ? data.profile
             : data;
+        // Merge top-level fields (platform, edge_id) with attributes for flat extraction
+        const attrs = (typeof wrapper.attributes === "object" && wrapper.attributes !== null)
+            ? wrapper.attributes
+            : {};
+        const profile = { ...attrs, platform: wrapper.platform ?? attrs.platform };
+        dbg(`[device] Raw profile keys: ${Object.keys(profile).join(", ")}`);
         updateDeviceProfile(profile);
     }
     catch (err) {
