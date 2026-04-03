@@ -104,7 +104,8 @@ export async function getCommand(config, commandId) {
         throw new Error(`Get command failed: ${response.status}`);
     }
     const payload = (await response.json());
-    dbg(`[cmd] Got: id=${payload.command.id}, status=${payload.command.status}, acked=${!!payload.command.acked_at}`);
+    const cmd = payload.command;
+    dbg(`[cmd] Got: id=${cmd.id}, status=${cmd.status}, acked=${!!cmd.acked_at}, ack_status=${cmd.ack_status ?? "-"}, ack_result=${JSON.stringify(cmd.ack_result ?? null)}`);
     return payload.command;
 }
 export function formatAckSummary(action, result) {

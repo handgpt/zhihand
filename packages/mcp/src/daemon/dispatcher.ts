@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { ZhiHandConfig, BackendName } from "../core/config.ts";
 import { DEFAULT_MODELS } from "../core/config.ts";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.ts";
+import { getStaticContext, isDeviceProfileLoaded } from "../core/device.ts";
 import { dbg } from "./logger.ts";
 
 const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
@@ -376,7 +377,30 @@ export async function killActiveChild(): Promise<void> {
 
 // ── System Prompt ─────────────────────────────────────────
 
-const SYSTEM_CONTEXT = `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
+/**
+ * Build system context dynamically — injects device platform info when available
+ * so the AI sends correct platform-specific parameters (e.g. appPackage vs bundleId).
+ */
+function buildSystemContext(): string {
+  const static_ = isDeviceProfileLoaded() ? getStaticContext() : null;
+  const deviceLine = static_
+    ? `Connected device: ${static_.platform} ${static_.model} (${static_.osVersion}), ${static_.screenWidthPx}x${static_.screenHeightPx}, ${static_.formFactor}, ${static_.locale}`
+    : "Connected device: unknown platform";
+
+  // Platform-specific open_app guidance
+  let openAppDoc: string;
+  if (static_?.platform === "android") {
+    openAppDoc = "- open_app: Open an app. Params: appPackage (e.g. 'com.tencent.mm'). Do NOT send bundleId or urlScheme on Android.";
+  } else if (static_?.platform === "ios") {
+    openAppDoc = "- open_app: Open an app. Params: bundleId (e.g. 'com.tencent.xin') or urlScheme (e.g. 'weixin://'). Do NOT send appPackage on iOS.";
+  } else {
+    openAppDoc = "- open_app: Open an app. Params: appPackage (Android, e.g. 'com.tencent.mm'), bundleId (iOS), urlScheme (e.g. 'weixin://')";
+  }
+
+  return `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
+
+## Device
+${deviceLine}
 
 ## Available MCP Tools
 
@@ -397,23 +421,27 @@ Control the phone. Requires "action" parameter. All coordinates use normalized r
 - back: Press Back button (no params)
 - home: Press Home button (no params)
 - enter: Press Enter key (no params)
-- open_app: Open an app. Params: appPackage (Android, e.g. "com.tencent.mm"), bundleId (iOS), urlScheme (e.g. "weixin://")
+${openAppDoc}
 - clipboard: Read/write clipboard. Params: clipboardAction ("get"/"set"), text
 - screenshot: Capture screen via control (same as zhihand_screenshot)
 - wait: Wait before next action. Params: durationMs (default 1000)
+
+### zhihand_status
+Get device status: platform, battery, network, BLE connection, dark mode, storage, etc.
 
 ## Rules
 - When the user asks to see their screen, ALWAYS call zhihand_screenshot first.
 - When the user asks to open an app (e.g. WeChat, Settings), use open_app action.
 - When the user asks to go back/home, use back/home actions.
 - For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).`;
+}
 
 /**
  * Build the full system prompt with optional conversation history.
  * Used for first prompt in persistent sessions and all one-shot calls.
  */
 function wrapPrompt(userPrompt: string, history?: Turn[]): string {
-  let result = SYSTEM_CONTEXT;
+  let result = buildSystemContext();
   if (history && history.length > 0) {
     result += "\n\n## Recent Conversation\n";
     for (const turn of history) {

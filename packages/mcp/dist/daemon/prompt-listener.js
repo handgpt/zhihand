@@ -1,3 +1,4 @@
+import { updateDeviceProfile } from "../core/device.js";
 import { dbg } from "./logger.js";
 const SSE_WATCHDOG_TIMEOUT = 120_000; // 120s no data → reconnect (servers may not send keepalive frequently)
 const SSE_RECONNECT_DELAY = 3_000;
@@ -130,6 +131,13 @@ export class PromptListener {
                     this.dispatchPrompt(p);
                 }
             }
+        }
+        else if (event.kind === "device_profile.updated" && event.device_profile) {
+            // NOTE: This event may only arrive if the server sends cross-topic events on
+            // the prompts stream, or if the API is updated to support multi-topic SSE.
+            // If not received, device profile is still fetched at daemon startup.
+            this.log("[device] Device profile updated via SSE");
+            updateDeviceProfile(event.device_profile);
         }
     }
     startPolling() {

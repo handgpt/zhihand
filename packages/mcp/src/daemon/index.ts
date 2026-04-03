@@ -23,6 +23,7 @@ import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta }
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
 import { setDebugEnabled, dbg } from "./logger.ts";
+import { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded } from "../core/device.ts";
 
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
@@ -216,6 +217,15 @@ export async function startDaemon(options?: {
     setBrainMeta({ backend: activeBackend, model: effectiveModel });
   } else {
     log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
+  }
+
+  // Fetch device profile (platform, model, screen size) — non-blocking, best-effort
+  await fetchDeviceProfile(config);
+  if (isDeviceProfileLoaded()) {
+    const s = getStaticContext();
+    log(`[device] ${s.platform} ${s.model} (${s.osVersion}), ${s.screenWidthPx}x${s.screenHeightPx}, ${s.locale}`);
+  } else {
+    log(`[device] Device profile not available — tool descriptions will use generic defaults`);
   }
 
   // MCP sessions: each client gets its own McpServer + Transport pair

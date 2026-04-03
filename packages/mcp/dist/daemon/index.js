@@ -11,6 +11,7 @@ import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta }
 import { PromptListener } from "./prompt-listener.js";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.js";
 import { setDebugEnabled, dbg } from "./logger.js";
+import { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded } from "../core/device.js";
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
 // ── State ──────────────────────────────────────────────────
@@ -188,6 +189,15 @@ export async function startDaemon(options) {
     }
     else {
         log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
+    }
+    // Fetch device profile (platform, model, screen size) — non-blocking, best-effort
+    await fetchDeviceProfile(config);
+    if (isDeviceProfileLoaded()) {
+        const s = getStaticContext();
+        log(`[device] ${s.platform} ${s.model} (${s.osVersion}), ${s.screenWidthPx}x${s.screenHeightPx}, ${s.locale}`);
+    }
+    else {
+        log(`[device] Device profile not available — tool descriptions will use generic defaults`);
     }
     // MCP sessions: each client gets its own McpServer + Transport pair
     // because McpServer.connect() can only be called once per instance

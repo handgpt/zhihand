@@ -1,4 +1,5 @@
 import type { ZhiHandConfig } from "../core/config.ts";
+import { updateDeviceProfile } from "../core/device.ts";
 import { dbg } from "./logger.ts";
 
 export interface MobilePrompt {
@@ -144,7 +145,7 @@ export class PromptListener {
     }, SSE_WATCHDOG_TIMEOUT);
   }
 
-  private handleSSEEvent(event: { kind?: string; prompt?: MobilePrompt; prompts?: MobilePrompt[] }): void {
+  private handleSSEEvent(event: { kind?: string; prompt?: MobilePrompt; prompts?: MobilePrompt[]; device_profile?: Record<string, unknown> }): void {
     dbg(`[sse] Event: kind=${event.kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
     if (event.kind === "prompt.queued" && event.prompt) {
       this.dispatchPrompt(event.prompt);
@@ -154,6 +155,12 @@ export class PromptListener {
           this.dispatchPrompt(p);
         }
       }
+    } else if (event.kind === "device_profile.updated" && event.device_profile) {
+      // NOTE: This event may only arrive if the server sends cross-topic events on
+      // the prompts stream, or if the API is updated to support multi-topic SSE.
+      // If not received, device profile is still fetched at daemon startup.
+      this.log("[device] Device profile updated via SSE");
+      updateDeviceProfile(event.device_profile);
     }
   }
 

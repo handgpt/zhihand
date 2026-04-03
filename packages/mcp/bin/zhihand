@@ -311,8 +311,9 @@ switch (command) {
       { label: "3. Swipe up", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
       { label: "4. Swipe down", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
       { label: "5. Press Home", type: "hid", params: { action: "home" } },
-      { label: "6. Press Back", type: "hid", params: { action: "back" } },
-      { label: "7. Screenshot", type: "screenshot" },
+      { label: "6. Open WeChat", type: "hid", params: { action: "open_app", appPackage: "com.tencent.mm" } },
+      { label: "7. Press Back", type: "hid", params: { action: "back" } },
+      { label: "8. Screenshot", type: "screenshot" },
     ];
 
     let passed = 0;
@@ -342,7 +343,10 @@ switch (command) {
           const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
           const ms = Date.now() - t0;
           if (ack.acked) {
-            console.log(`✅ (${ms}ms)`);
+            const ackStatus = ack.command?.ack_status ?? "ok";
+            const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
+            const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
+            console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
             passed++;
           } else {
             console.log(`⏱️  Timeout (${ms}ms)`);

@@ -5,29 +5,60 @@ import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.js"
 import { executeControl } from "./tools/control.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
-export const PACKAGE_VERSION = "0.25.0";
+import { getStaticContext, getDynamicContext, fetchDeviceProfile, buildControlToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
+export const PACKAGE_VERSION = "0.26.0";
 export function createServer(deviceName) {
     const server = new McpServer({
         name: "zhihand",
         version: PACKAGE_VERSION,
     });
     // zhihand_control — main phone control tool
-    server.tool("zhihand_control", controlSchema, async (params) => {
+    // Description includes device info (platform, model, screen size) when available
+    server.tool("zhihand_control", buildControlToolDescription(), controlSchema, async (params) => {
         const config = resolveConfig(deviceName);
         return await executeControl(config, params);
     });
     // zhihand_screenshot — capture current screen without any action
-    server.tool("zhihand_screenshot", screenshotSchema, async () => {
+    server.tool("zhihand_screenshot", buildScreenshotToolDescription(), screenshotSchema, async () => {
         const config = resolveConfig(deviceName);
         return await handleScreenshot(config);
     });
+    // zhihand_status — return device context for LLM to query on demand
+    server.tool("zhihand_status", "Get device status: platform, model, OS version, screen size, battery, network, BLE, dark mode, storage, and more.", {}, async () => {
+        return {
+            content: [{
+                    type: "text",
+                    text: JSON.stringify(formatDeviceStatus(), null, 2),
+                }],
+        };
+    });
     // zhihand_pair — device pairing
-    server.tool("zhihand_pair", pairSchema, async (params) => {
+    server.tool("zhihand_pair", "Pair a new mobile device via QR code.", pairSchema, async (params) => {
         return await handlePair(params);
+    });
+    // device://profile — MCP resource for device profile
+    server.resource("device-profile", "device://profile", { description: "Device static and dynamic context (platform, model, screen, battery, network, etc.)" }, async () => {
+        const staticCtx = getStaticContext();
+        const dynamicCtx = getDynamicContext();
+        return {
+            contents: [{
+                    uri: "device://profile",
+                    mimeType: "application/json",
+                    text: JSON.stringify({ ...staticCtx, ...dynamicCtx }, null, 2),
+                }],
+        };
     });
     return server;
 }
 export async function startStdioServer(deviceName) {
+    // Fetch device profile before creating server so tool descriptions have platform info
+    try {
+        const config = resolveConfig(deviceName);
+        await fetchDeviceProfile(config);
+    }
+    catch {
+        // Non-fatal — server will use generic descriptions
+    }
     const server = createServer(deviceName);
     const transport = new StdioServerTransport();
     await server.connect(transport);

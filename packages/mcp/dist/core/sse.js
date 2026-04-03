@@ -10,7 +10,7 @@ export function handleSSEEvent(event) {
     if (event.kind === "command.acked" && event.command) {
         const callback = ackCallbacks.get(event.command.id);
         if (callback) {
-            dbg(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}`);
+            dbg(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}, ack_result=${JSON.stringify(event.command.ack_result ?? null)}`);
             callback(event.command);
             ackCallbacks.delete(event.command.id);
         }

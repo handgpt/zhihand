@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.25.0`
+Version: `0.26.0`
 
 ## What is this?
 
@@ -177,7 +177,7 @@ When you switch:
 
 ## MCP Tools
 
-The server exposes three tools to AI agents:
+The server exposes these tools to AI agents:
 
 ### `zhihand_control`
 
@@ -212,6 +212,12 @@ Capture the current phone screen without performing any action. Returns an image
 
 No parameters required.
 
+### `zhihand_status`
+
+Get device status: platform, model, OS version, screen size, battery, network, BLE connection, dark mode, storage, and more. No parameters.
+
+Tool description and `open_app` guidance are **automatically adapted** based on the connected device platform (Android/iOS), so AI agents always send correct platform-specific parameters.
+
 ### `zhihand_pair`
 
 Pair with a phone device. Returns a QR code and pairing URL.
@@ -219,6 +225,10 @@ Pair with a phone device. Returns a QR code and pairing URL.
 | Parameter | Type | Description |
 |---|---|---|
 | `forceNew` | `boolean` | Force new pairing even if already paired (default: `false`) |
+
+### MCP Resource: `device://profile`
+
+Provides full device context (static + dynamic) as JSON. Includes platform, model, OS version, screen size, battery, network, BLE, dark mode, storage, thermal state, locale, and more.
 
 ## How It Works
 
@@ -302,12 +312,14 @@ packages/mcp/
 │   ├── core/
 │   │   ├── config.ts        # Credential & config management (~/.zhihand/), default models
 │   │   ├── resolve-path.ts  # Platform-aware executable path resolution (gemini/claude/codex)
+│   │   ├── device.ts        # Device context: static/dynamic profile, fetch, SSE updates
 │   │   ├── command.ts       # Command creation, enqueue, ACK formatting
 │   │   ├── screenshot.ts    # Binary screenshot fetch (JPEG)
 │   │   ├── sse.ts           # SSE client + hybrid ACK (SSE push + polling fallback)
 │   │   └── pair.ts          # Plugin registration + device pairing flow
 │   ├── daemon/
 │   │   ├── index.ts         # Daemon entry: HTTP server + MCP + Relay + Config API
+│   │   ├── logger.ts        # Debug logger (--debug flag)
 │   │   ├── heartbeat.ts     # Brain heartbeat loop (30s interval, 5s retry)
 │   │   ├── prompt-listener.ts # SSE + polling prompt listener with dedup
 │   │   └── dispatcher.ts    # Async CLI dispatch (spawn + timeout + two-stage kill)
