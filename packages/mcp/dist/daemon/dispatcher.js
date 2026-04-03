@@ -7,6 +7,8 @@ import { DEFAULT_MODELS } from "../core/config.js";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
 const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
+const MCP_PORT = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
+const MCP_URL = `http://127.0.0.1:${MCP_PORT}/mcp`;
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB (for one-shot backends)
 const MAX_HISTORY_TURNS = 20; // keep last N exchanges in conversation history
 // Gemini session file polling
@@ -540,11 +542,14 @@ async function dispatchClaudeWithHistory(prompt, startTime, log, model) {
     log(`[claude] One-shot dispatch (history: ${conversationHistory.length} turns)`);
     // Pass prompt via stdin (-p -) to avoid ARG_MAX limit with long conversation history
     // --permission-mode bypassPermissions: auto-approve all tool calls (like gemini's --approval-mode yolo)
+    // --mcp-config: explicitly pass MCP server URL so Claude finds it regardless of cwd
+    const mcpConfig = JSON.stringify({ mcpServers: { zhihand: { type: "http", url: MCP_URL } } });
     const child = spawn(claudePath, [
         "-p", "-",
         "--model", model,
         "--output-format", "json",
         "--permission-mode", "bypassPermissions",
+        "--mcp-config", mcpConfig,
     ], {
         env: process.env,
         stdio: ["pipe", "pipe", "pipe"],
