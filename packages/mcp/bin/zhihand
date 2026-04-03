@@ -26,6 +26,7 @@ const { positionals, values } = parseArgs({
     model: { type: "string", short: "m" },
     help: { type: "boolean", short: "h", default: false },
     detach: { type: "boolean", short: "d", default: false },
+    debug: { type: "boolean", default: false },
     port: { type: "string" },
   },
 });
@@ -39,6 +40,7 @@ zhihand — MCP Server and Relay for phone control
 Usage:
   zhihand start              Start daemon (MCP Server + Relay, foreground)
   zhihand start -d           Start daemon in background (detach)
+  zhihand start --debug      Start daemon with verbose debug logging
   zhihand stop               Stop daemon
   zhihand status             Show status (pairing, backend, brain)
 
@@ -59,6 +61,7 @@ Options:
   --model, -m <name> Set model alias (e.g. flash, pro, sonnet, opus, gpt-5.4-mini)
   --port <port>      Override daemon port (default: 18686)
   -d, --detach       Run daemon in background
+  --debug            Enable verbose debug logging
   -h, --help         Show this help
 `);
   process.exit(0);
@@ -145,6 +148,7 @@ switch (command) {
       const args = [process.argv[1], "start"];
       if (values.port) args.push("--port", values.port);
       if (values.device) args.push("--device", values.device);
+      if (values.debug) args.push("--debug");
 
       // Write daemon logs to ~/.zhihand/daemon.log
       const zhihandDir = pathMod.default.join(osMod.default.homedir(), ".zhihand");
@@ -167,6 +171,7 @@ switch (command) {
     await startDaemon({
       port,
       deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
+      debug: values.debug,
     });
     break;
   }

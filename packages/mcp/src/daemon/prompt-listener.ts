@@ -1,4 +1,5 @@
 import type { ZhiHandConfig } from "../core/config.ts";
+import { dbg } from "./logger.ts";
 
 export interface MobilePrompt {
   id: string;
@@ -49,8 +50,12 @@ export class PromptListener {
   }
 
   private dispatchPrompt(prompt: MobilePrompt): void {
-    if (this.processedIds.has(prompt.id)) return;
+    if (this.processedIds.has(prompt.id)) {
+      dbg(`[prompt] Skipping duplicate prompt: ${prompt.id}`);
+      return;
+    }
     this.processedIds.add(prompt.id);
+    dbg(`[prompt] Dispatching prompt: id=${prompt.id}, status=${prompt.status}, text="${prompt.text.slice(0, 100)}${prompt.text.length > 100 ? "..." : ""}"`);
     // Prevent unbounded growth
     if (this.processedIds.size > 500) {
       const arr = [...this.processedIds];
@@ -65,6 +70,7 @@ export class PromptListener {
         this.sseAbort = new AbortController();
         const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/events/stream?topic=prompts`;
 
+        dbg(`[sse] Connecting to ${url}`);
         const response = await fetch(url, {
           headers: {
             "Accept": "text/event-stream",
@@ -74,6 +80,7 @@ export class PromptListener {
         });
 
         if (!response.ok) {
+          dbg(`[sse] Connect failed: ${response.status} ${response.statusText}`);
           throw new Error(`SSE connect failed: ${response.status}`);
         }
 
@@ -138,6 +145,7 @@ export class PromptListener {
   }
 
   private handleSSEEvent(event: { kind?: string; prompt?: MobilePrompt; prompts?: MobilePrompt[] }): void {
+    dbg(`[sse] Event: kind=${event.kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
     if (event.kind === "prompt.queued" && event.prompt) {
       this.dispatchPrompt(event.prompt);
     } else if (event.kind === "prompt.snapshot" && event.prompts) {
@@ -177,17 +185,22 @@ export class PromptListener {
   private async poll(): Promise<void> {
     try {
       const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/prompts?limit=5`;
+      dbg(`[poll] GET ${url}`);
       const response = await fetch(url, {
         headers: { "x-zhihand-controller-token": this.config.controllerToken },
         signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        dbg(`[poll] Response: ${response.status}`);
+        return;
+      }
       const data = (await response.json()) as { items?: MobilePrompt[] };
+      dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
       for (const prompt of data.items ?? []) {
         this.dispatchPrompt(prompt);
       }
-    } catch {
-      // Polling failure is non-fatal
+    } catch (err) {
+      dbg(`[poll] Error: ${(err as Error).message}`);
     }
   }
 }

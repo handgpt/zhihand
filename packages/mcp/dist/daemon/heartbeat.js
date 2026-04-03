@@ -1,3 +1,4 @@
+import { dbg } from "./logger.js";
 const HEARTBEAT_INTERVAL = 30_000; // 30s
 const HEARTBEAT_RETRY_INTERVAL = 5_000; // 5s on failure
 let heartbeatTimer;
@@ -18,7 +19,9 @@ async function sendHeartbeat(config, online) {
             body.backend = currentMeta.backend;
         if (currentMeta.model)
             body.model = currentMeta.model;
-        const response = await fetch(buildUrl(config), {
+        const url = buildUrl(config);
+        dbg(`[heartbeat] POST ${url} body=${JSON.stringify(body)}`);
+        const response = await fetch(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -27,9 +30,11 @@ async function sendHeartbeat(config, online) {
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(10_000),
         });
+        dbg(`[heartbeat] Response: ${response.status} ${response.statusText}`);
         return response.ok;
     }
-    catch {
+    catch (err) {
+        dbg(`[heartbeat] Error: ${err.message}`);
         return false;
     }
 }

@@ -22,6 +22,7 @@ import { PACKAGE_VERSION } from "../index.ts";
 import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
+import { setDebugEnabled, dbg } from "./logger.ts";
 
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
@@ -49,8 +50,13 @@ async function processPrompt(config: ZhiHandConfig, prompt: MobilePrompt): Promi
 
   const preview = prompt.text.length > 40 ? prompt.text.slice(0, 40) + "..." : prompt.text;
   log(`[relay] Prompt: "${preview}" → dispatching to ${activeBackend}...`);
+  dbg(`[relay] Prompt ID: ${prompt.id}, full text (${prompt.text.length} chars): ${prompt.text}`);
+  dbg(`[relay] Prompt metadata: status=${prompt.status}, edge_id=${prompt.edge_id}, created_at=${prompt.created_at}`);
 
   const result = await dispatchToCLI(activeBackend, prompt.text, log, activeModel ?? undefined);
+  dbg(`[relay] Dispatch result: success=${result.success}, duration=${result.durationMs}ms, text length=${result.text.length}`);
+  dbg(`[relay] Reply text: ${result.text.slice(0, 500)}${result.text.length > 500 ? "..." : ""}`);
+
   const ok = await postReply(config, prompt.id, result.text);
   const dur = (result.durationMs / 1000).toFixed(1);
 
@@ -72,6 +78,7 @@ async function processQueue(config: ZhiHandConfig): Promise<void> {
 
 function onPromptReceived(config: ZhiHandConfig, prompt: MobilePrompt): void {
   promptQueue.push(prompt);
+  dbg(`[queue] Enqueued prompt ${prompt.id}, queue length: ${promptQueue.length}, processing: ${isProcessing}`);
   if (!isProcessing) {
     processQueue(config);
   }
@@ -83,6 +90,7 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
   const url = req.url ?? "";
 
   if (url === "/internal/backend" && req.method === "POST") {
+    dbg(`[api] POST /internal/backend from ${req.socket.remoteAddress}`);
     let body = "";
     const MAX_BODY = 10 * 1024; // 10KB
     req.on("data", (chunk: Buffer) => {
@@ -120,6 +128,7 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
   }
 
   if (url === "/internal/status" && req.method === "GET") {
+    dbg(`[api] GET /internal/status`);
     const effectiveModel = activeBackend ? (activeModel ?? DEFAULT_MODELS[activeBackend]) : null;
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
@@ -171,7 +180,9 @@ export function isAlreadyRunning(): number | null {
 export async function startDaemon(options?: {
   port?: number;
   deviceName?: string;
+  debug?: boolean;
 }): Promise<void> {
+  if (options?.debug) setDebugEnabled(true);
   const port = options?.port ?? (parseInt(process.env.ZHIHAND_PORT ?? "", 10) || DEFAULT_PORT);
 
   // Check if already running
@@ -198,6 +209,7 @@ export async function startDaemon(options?: {
 
   // Log startup info + set brain meta for heartbeat
   log(`ZhiHand v${PACKAGE_VERSION} starting...`);
+  if (options?.debug) log(`[config] Debug mode enabled — verbose logging active`);
   if (activeBackend) {
     const effectiveModel = activeModel ?? DEFAULT_MODELS[activeBackend];
     log(`[config] Backend: ${activeBackend}, Model: ${effectiveModel}`);
@@ -238,6 +250,7 @@ export async function startDaemon(options?: {
     if (req.url === "/mcp" || req.url?.startsWith("/mcp")) {
       try {
         const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        dbg(`[mcp] ${req.method} /mcp session=${sessionId?.slice(0, 8) ?? "(new)"} sessions=${mcpSessions.size}`);
 
         if (sessionId && mcpSessions.has(sessionId)) {
           // Existing session

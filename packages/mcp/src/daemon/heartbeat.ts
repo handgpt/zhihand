@@ -1,4 +1,5 @@
 import type { ZhiHandConfig } from "../core/config.ts";
+import { dbg } from "./logger.ts";
 
 const HEARTBEAT_INTERVAL = 30_000; // 30s
 const HEARTBEAT_RETRY_INTERVAL = 5_000; // 5s on failure
@@ -29,7 +30,9 @@ async function sendHeartbeat(config: ZhiHandConfig, online: boolean): Promise<bo
     const body: Record<string, unknown> = { plugin_online: online };
     if (currentMeta.backend) body.backend = currentMeta.backend;
     if (currentMeta.model) body.model = currentMeta.model;
-    const response = await fetch(buildUrl(config), {
+    const url = buildUrl(config);
+    dbg(`[heartbeat] POST ${url} body=${JSON.stringify(body)}`);
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -38,8 +41,10 @@ async function sendHeartbeat(config: ZhiHandConfig, online: boolean): Promise<bo
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     });
+    dbg(`[heartbeat] Response: ${response.status} ${response.statusText}`);
     return response.ok;
-  } catch {
+  } catch (err) {
+    dbg(`[heartbeat] Error: ${(err as Error).message}`);
     return false;
   }
 }

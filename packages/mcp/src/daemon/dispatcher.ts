@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { ZhiHandConfig, BackendName } from "../core/config.ts";
 import { DEFAULT_MODELS } from "../core/config.ts";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.ts";
+import { dbg } from "./logger.ts";
 
 const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
@@ -286,6 +287,7 @@ function pollGeminiSession(
 
       if (Date.now() - outcomeAt >= SESSION_STABILITY_DELAY) {
         const [status, text] = finalResult ?? outcome;
+        dbg(`[gemini] Session outcome: status=${status}, text (${text.length} chars): ${text.slice(0, 200)}${text.length > 200 ? "..." : ""}`);
         settle({
           text,
           success: status === "success",
@@ -456,6 +458,7 @@ export function dispatchToCLI(
 
   const sessionLabel = canReuse ? `#${session!.promptCount + 1}` : "new";
   log(`[dispatch] Backend: ${backend}, Model: ${resolvedModel}, Session: ${sessionLabel}`);
+  dbg(`[dispatch] Prompt (${prompt.length} chars): ${prompt.slice(0, 200)}${prompt.length > 200 ? "..." : ""}`);
 
   if (backend === "gemini") {
     return dispatchGeminiPersistent(prompt, startTime, log, resolvedModel);
@@ -505,6 +508,7 @@ async function dispatchGeminiPersistent(
     session.promptCount++;
     const turnNum = session.promptCount;
     log(`[gemini] Reusing session — sending prompt #${turnNum}`);
+    dbg(`[gemini] Writing to PTY stdin: ${prompt.slice(0, 200)}${prompt.length > 200 ? "..." : ""}`);
 
     // Write raw prompt to PTY stdin (gemini already has system context from first prompt)
     session.child.stdin?.write(prompt + "\n");
@@ -536,6 +540,10 @@ async function dispatchGeminiPersistent(
 
   const geminiPath = resolveGemini();
   log(`[gemini] Starting new persistent session (model: ${model})`);
+  dbg(`[gemini] Executable: ${geminiPath}`);
+  dbg(`[gemini] PTY wrap: python3 ${PTY_WRAP_SCRIPT}`);
+  dbg(`[gemini] Args: ${JSON.stringify(cliArgs)}`);
+  dbg(`[gemini] Wrapped prompt (${wrappedPrompt.length} chars): ${wrappedPrompt.slice(0, 300)}...`);
 
   const child = spawn("python3", [PTY_WRAP_SCRIPT, geminiPath, ...cliArgs], {
     env,
@@ -593,6 +601,9 @@ async function dispatchCodexWithHistory(
 
   const codexPath = resolveCodex();
   log(`[codex] One-shot dispatch (history: ${conversationHistory.length} turns)`);
+  dbg(`[codex] Executable: ${codexPath}`);
+  dbg(`[codex] Args: ${JSON.stringify(args)}`);
+  dbg(`[codex] Stdin prompt (${fullPrompt.length} chars): ${fullPrompt.slice(0, 300)}...`);
   const child = spawn(codexPath, args, {
     env: process.env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -604,6 +615,7 @@ async function dispatchCodexWithHistory(
   child.stdin?.end();
 
   const result = await collectCodexOutput(child, startTime);
+  dbg(`[codex] Output: success=${result.success}, duration=${result.durationMs}ms, text (${result.text.length} chars): ${result.text.slice(0, 300)}${result.text.length > 300 ? "..." : ""}`);
   recordTurn("user", prompt);
   recordTurn("assistant", result.text);
   return result;
@@ -625,13 +637,17 @@ async function dispatchClaudeWithHistory(
   // --permission-mode bypassPermissions: auto-approve all tool calls (like gemini's --approval-mode yolo)
   // --mcp-config: explicitly pass MCP server URL so Claude finds it regardless of cwd
   const mcpConfig = JSON.stringify({ mcpServers: { zhihand: { type: "http", url: MCP_URL } } });
-  const child = spawn(claudePath, [
+  const claudeArgs = [
     "-p", "-",
     "--model", model,
     "--output-format", "json",
     "--permission-mode", "bypassPermissions",
     "--mcp-config", mcpConfig,
-  ], {
+  ];
+  dbg(`[claude] Executable: ${claudePath}`);
+  dbg(`[claude] Args: ${JSON.stringify(claudeArgs)}`);
+  dbg(`[claude] Stdin prompt (${fullPrompt.length} chars): ${fullPrompt.slice(0, 300)}...`);
+  const child = spawn(claudePath, claudeArgs, {
     env: process.env,
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
@@ -642,8 +658,10 @@ async function dispatchClaudeWithHistory(
   child.stdin?.end();
 
   const raw = await collectChildOutput(child, startTime);
+  dbg(`[claude] Raw output (${raw.text.length} chars): ${raw.text.slice(0, 500)}${raw.text.length > 500 ? "..." : ""}`);
   // Claude --output-format json wraps the result in a JSON envelope — extract the actual text
   const result = extractClaudeResult(raw);
+  dbg(`[claude] Parsed result: success=${result.success}, text (${result.text.length} chars)`);
   recordTurn("user", prompt);
   recordTurn("assistant", result.text);
   return result;
@@ -791,8 +809,10 @@ export async function postReply(
   promptId: string,
   text: string,
 ): Promise<boolean> {
+  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/prompts/${encodeURIComponent(promptId)}/reply`;
+  dbg(`[reply] POST ${url}`);
+  dbg(`[reply] Body (${text.length} chars): ${text.slice(0, 300)}${text.length > 300 ? "..." : ""}`);
   try {
-    const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/prompts/${encodeURIComponent(promptId)}/reply`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -802,8 +822,10 @@ export async function postReply(
       body: JSON.stringify({ role: "assistant", text }),
       signal: AbortSignal.timeout(30_000),
     });
+    dbg(`[reply] Response: ${response.status} ${response.statusText}`);
     return response.ok || (response.status >= 400 && response.status < 500);
-  } catch {
+  } catch (err) {
+    dbg(`[reply] Error: ${(err as Error).message}`);
     return false;
   }
 }

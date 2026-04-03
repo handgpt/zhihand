@@ -1,3 +1,4 @@
+import { dbg } from "./logger.js";
 const SSE_WATCHDOG_TIMEOUT = 120_000; // 120s no data → reconnect (servers may not send keepalive frequently)
 const SSE_RECONNECT_DELAY = 3_000;
 const POLL_INTERVAL = 2_000;
@@ -29,9 +30,12 @@ export class PromptListener {
         }
     }
     dispatchPrompt(prompt) {
-        if (this.processedIds.has(prompt.id))
+        if (this.processedIds.has(prompt.id)) {
+            dbg(`[prompt] Skipping duplicate prompt: ${prompt.id}`);
             return;
+        }
         this.processedIds.add(prompt.id);
+        dbg(`[prompt] Dispatching prompt: id=${prompt.id}, status=${prompt.status}, text="${prompt.text.slice(0, 100)}${prompt.text.length > 100 ? "..." : ""}"`);
         // Prevent unbounded growth
         if (this.processedIds.size > 500) {
             const arr = [...this.processedIds];
@@ -44,6 +48,7 @@ export class PromptListener {
             try {
                 this.sseAbort = new AbortController();
                 const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/events/stream?topic=prompts`;
+                dbg(`[sse] Connecting to ${url}`);
                 const response = await fetch(url, {
                     headers: {
                         "Accept": "text/event-stream",
@@ -52,6 +57,7 @@ export class PromptListener {
                     signal: this.sseAbort.signal,
                 });
                 if (!response.ok) {
+                    dbg(`[sse] Connect failed: ${response.status} ${response.statusText}`);
                     throw new Error(`SSE connect failed: ${response.status}`);
                 }
                 this.sseConnected = true;
@@ -114,6 +120,7 @@ export class PromptListener {
         }, SSE_WATCHDOG_TIMEOUT);
     }
     handleSSEEvent(event) {
+        dbg(`[sse] Event: kind=${event.kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
         if (event.kind === "prompt.queued" && event.prompt) {
             this.dispatchPrompt(event.prompt);
         }
@@ -152,19 +159,23 @@ export class PromptListener {
     async poll() {
         try {
             const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/prompts?limit=5`;
+            dbg(`[poll] GET ${url}`);
             const response = await fetch(url, {
                 headers: { "x-zhihand-controller-token": this.config.controllerToken },
                 signal: AbortSignal.timeout(10_000),
             });
-            if (!response.ok)
+            if (!response.ok) {
+                dbg(`[poll] Response: ${response.status}`);
                 return;
+            }
             const data = (await response.json());
+            dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
             for (const prompt of data.items ?? []) {
                 this.dispatchPrompt(prompt);
             }
         }
-        catch {
-            // Polling failure is non-fatal
+        catch (err) {
+            dbg(`[poll] Error: ${err.message}`);
         }
     }
 }

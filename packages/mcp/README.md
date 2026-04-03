@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.24.1`
+Version: `0.25.0`
 
 ## What is this?
 
@@ -93,6 +93,7 @@ Once configured, your AI agent can use ZhiHand tools directly. For example, in C
 zhihand setup              Interactive setup: pair + detect tools + auto-select + configure MCP + start daemon
 zhihand start              Start daemon (MCP Server + Relay + Config API)
 zhihand start -d           Start daemon in background (logs to ~/.zhihand/daemon.log)
+zhihand start --debug      Start daemon with verbose debug logging
 zhihand stop               Stop the running daemon
 zhihand status             Show daemon status, pairing info, device, backend, and model
 
@@ -113,6 +114,7 @@ zhihand gemini --model pro Switch backend with custom model
 ```bash
 zhihand start              # Start daemon in foreground
 zhihand start -d           # Start daemon in background
+zhihand start --debug      # Start with verbose debug logging
 zhihand stop               # Stop the daemon
 zhihand status             # Check if daemon is running, show device & backend info
 ```
@@ -159,6 +161,7 @@ When you switch:
 | `--model, -m <name>` | Set model alias (e.g. `flash`, `pro`, `sonnet`, `opus`, `gpt-5.4-mini`) |
 | `--port <port>` | Override daemon port (default: 18686) |
 | `-d, --detach` | Run daemon in background |
+| `--debug` | Enable verbose debug logging (all API requests, CLI args, SSE events) |
 | `-h, --help` | Show help |
 
 ### Environment Variables

@@ -1,4 +1,5 @@
 import type { ZhiHandConfig } from "./config.ts";
+import { dbg } from "../daemon/logger.ts";
 
 export type ScrollDirection = "up" | "down" | "left" | "right";
 export type ClipboardAction = "get" | "set";
@@ -122,23 +123,24 @@ export async function enqueueCommand(
   config: ZhiHandConfig,
   command: QueuedControlCommand
 ): Promise<QueuedCommandRecord> {
-  const response = await fetch(
-    `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands`,
-    {
+  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands`;
+  const body = { command: { ...command, message_id: command.messageId ?? nextMessageId() } };
+  dbg(`[cmd] POST ${url} type=${command.type} payload=${JSON.stringify(command.payload ?? {})}`);
+  const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-zhihand-controller-token": config.controllerToken,
       },
-      body: JSON.stringify({
-        command: { ...command, message_id: command.messageId ?? nextMessageId() },
-      }),
+      body: JSON.stringify(body),
     }
   );
   if (!response.ok) {
+    dbg(`[cmd] Enqueue failed: ${response.status} ${response.statusText}`);
     throw new Error(`Enqueue command failed: ${response.status}`);
   }
   const payload = (await response.json()) as { command: QueuedCommandRecord };
+  dbg(`[cmd] Enqueued: id=${payload.command.id}, status=${payload.command.status}`);
   return payload.command;
 }
 
@@ -146,16 +148,18 @@ export async function getCommand(
   config: ZhiHandConfig,
   commandId: string
 ): Promise<QueuedCommandRecord> {
-  const response = await fetch(
-    `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`,
-    {
+  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;
+  dbg(`[cmd] GET ${url}`);
+  const response = await fetch(url, {
       headers: { "x-zhihand-controller-token": config.controllerToken },
     }
   );
   if (!response.ok) {
+    dbg(`[cmd] Get failed: ${response.status}`);
     throw new Error(`Get command failed: ${response.status}`);
   }
   const payload = (await response.json()) as { command: QueuedCommandRecord };
+  dbg(`[cmd] Got: id=${payload.command.id}, status=${payload.command.status}, acked=${!!payload.command.acked_at}`);
   return payload.command;
 }
 

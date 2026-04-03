@@ -1,13 +1,16 @@
 import { getCommand } from "./command.js";
+import { dbg } from "../daemon/logger.js";
 // Per-commandId callback registry for SSE-based ACK
 const ackCallbacks = new Map();
 // Active SSE connection state
 let sseAbortController = null;
 let sseConnected = false;
 export function handleSSEEvent(event) {
+    dbg(`[sse-cmd] Event: kind=${event.kind}, command=${event.command?.id ?? "-"}`);
     if (event.kind === "command.acked" && event.command) {
         const callback = ackCallbacks.get(event.command.id);
         if (callback) {
+            dbg(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}`);
             callback(event.command);
             ackCallbacks.delete(event.command.id);
         }
@@ -103,6 +106,7 @@ export function isSSEConnected() {
  */
 export async function waitForCommandAck(config, options) {
     const timeoutMs = options.timeoutMs ?? 15_000;
+    dbg(`[sse-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
     // Ensure SSE is connected for real-time ACKs
     connectSSE(config);
     return new Promise((resolve, reject) => {

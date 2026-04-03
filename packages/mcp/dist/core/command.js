@@ -1,3 +1,4 @@
+import { dbg } from "../daemon/logger.js";
 let messageCounter = 0;
 function nextMessageId() {
     messageCounter = (messageCounter + 1) % 1000;
@@ -73,30 +74,37 @@ export function createControlCommand(params) {
     }
 }
 export async function enqueueCommand(config, command) {
-    const response = await fetch(`${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands`, {
+    const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands`;
+    const body = { command: { ...command, message_id: command.messageId ?? nextMessageId() } };
+    dbg(`[cmd] POST ${url} type=${command.type} payload=${JSON.stringify(command.payload ?? {})}`);
+    const response = await fetch(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "x-zhihand-controller-token": config.controllerToken,
         },
-        body: JSON.stringify({
-            command: { ...command, message_id: command.messageId ?? nextMessageId() },
-        }),
+        body: JSON.stringify(body),
     });
     if (!response.ok) {
+        dbg(`[cmd] Enqueue failed: ${response.status} ${response.statusText}`);
         throw new Error(`Enqueue command failed: ${response.status}`);
     }
     const payload = (await response.json());
+    dbg(`[cmd] Enqueued: id=${payload.command.id}, status=${payload.command.status}`);
     return payload.command;
 }
 export async function getCommand(config, commandId) {
-    const response = await fetch(`${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`, {
+    const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;
+    dbg(`[cmd] GET ${url}`);
+    const response = await fetch(url, {
         headers: { "x-zhihand-controller-token": config.controllerToken },
     });
     if (!response.ok) {
+        dbg(`[cmd] Get failed: ${response.status}`);
         throw new Error(`Get command failed: ${response.status}`);
     }
     const payload = (await response.json());
+    dbg(`[cmd] Got: id=${payload.command.id}, status=${payload.command.status}, acked=${!!payload.command.acked_at}`);
     return payload.command;
 }
 export function formatAckSummary(action, result) {

@@ -1,6 +1,7 @@
 import type { ZhiHandConfig } from "./config.ts";
 import type { QueuedCommandRecord, WaitForCommandAckResult } from "./command.ts";
 import { getCommand } from "./command.ts";
+import { dbg } from "../daemon/logger.ts";
 
 export interface SSEEvent {
   id: string;
@@ -19,9 +20,11 @@ let sseAbortController: AbortController | null = null;
 let sseConnected = false;
 
 export function handleSSEEvent(event: SSEEvent): void {
+  dbg(`[sse-cmd] Event: kind=${event.kind}, command=${event.command?.id ?? "-"}`);
   if (event.kind === "command.acked" && event.command) {
     const callback = ackCallbacks.get(event.command.id);
     if (callback) {
+      dbg(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}`);
       callback(event.command);
       ackCallbacks.delete(event.command.id);
     }
@@ -130,6 +133,7 @@ export async function waitForCommandAck(
   options: { commandId: string; timeoutMs?: number; signal?: AbortSignal }
 ): Promise<WaitForCommandAckResult> {
   const timeoutMs = options.timeoutMs ?? 15_000;
+  dbg(`[sse-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
 
   // Ensure SSE is connected for real-time ACKs
   connectSSE(config);
