@@ -2,7 +2,7 @@
 
 ZhiHand MCP Server — let AI agents see and control your phone.
 
-Version: `0.20.0`
+Version: `0.23.0`
 
 ## What is this?
 

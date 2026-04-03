@@ -13,7 +13,7 @@ export interface MobilePrompt {
 
 export type PromptHandler = (prompt: MobilePrompt) => void;
 
-const SSE_WATCHDOG_TIMEOUT = 45_000; // 45s no data → reconnect
+const SSE_WATCHDOG_TIMEOUT = 120_000; // 120s no data → reconnect (servers may not send keepalive frequently)
 const SSE_RECONNECT_DELAY = 3_000;
 const POLL_INTERVAL = 2_000;
 
@@ -43,7 +43,7 @@ export class PromptListener {
     this.sseAbort?.abort();
     this.sseAbort = null;
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
   }
@@ -88,35 +88,38 @@ export class PromptListener {
         let buffer = "";
         let watchdog = this.resetWatchdog();
 
-        while (!this.stopped) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          while (!this.stopped) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          // Reset watchdog on any data (including keepalive comments)
-          clearTimeout(watchdog);
-          watchdog = this.resetWatchdog();
+            // Reset watchdog on any data (including keepalive comments)
+            clearTimeout(watchdog);
+            watchdog = this.resetWatchdog();
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
 
-          let eventData = "";
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              eventData += (eventData ? "\n" : "") + line.slice(6);
-            } else if (line === "" && eventData) {
-              try {
-                const event = JSON.parse(eventData);
-                this.handleSSEEvent(event);
-              } catch {
-                // Malformed event
+            let eventData = "";
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                eventData += (eventData ? "\n" : "") + line.slice(6);
+              } else if (line === "" && eventData) {
+                try {
+                  const event = JSON.parse(eventData);
+                  this.handleSSEEvent(event);
+                } catch {
+                  // Malformed event
+                }
+                eventData = "";
               }
-              eventData = "";
             }
           }
+        } finally {
+          // Always clear watchdog — prevents leaked timer from aborting next connection
+          clearTimeout(watchdog);
         }
-
-        clearTimeout(watchdog);
       } catch (err) {
         if (this.stopped) break;
         this.sseConnected = false;
@@ -129,7 +132,7 @@ export class PromptListener {
 
   private resetWatchdog(): ReturnType<typeof setTimeout> {
     return setTimeout(() => {
-      this.log("[sse] Watchdog timeout (45s no data). Reconnecting...");
+      this.log("[sse] Watchdog timeout (120s no data). Reconnecting...");
       this.sseAbort?.abort();
     }, SSE_WATCHDOG_TIMEOUT);
   }
@@ -148,12 +151,25 @@ export class PromptListener {
 
   private startPolling(): void {
     if (this.pollTimer) return;
-    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL);
+    this.schedulePoll();
+  }
+
+  /** Recursive setTimeout: waits for fetch to complete before scheduling next poll. */
+  private schedulePoll(): void {
+    if (this.pollTimer) return;
+    this.pollTimer = setTimeout(async () => {
+      this.pollTimer = null;
+      await this.poll();
+      // Schedule next poll only if SSE is still disconnected
+      if (!this.sseConnected && !this.stopped) {
+        this.schedulePoll();
+      }
+    }, POLL_INTERVAL);
   }
 
   private stopPolling(): void {
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
   }

@@ -2,6 +2,7 @@ const HEARTBEAT_INTERVAL = 30_000; // 30s
 const HEARTBEAT_RETRY_INTERVAL = 5_000; // 5s on failure
 let heartbeatTimer;
 let retryTimer;
+let stopped = true;
 let currentMeta = {};
 /** Update the backend/model metadata that will be sent with the next heartbeat. */
 export function setBrainMeta(meta) {
@@ -40,36 +41,65 @@ export async function sendBrainOffline(config) {
 }
 export function startHeartbeatLoop(config, log) {
     let retrying = false;
+    stopped = false;
     async function beat() {
+        // Skip main-timer beats while retry loop is active (avoids overlap & flapping)
+        if (retrying || stopped)
+            return;
         const ok = await sendBrainOnline(config);
-        if (!ok && !retrying) {
-            retrying = true;
-            log("[heartbeat] Failed, retrying every 5s...");
-            // Fast retry to recover before 40s TTL
-            retryTimer = setInterval(async () => {
-                const recovered = await sendBrainOnline(config);
-                if (recovered) {
-                    retrying = false;
-                    if (retryTimer) {
-                        clearInterval(retryTimer);
-                        retryTimer = undefined;
-                    }
-                    log("[heartbeat] Recovered.");
-                }
-            }, HEARTBEAT_RETRY_INTERVAL);
+        if (stopped)
+            return; // check after await — stopHeartbeatLoop() may have been called
+        if (ok) {
+            scheduleNextBeat();
+            return;
         }
+        // Enter retry mode
+        retrying = true;
+        log("[heartbeat] Failed, retrying every 5s...");
+        scheduleRetry();
+    }
+    /** Recursive setTimeout for retry — waits for fetch to settle before scheduling next. */
+    function scheduleRetry() {
+        if (stopped)
+            return;
+        retryTimer = setTimeout(async () => {
+            if (!retrying || stopped)
+                return;
+            const recovered = await sendBrainOnline(config);
+            if (stopped)
+                return; // check after await
+            if (recovered) {
+                retrying = false;
+                retryTimer = undefined;
+                log("[heartbeat] Recovered.");
+                // Resume normal beat cycle
+                scheduleNextBeat();
+                return;
+            }
+            // Still failing — schedule another retry
+            if (retrying && !stopped)
+                scheduleRetry();
+        }, HEARTBEAT_RETRY_INTERVAL);
+    }
+    /** Schedule next normal heartbeat using setTimeout (not setInterval, to avoid overlap). */
+    function scheduleNextBeat() {
+        if (stopped)
+            return;
+        if (heartbeatTimer)
+            clearTimeout(heartbeatTimer);
+        heartbeatTimer = setTimeout(beat, HEARTBEAT_INTERVAL);
     }
     // Immediate first heartbeat
     beat();
-    heartbeatTimer = setInterval(beat, HEARTBEAT_INTERVAL);
 }
 export function stopHeartbeatLoop() {
+    stopped = true;
     if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
+        clearTimeout(heartbeatTimer);
         heartbeatTimer = undefined;
     }
     if (retryTimer) {
-        clearInterval(retryTimer);
+        clearTimeout(retryTimer);
         retryTimer = undefined;
     }
 }

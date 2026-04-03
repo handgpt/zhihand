@@ -27,6 +27,8 @@ export declare class PromptListener {
     private resetWatchdog;
     private handleSSEEvent;
     private startPolling;
+    /** Recursive setTimeout: waits for fetch to complete before scheduling next poll. */
+    private schedulePoll;
     private stopPolling;
     private poll;
 }

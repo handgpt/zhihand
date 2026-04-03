@@ -5,7 +5,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS } from "../core/config.js";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
-const CLI_TIMEOUT = 120_000; // 120s per prompt
+const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB (for one-shot backends)
 const MAX_HISTORY_TURNS = 20; // keep last N exchanges in conversation history
@@ -208,7 +208,7 @@ function pollGeminiSession(child, startTime, promptText, log, knownSessionFile, 
                 }
                 closeChild(child);
                 settle({
-                    text: "Gemini timed out after 120s.",
+                    text: "Gemini timed out after 5 minutes.",
                     success: false,
                     durationMs: elapsed,
                 });
