@@ -18,7 +18,6 @@ export interface ControlParams {
     appPackage?: string;
     bundleId?: string;
     urlScheme?: string;
-    appName?: string;
 }
 export interface QueuedControlCommand {
     type: string;

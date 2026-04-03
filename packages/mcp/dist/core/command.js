@@ -1,3 +1,4 @@
+import { getStaticContext, isDeviceProfileLoaded } from "./device.js";
 import { dbg } from "../daemon/logger.js";
 let messageCounter = 0;
 function nextMessageId() {
@@ -54,17 +55,34 @@ export function createControlCommand(params) {
             };
         case "open_app": {
             const appPayload = {};
-            if (params.appPackage)
-                appPayload.app_package = params.appPackage;
-            if (params.bundleId)
-                appPayload.bundle_id = params.bundleId;
-            if (params.urlScheme)
-                appPayload.url_scheme = params.urlScheme;
-            if (params.appName)
-                appPayload.app_name = params.appName;
+            const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+            // Only send platform-appropriate fields — Android strict JSON rejects unknown keys
+            if (platform === "android") {
+                // Android: only app_package
+                if (params.appPackage)
+                    appPayload.app_package = params.appPackage;
+            }
+            else if (platform === "ios") {
+                // iOS: bundleId or urlScheme
+                if (params.bundleId)
+                    appPayload.bundle_id = params.bundleId;
+                if (params.urlScheme)
+                    appPayload.url_scheme = params.urlScheme;
+            }
+            else {
+                // Unknown platform: send only what's provided, prefer appPackage
+                if (params.appPackage)
+                    appPayload.app_package = params.appPackage;
+                else if (params.bundleId)
+                    appPayload.bundle_id = params.bundleId;
+                else if (params.urlScheme)
+                    appPayload.url_scheme = params.urlScheme;
+            }
+            // Never send app_name — phone strict JSON parser rejects unknown keys
             if (!appPayload.app_package && !appPayload.bundle_id && !appPayload.url_scheme) {
                 throw new Error("open_app requires at least one of: appPackage, bundleId, urlScheme");
             }
+            dbg(`[cmd] open_app: platform=${platform}, payload=${JSON.stringify(appPayload)}`);
             return { type: "receive_app", payload: appPayload };
         }
         case "screenshot":

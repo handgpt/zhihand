@@ -6,7 +6,7 @@ import { executeControl } from "./tools/control.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
 import { getStaticContext, getDynamicContext, fetchDeviceProfile, buildControlToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
-export const PACKAGE_VERSION = "0.26.0";
+export const PACKAGE_VERSION = "0.26.1";
 export function createServer(deviceName) {
     const server = new McpServer({
         name: "zhihand",

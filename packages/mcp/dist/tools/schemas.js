@@ -22,7 +22,6 @@ export const controlSchema = {
     appPackage: z.string().optional().describe("Android package name, e.g. 'com.tencent.mm'"),
     bundleId: z.string().optional().describe("iOS bundle ID, e.g. 'com.tencent.xin'"),
     urlScheme: z.string().optional().describe("URL scheme, e.g. 'weixin://'"),
-    appName: z.string().optional().describe("Human-readable app name (for logging)"),
 };
 export const screenshotSchema = {};
 export const pairSchema = {

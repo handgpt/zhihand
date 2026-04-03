@@ -16,7 +16,6 @@ export declare const controlSchema: {
     appPackage: z.ZodOptional<z.ZodString>;
     bundleId: z.ZodOptional<z.ZodString>;
     urlScheme: z.ZodOptional<z.ZodString>;
-    appName: z.ZodOptional<z.ZodString>;
 };
 export declare const screenshotSchema: {};
 export declare const pairSchema: {
