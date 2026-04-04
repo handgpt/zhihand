@@ -3,8 +3,6 @@ import { getStaticContext, isDeviceProfileLoaded } from "./device.ts";
 import { dbg } from "../daemon/logger.ts";
 
 export type ScrollDirection = "up" | "down" | "left" | "right";
-export type ClipboardAction = "get" | "set";
-
 export interface ControlParams {
   action: string;
   xRatio?: number;
@@ -13,7 +11,6 @@ export interface ControlParams {
   direction?: ScrollDirection;
   amount?: number;
   keys?: string;
-  clipboardAction?: ClipboardAction;
   durationMs?: number;
   startXRatio?: number;
   startYRatio?: number;
@@ -97,9 +94,11 @@ export function createControlCommand(params: ControlParams): QueuedControlComman
     case "enter":
       return { type: "receive_enter", payload: {} };
     case "clipboard":
+      // App only supports set — payload: { clipboard: "text" }
+      // No get support on device side; clipboardAction is ignored
       return {
         type: "receive_clipboard",
-        payload: { action: params.clipboardAction, text: params.text },
+        payload: { clipboard: params.text ?? "" },
       };
     case "open_app": {
       const appPayload: Record<string, unknown> = {};

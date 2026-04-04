@@ -49,9 +49,11 @@ export function createControlCommand(params) {
         case "enter":
             return { type: "receive_enter", payload: {} };
         case "clipboard":
+            // App only supports set — payload: { clipboard: "text" }
+            // No get support on device side; clipboardAction is ignored
             return {
                 type: "receive_clipboard",
-                payload: { action: params.clipboardAction, text: params.text },
+                payload: { clipboard: params.text ?? "" },
             };
         case "open_app": {
             const appPayload = {};

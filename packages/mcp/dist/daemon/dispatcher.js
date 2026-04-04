@@ -397,7 +397,7 @@ Control the phone. Requires "action" parameter. All coordinates use normalized r
 - home: Press Home button (no params)
 - enter: Press Enter key (no params)
 ${openAppDoc}
-- clipboard: Read/write clipboard. Params: clipboardAction ("get"/"set"), text
+- clipboard: Set clipboard text. Params: text (the content to copy)
 - screenshot: Capture screen via control (same as zhihand_screenshot)
 - wait: Wait before next action. Params: durationMs (default 1000)
 

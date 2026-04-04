@@ -17,7 +17,7 @@ import {
   formatDeviceStatus,
 } from "./core/device.ts";
 
-export const PACKAGE_VERSION = "0.26.3";
+export const PACKAGE_VERSION = "0.26.4";
 
 export function createServer(deviceName?: string): McpServer {
   const server = new McpServer({

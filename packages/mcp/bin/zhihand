@@ -440,35 +440,11 @@ switch (command) {
     await runHidStep("11. Press Back", { action: "back" });
     await pause();
 
-    // ── Phase 4: Clipboard Roundtrip ─────────────────────────
-    console.log("   ── Phase 4: Clipboard Roundtrip ──");
+    // ── Phase 4: Clipboard Set ─────────────────────────────
+    // Note: App only supports clipboard set, not get
+    console.log("   ── Phase 4: Clipboard ──");
     const clipboardTestText = `zhihand_test_${Date.now()}`;
-
-    const setAck = await runHidStep("12. Clipboard set", { action: "clipboard", clipboardAction: "set", text: clipboardTestText });
-    await pause();
-
-    const getAck = await runHidStep("13. Clipboard get", { action: "clipboard", clipboardAction: "get" });
-    await pause();
-
-    // Verify roundtrip
-    totalSteps++;
-    process.stdout.write("   14. Clipboard roundtrip verify... ");
-    if (setAck && getAck) {
-      const returned = getAck.command?.ack_result?.text ?? getAck.command?.ack_result?.clipboard ?? null;
-      if (returned === clipboardTestText) {
-        console.log(`✅ Match: "${clipboardTestText}"`);
-        passed++;
-      } else if (returned) {
-        console.log(`⚠️  Mismatch: sent "${clipboardTestText}", got "${returned}"`);
-        failed++;
-      } else {
-        console.log(`⚠️  No text in ack_result (keys: ${JSON.stringify(Object.keys(getAck.command?.ack_result ?? {}))})`);
-        failed++;
-      }
-    } else {
-      console.log(`⏭️  Skipped (clipboard set/get failed)`);
-      failed++;
-    }
+    await runHidStep("12. Clipboard set", { action: "clipboard", text: clipboardTestText });
 
     // ── Summary ──────────────────────────────────────────────
     console.log(`\n   Result: ${passed}/${totalSteps} passed`);

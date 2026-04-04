@@ -7,7 +7,6 @@ export declare const controlSchema: {
     direction: z.ZodOptional<z.ZodEnum<["up", "down", "left", "right"]>>;
     amount: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     keys: z.ZodOptional<z.ZodString>;
-    clipboardAction: z.ZodOptional<z.ZodEnum<["get", "set"]>>;
     durationMs: z.ZodOptional<z.ZodNumber>;
     startXRatio: z.ZodOptional<z.ZodNumber>;
     startYRatio: z.ZodOptional<z.ZodNumber>;

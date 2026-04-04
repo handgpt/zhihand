@@ -13,7 +13,7 @@ export const controlSchema = {
     direction: z.enum(["up", "down", "left", "right"]).optional().describe("Scroll direction"),
     amount: z.number().int().positive().default(3).optional().describe("Scroll steps (default 3)"),
     keys: z.string().optional().describe("Key combo string, e.g. 'ctrl+c', 'alt+tab'"),
-    clipboardAction: z.enum(["get", "set"]).optional().describe("Clipboard action"),
+    // clipboardAction removed — app only supports set (text via "text" param)
     durationMs: z.number().int().positive().max(10000).optional().describe("Duration in ms: wait (default 1000), longclick (default 800), swipe (default 300). Max 10000"),
     startXRatio: z.number().min(0).max(1).optional().describe("Swipe start X [0,1]"),
     startYRatio: z.number().min(0).max(1).optional().describe("Swipe start Y [0,1]"),

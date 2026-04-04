@@ -1,6 +1,5 @@
 import type { ZhiHandConfig } from "./config.ts";
 export type ScrollDirection = "up" | "down" | "left" | "right";
-export type ClipboardAction = "get" | "set";
 export interface ControlParams {
     action: string;
     xRatio?: number;
@@ -9,7 +8,6 @@ export interface ControlParams {
     direction?: ScrollDirection;
     amount?: number;
     keys?: string;
-    clipboardAction?: ClipboardAction;
     durationMs?: number;
     startXRatio?: number;
     startYRatio?: number;
