@@ -291,6 +291,7 @@ switch (command) {
     const { createControlCommand, enqueueCommand } = await import("../dist/core/command.js");
     const { waitForCommandAck } = await import("../dist/core/sse.js");
     const { fetchScreenshotBinary } = await import("../dist/core/screenshot.js");
+    const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus } = await import("../dist/core/device.js");
 
     let testConfig;
     try {
@@ -305,68 +306,176 @@ switch (command) {
     console.log(`   Device: ${testConfig.credentialId}`);
     console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
 
-    const steps = [
-      { label: "1. Screenshot", type: "screenshot" },
-      { label: "2. Click center", type: "hid", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
-      { label: "3. Swipe up", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
-      { label: "4. Swipe down", type: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
-      { label: "5. Press Home", type: "hid", params: { action: "home" } },
-      { label: "6. Open WeChat", type: "hid", params: { action: "open_app", appPackage: "com.tencent.mm" } },
-      { label: "7. Press Back", type: "hid", params: { action: "back" } },
-      { label: "8. Screenshot", type: "screenshot" },
-    ];
-
     let passed = 0;
     let failed = 0;
+    let totalSteps = 0;
 
-    for (const step of steps) {
-      process.stdout.write(`   ${step.label}... `);
+    // ── Helper: run a single HID step ──
+    async function runHidStep(label, params) {
+      totalSteps++;
+      process.stdout.write(`   ${label}... `);
       const t0 = Date.now();
       try {
-        if (step.type === "screenshot") {
-          // Screenshot: send receive_screenshot command, then fetch binary
-          const cmd = createControlCommand({ action: "screenshot" });
-          const queued = await enqueueCommand(testConfig, cmd);
-          const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-          if (ack.acked) {
-            const buf = await fetchScreenshotBinary(testConfig);
-            const ms = Date.now() - t0;
-            console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${ms}ms)`);
-            passed++;
-          } else {
-            console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
-            failed++;
-          }
+        const cmd = createControlCommand(params);
+        const queued = await enqueueCommand(testConfig, cmd);
+        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+        const ms = Date.now() - t0;
+        if (ack.acked) {
+          const ackStatus = ack.command?.ack_status ?? "ok";
+          const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
+          const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
+          console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
+          passed++;
+          return ack;
         } else {
-          const cmd = createControlCommand(step.params);
-          const queued = await enqueueCommand(testConfig, cmd);
-          const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-          const ms = Date.now() - t0;
-          if (ack.acked) {
-            const ackStatus = ack.command?.ack_status ?? "ok";
-            const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
-            const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
-            console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
-            passed++;
-          } else {
-            console.log(`⏱️  Timeout (${ms}ms)`);
-            failed++;
-          }
+          console.log(`⏱️  Timeout (${ms}ms)`);
+          failed++;
+          return null;
         }
       } catch (err) {
-        const ms = Date.now() - t0;
-        console.log(`❌ ${err.message} (${ms}ms)`);
+        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
         failed++;
+        return null;
       }
-      // Pause between commands: let phone process + user can observe
-      await new Promise((r) => setTimeout(r, 2000));
     }
 
-    console.log(`\n   Result: ${passed}/${steps.length} passed`);
-    if (failed === 0) {
-      console.log("   ✅ Device is responding to all commands!");
+    // ── Helper: run a screenshot step ──
+    async function runScreenshotStep(label) {
+      totalSteps++;
+      process.stdout.write(`   ${label}... `);
+      const t0 = Date.now();
+      try {
+        const cmd = createControlCommand({ action: "screenshot" });
+        const queued = await enqueueCommand(testConfig, cmd);
+        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+        if (ack.acked) {
+          const buf = await fetchScreenshotBinary(testConfig);
+          const ms = Date.now() - t0;
+          console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${ms}ms)`);
+          passed++;
+        } else {
+          console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
+          failed++;
+        }
+      } catch (err) {
+        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
+        failed++;
+      }
+    }
+
+    const pause = () => new Promise((r) => setTimeout(r, 1500));
+
+    // ── Phase 1: Device Profile ──────────────────────────────
+    console.log("   ── Phase 1: Device Info ──");
+    totalSteps++;
+    process.stdout.write("   1. Fetch device profile... ");
+    {
+      const t0 = Date.now();
+      try {
+        await fetchDeviceProfile(testConfig);
+        const ms = Date.now() - t0;
+        if (isDeviceProfileLoaded()) {
+          const s = getStaticContext();
+          console.log(`✅ ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
+          passed++;
+        } else {
+          console.log(`⚠️  Loaded but empty (${ms}ms)`);
+          failed++;
+        }
+      } catch (err) {
+        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
+        failed++;
+      }
+    }
+
+    totalSteps++;
+    process.stdout.write("   2. Device status fields... ");
+    {
+      try {
+        const status = formatDeviceStatus();
+        const ignoredDefaults = new Set(["unknown", "0x0", "-1% (unknown)", "0"]);
+        const fields = Object.keys(status).filter((k) => {
+          const v = status[k];
+          if (v === null || v === undefined) return false;
+          if (ignoredDefaults.has(String(v))) return false;
+          return true;
+        });
+        console.log(`✅ ${fields.length} fields (${fields.join(", ")})`);
+        passed++;
+      } catch (err) {
+        console.log(`❌ ${err.message}`);
+        failed++;
+      }
+    }
+
+    await pause();
+
+    // ── Phase 2: Screenshot + Basic HID ──────────────────────
+    console.log("   ── Phase 2: Screenshot + HID ──");
+    await runScreenshotStep("3. Screenshot");
+    await pause();
+    await runHidStep("4. Click center", { action: "click", xRatio: 0.5, yRatio: 0.5 });
+    await pause();
+    await runHidStep("5. Swipe up", { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 });
+    await pause();
+    await runHidStep("6. Swipe down", { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 });
+    await pause();
+    await runHidStep("7. Scroll down", { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "down", amount: 3 });
+    await pause();
+    await runHidStep("8. Scroll up", { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "up", amount: 3 });
+    await pause();
+
+    // ── Phase 3: App + Navigation ────────────────────────────
+    console.log("   ── Phase 3: App + Navigation ──");
+    await runHidStep("9. Press Home", { action: "home" });
+    await pause();
+    {
+      const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "android";
+      const openParams = platform === "ios"
+        ? { action: "open_app", bundleId: "com.tencent.xin" }
+        : { action: "open_app", appPackage: "com.tencent.mm" };
+      await runHidStep(`10. Open WeChat (${platform})`, openParams);
+    }
+    await pause();
+    await runHidStep("11. Press Back", { action: "back" });
+    await pause();
+
+    // ── Phase 4: Clipboard Roundtrip ─────────────────────────
+    console.log("   ── Phase 4: Clipboard Roundtrip ──");
+    const clipboardTestText = `zhihand_test_${Date.now()}`;
+
+    const setAck = await runHidStep("12. Clipboard set", { action: "clipboard", clipboardAction: "set", text: clipboardTestText });
+    await pause();
+
+    const getAck = await runHidStep("13. Clipboard get", { action: "clipboard", clipboardAction: "get" });
+    await pause();
+
+    // Verify roundtrip
+    totalSteps++;
+    process.stdout.write("   14. Clipboard roundtrip verify... ");
+    if (setAck && getAck) {
+      const returned = getAck.command?.ack_result?.text ?? getAck.command?.ack_result?.clipboard ?? null;
+      if (returned === clipboardTestText) {
+        console.log(`✅ Match: "${clipboardTestText}"`);
+        passed++;
+      } else if (returned) {
+        console.log(`⚠️  Mismatch: sent "${clipboardTestText}", got "${returned}"`);
+        failed++;
+      } else {
+        console.log(`⚠️  No text in ack_result (keys: ${JSON.stringify(Object.keys(getAck.command?.ack_result ?? {}))})`);
+        failed++;
+      }
     } else {
-      console.log("   ⚠️  Some commands failed. Check phone connectivity.");
+      console.log(`⏭️  Skipped (clipboard set/get failed)`);
+      failed++;
+    }
+
+    // ── Summary ──────────────────────────────────────────────
+    console.log(`\n   Result: ${passed}/${totalSteps} passed`);
+    if (failed === 0) {
+      console.log("   ✅ All tests passed! Device is fully responsive.");
+    } else {
+      console.log(`   ⚠️  ${failed} test(s) failed. Check phone connectivity.`);
     }
     process.exit(failed > 0 ? 1 : 0);
   }
