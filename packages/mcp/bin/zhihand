@@ -53,7 +53,10 @@ Usage:
   zhihand pair               Pair with a phone device
   zhihand detect             Detect available CLI tools
 
-  zhihand test               Test device connectivity (sends click + type commands)
+  zhihand list               List all available tests with IDs
+  zhihand test               Run all safe device tests
+  zhihand test <ids>         Run specific test(s), e.g. 'zhihand test 4' or '4,9,20'
+  zhihand test all           Run ALL tests (including unsafe, e.g. power button)
   zhihand serve              Start MCP Server (stdio mode, backward compat)
 
 Options:
@@ -286,6 +289,7 @@ switch (command) {
     break;
   }
 
+  case "list":
   case "test": {
     const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
     const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
@@ -293,6 +297,89 @@ switch (command) {
     const { fetchScreenshotBinary } = await import("../dist/core/screenshot.js");
     const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus } = await import("../dist/core/device.js");
 
+    // ── Test Registry ────────────────────────────────────────
+    // Kind: "profile" | "status" | "screenshot" | "hid" | "system"
+    // Platform: undefined | "android" | "ios" (skipped on non-matching)
+    // Unsafe: won't run in full-suite unless explicitly requested
+    const REGISTRY = [
+      // Phase A — Device Info API
+      { id: 1, phase: "Device Info", label: "Fetch device profile", kind: "profile" },
+      { id: 2, phase: "Device Info", label: "Device status fields", kind: "status" },
+      // Phase B — Screenshot
+      { id: 3, phase: "Screenshot", label: "Screenshot", kind: "screenshot" },
+      // Phase C — Tap / Touch
+      { id: 4, phase: "Tap/Touch", label: "Click center", kind: "hid", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
+      { id: 5, phase: "Tap/Touch", label: "Double click", kind: "hid", params: { action: "doubleclick", xRatio: 0.5, yRatio: 0.5 } },
+      { id: 6, phase: "Tap/Touch", label: "Long click (800ms)", kind: "hid", params: { action: "longclick", xRatio: 0.5, yRatio: 0.5, durationMs: 800 } },
+      { id: 7, phase: "Tap/Touch", label: "Right click", kind: "hid", params: { action: "rightclick", xRatio: 0.5, yRatio: 0.5 } },
+      { id: 8, phase: "Tap/Touch", label: "Middle click", kind: "hid", params: { action: "middleclick", xRatio: 0.5, yRatio: 0.5 } },
+      // Phase D — Swipe / Scroll
+      { id: 9, phase: "Swipe/Scroll", label: "Swipe up", kind: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
+      { id: 10, phase: "Swipe/Scroll", label: "Swipe down", kind: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
+      { id: 11, phase: "Swipe/Scroll", label: "Swipe left", kind: "hid", params: { action: "swipe", startXRatio: 0.7, startYRatio: 0.5, endXRatio: 0.3, endYRatio: 0.5, durationMs: 300 } },
+      { id: 12, phase: "Swipe/Scroll", label: "Swipe right", kind: "hid", params: { action: "swipe", startXRatio: 0.3, startYRatio: 0.5, endXRatio: 0.7, endYRatio: 0.5, durationMs: 300 } },
+      { id: 13, phase: "Swipe/Scroll", label: "Scroll down", kind: "hid", params: { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "down", amount: 3 } },
+      { id: 14, phase: "Swipe/Scroll", label: "Scroll up", kind: "hid", params: { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "up", amount: 3 } },
+      // Phase E — Text + Keys
+      { id: 15, phase: "Text+Keys", label: "Type text", kind: "hid", params: { action: "type", text: "zhihand" } },
+      { id: 16, phase: "Text+Keys", label: "Enter key", kind: "hid", params: { action: "enter" } },
+      { id: 17, phase: "Text+Keys", label: "Key combo (select all)", kind: "hid", platformAware: "select_all" },
+      // Phase F — App Navigation
+      { id: 18, phase: "Navigation", label: "Press Home", kind: "hid", params: { action: "home" } },
+      { id: 19, phase: "Navigation", label: "Press Back", kind: "hid", params: { action: "back" } },
+      { id: 20, phase: "Navigation", label: "Open WeChat", kind: "hid", platformAware: "open_wechat" },
+      // Phase G — Clipboard
+      { id: 21, phase: "Clipboard", label: "Clipboard set", kind: "hid", platformAware: "clipboard_set" },
+      // Phase H — System Navigation
+      { id: 22, phase: "System Nav", label: "Notification shade", kind: "system", params: { action: "notification" } },
+      { id: 23, phase: "System Nav", label: "Recent apps", kind: "system", params: { action: "recent" } },
+      { id: 24, phase: "System Nav", label: "Search (query='zhihand')", kind: "system", params: { action: "search", text: "zhihand" } },
+      { id: 25, phase: "System Nav", label: "Switch input", kind: "system", params: { action: "switch_input" } },
+      { id: 26, phase: "System Nav", label: "Siri", kind: "system", params: { action: "siri" }, platform: "ios" },
+      { id: 27, phase: "System Nav", label: "Control Center", kind: "system", params: { action: "control_center" }, platform: "ios" },
+      { id: 28, phase: "System Nav", label: "Open browser", kind: "system", params: { action: "open_browser" }, platform: "android" },
+      { id: 29, phase: "System Nav", label: "Shortcut help", kind: "system", params: { action: "shortcut_help" }, platform: "android" },
+      // Phase I — Media
+      { id: 30, phase: "Media", label: "Volume up", kind: "system", params: { action: "volume_up" } },
+      { id: 31, phase: "Media", label: "Volume down", kind: "system", params: { action: "volume_down" } },
+      { id: 32, phase: "Media", label: "Mute toggle", kind: "system", params: { action: "mute" } },
+      { id: 33, phase: "Media", label: "Play/Pause", kind: "system", params: { action: "play_pause" } },
+      { id: 34, phase: "Media", label: "Next track", kind: "system", params: { action: "next_track" } },
+      { id: 35, phase: "Media", label: "Prev track", kind: "system", params: { action: "prev_track" } },
+      { id: 36, phase: "Media", label: "Fast forward", kind: "system", params: { action: "fast_forward" } },
+      { id: 37, phase: "Media", label: "Rewind", kind: "system", params: { action: "rewind" } },
+      { id: 38, phase: "Media", label: "Stop", kind: "system", params: { action: "stop" } },
+      // Phase J — Hardware
+      { id: 39, phase: "Hardware", label: "Brightness up", kind: "system", params: { action: "brightness_up" } },
+      { id: 40, phase: "Hardware", label: "Brightness down", kind: "system", params: { action: "brightness_down" } },
+      { id: 41, phase: "Hardware", label: "Power button (⚠️ may lock screen)", kind: "system", params: { action: "power" }, unsafe: true },
+    ];
+
+    // ── "list" sub-command ───────────────────────────────────
+    if (command === "list") {
+      console.log("📋 ZhiHand Test Registry\n");
+      let currentPhase = "";
+      for (const t of REGISTRY) {
+        if (t.phase !== currentPhase) {
+          console.log(`\n   ── ${t.phase} ──`);
+          currentPhase = t.phase;
+        }
+        const tags = [];
+        if (t.platform) tags.push(`${t.platform}-only`);
+        if (t.unsafe) tags.push("unsafe");
+        const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
+        console.log(`   ${String(t.id).padStart(2)}. ${t.label}${tagStr}`);
+      }
+      console.log(`\n   Total: ${REGISTRY.length} tests`);
+      console.log("\nUsage:");
+      console.log("   zhihand test            # run all safe tests");
+      console.log("   zhihand test 4          # run test #4 only");
+      console.log("   zhihand test 4,9,20     # run tests #4, #9, #20");
+      console.log("   zhihand test all        # run ALL tests (including unsafe)");
+      process.exit(0);
+    }
+
+    // ── "test" sub-command ───────────────────────────────────
     let testConfig;
     try {
       testConfig = resolveTestConfig(values.device ?? process.env.ZHIHAND_DEVICE);
@@ -302,59 +389,88 @@ switch (command) {
       process.exit(1);
     }
 
+    // Parse which tests to run from positional args
+    const filterArg = positionals[1];  // e.g. "4" or "4,9,20" or "all"
+    let selectedIds = null;   // null = default (all safe)
+    let includeUnsafe = false;
+    if (filterArg) {
+      if (filterArg === "all") {
+        includeUnsafe = true;
+      } else {
+        selectedIds = new Set(
+          filterArg.split(",").map((s) => {
+            const trimmed = s.trim();
+            const n = Number(trimmed);
+            // Strict: reject ranges like "4-10" (Number returns NaN), floats, empty
+            return Number.isInteger(n) && n > 0 ? n : NaN;
+          }).filter((n) => !isNaN(n))
+        );
+        if (selectedIds.size === 0) {
+          console.error(`Invalid test IDs: ${filterArg}`);
+          console.error("Run 'zhihand list' to see available tests.");
+          process.exit(1);
+        }
+        // Explicit selection implies user knows what they're doing
+        includeUnsafe = true;
+      }
+    }
+
     console.log("🧪 ZhiHand Device Test");
     console.log(`   Device: ${testConfig.credentialId}`);
     console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
 
+    // Pre-fetch device profile so platform-aware tests work.
+    // Note: platform is read dynamically via getDevicePlatform() so Test 1
+    // (Fetch device profile) can populate it before later tests consume it.
+    try {
+      await fetchDeviceProfile(testConfig);
+    } catch { /* non-fatal — Test 1 will retry and platform will update */ }
+    const getDevicePlatform = () => isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+
     let passed = 0;
     let failed = 0;
+    let skipped = 0;
     let totalSteps = 0;
 
-    // ── Helper: run a single HID step ──
-    async function runHidStep(label, params) {
+    // ── Resolve platform-aware params (evaluated at test time) ──
+    function resolvePlatformAwareParams(variant) {
+      const platform = getDevicePlatform();
+      if (variant === "open_wechat") {
+        return platform === "ios"
+          ? { action: "open_app", bundleId: "com.tencent.xin" }
+          : { action: "open_app", appPackage: "com.tencent.mm" };
+      }
+      if (variant === "clipboard_set") {
+        return { action: "clipboard", text: `zhihand_test_${Date.now()}` };
+      }
+      if (variant === "select_all") {
+        const keys = platform === "ios" ? "cmd+a" : "ctrl+a";
+        return { action: "keycombo", keys };
+      }
+      return null;
+    }
+
+    // ── Test runners (shared ACK logic) ──
+    async function runCommandTest(t, command) {
       totalSteps++;
-      process.stdout.write(`   ${label}... `);
+      process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
       const t0 = Date.now();
       try {
-        const cmd = createControlCommand(params);
-        const queued = await enqueueCommand(testConfig, cmd);
+        const queued = await enqueueCommand(testConfig, command);
         const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
         const ms = Date.now() - t0;
         if (ack.acked) {
           const ackStatus = ack.command?.ack_status ?? "ok";
-          const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
           const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
-          console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
-          passed++;
-          return ack;
+          if (ackStatus === "ok") {
+            console.log(`✅ (${ms}ms)${resultInfo}`);
+            passed++;
+          } else {
+            console.log(`❌ [${ackStatus}] (${ms}ms)${resultInfo}`);
+            failed++;
+          }
         } else {
           console.log(`⏱️  Timeout (${ms}ms)`);
-          failed++;
-          return null;
-        }
-      } catch (err) {
-        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
-        failed++;
-        return null;
-      }
-    }
-
-    // ── Helper: run a screenshot step ──
-    async function runScreenshotStep(label) {
-      totalSteps++;
-      process.stdout.write(`   ${label}... `);
-      const t0 = Date.now();
-      try {
-        const cmd = createControlCommand({ action: "screenshot" });
-        const queued = await enqueueCommand(testConfig, cmd);
-        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-        if (ack.acked) {
-          const buf = await fetchScreenshotBinary(testConfig);
-          const ms = Date.now() - t0;
-          console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${ms}ms)`);
-          passed++;
-        } else {
-          console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
           failed++;
         }
       } catch (err) {
@@ -363,134 +479,129 @@ switch (command) {
       }
     }
 
-    // ── Helper: run a system command step ──
-    async function runSystemStep(label, params) {
-      totalSteps++;
-      process.stdout.write(`   ${label}... `);
-      const t0 = Date.now();
-      try {
-        const cmd = createSystemCommand(params);
-        const queued = await enqueueCommand(testConfig, cmd);
-        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-        const ms = Date.now() - t0;
-        if (ack.acked) {
-          const ackStatus = ack.command?.ack_status ?? "ok";
-          const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
-          const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
-          console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
-          passed++;
-          return ack;
-        } else {
-          console.log(`⏱️  Timeout (${ms}ms)`);
-          failed++;
-          return null;
+    async function runSingleTest(t) {
+      // Platform skip (evaluated at test time — Test 1 may have just populated the profile)
+      const currentPlatform = getDevicePlatform();
+      if (t.platform && t.platform !== currentPlatform) {
+        totalSteps++;
+        skipped++;
+        console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  Skipped (${t.platform}-only, device is ${currentPlatform})`);
+        return;
+      }
+
+      switch (t.kind) {
+        case "profile": {
+          totalSteps++;
+          process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
+          const t0 = Date.now();
+          try {
+            await fetchDeviceProfile(testConfig);
+            const ms = Date.now() - t0;
+            if (isDeviceProfileLoaded()) {
+              const s = getStaticContext();
+              console.log(`✅ ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
+              passed++;
+            } else {
+              console.log(`⚠️  Loaded but empty (${ms}ms)`);
+              failed++;
+            }
+          } catch (err) {
+            console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
+            failed++;
+          }
+          break;
         }
-      } catch (err) {
-        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
-        failed++;
-        return null;
+        case "status": {
+          totalSteps++;
+          process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
+          try {
+            const status = formatDeviceStatus();
+            const ignoredDefaults = new Set(["unknown", "0x0", "-1% (unknown)", "0"]);
+            const fields = Object.keys(status).filter((k) => {
+              const v = status[k];
+              if (v === null || v === undefined) return false;
+              if (ignoredDefaults.has(String(v))) return false;
+              return true;
+            });
+            console.log(`✅ ${fields.length} fields (${fields.join(", ")})`);
+            passed++;
+          } catch (err) {
+            console.log(`❌ ${err.message}`);
+            failed++;
+          }
+          break;
+        }
+        case "screenshot": {
+          totalSteps++;
+          process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
+          const t0 = Date.now();
+          try {
+            const cmd = createControlCommand({ action: "screenshot" });
+            const queued = await enqueueCommand(testConfig, cmd);
+            const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+            if (ack.acked) {
+              const buf = await fetchScreenshotBinary(testConfig);
+              console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${Date.now() - t0}ms)`);
+              passed++;
+            } else {
+              console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
+              failed++;
+            }
+          } catch (err) {
+            console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
+            failed++;
+          }
+          break;
+        }
+        case "hid": {
+          const params = t.platformAware ? resolvePlatformAwareParams(t.platformAware) : t.params;
+          await runCommandTest(t, createControlCommand(params));
+          break;
+        }
+        case "system": {
+          await runCommandTest(t, createSystemCommand(t.params));
+          break;
+        }
       }
     }
 
     const pause = () => new Promise((r) => setTimeout(r, 1500));
 
-    // ── Phase 1: Device Profile ──────────────────────────────
-    console.log("   ── Phase 1: Device Info ──");
-    totalSteps++;
-    process.stdout.write("   1. Fetch device profile... ");
-    {
-      const t0 = Date.now();
-      try {
-        await fetchDeviceProfile(testConfig);
-        const ms = Date.now() - t0;
-        if (isDeviceProfileLoaded()) {
-          const s = getStaticContext();
-          console.log(`✅ ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
-          passed++;
-        } else {
-          console.log(`⚠️  Loaded but empty (${ms}ms)`);
-          failed++;
-        }
-      } catch (err) {
-        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
-        failed++;
+    // Select tests to run
+    const toRun = REGISTRY.filter((t) => {
+      if (selectedIds) return selectedIds.has(t.id);
+      if (t.unsafe && !includeUnsafe) return false;
+      return true;
+    });
+
+    if (toRun.length === 0) {
+      console.error("No matching tests.");
+      console.error("Run 'zhihand list' to see available tests.");
+      process.exit(1);
+    }
+
+    // Warn about missing IDs
+    if (selectedIds) {
+      const foundIds = new Set(toRun.map((t) => t.id));
+      const missing = [...selectedIds].filter((id) => !foundIds.has(id));
+      if (missing.length) {
+        console.warn(`⚠️  Unknown test IDs: ${missing.join(", ")}`);
       }
     }
 
-    totalSteps++;
-    process.stdout.write("   2. Device status fields... ");
-    {
-      try {
-        const status = formatDeviceStatus();
-        const ignoredDefaults = new Set(["unknown", "0x0", "-1% (unknown)", "0"]);
-        const fields = Object.keys(status).filter((k) => {
-          const v = status[k];
-          if (v === null || v === undefined) return false;
-          if (ignoredDefaults.has(String(v))) return false;
-          return true;
-        });
-        console.log(`✅ ${fields.length} fields (${fields.join(", ")})`);
-        passed++;
-      } catch (err) {
-        console.log(`❌ ${err.message}`);
-        failed++;
+    let currentPhase = "";
+    for (let i = 0; i < toRun.length; i++) {
+      const t = toRun[i];
+      if (t.phase !== currentPhase) {
+        console.log(`   ── ${t.phase} ──`);
+        currentPhase = t.phase;
       }
+      await runSingleTest(t);
+      if (i < toRun.length - 1) await pause();
     }
-
-    await pause();
-
-    // ── Phase 2: Screenshot + Basic HID ──────────────────────
-    console.log("   ── Phase 2: Screenshot + HID ──");
-    await runScreenshotStep("3. Screenshot");
-    await pause();
-    await runHidStep("4. Click center", { action: "click", xRatio: 0.5, yRatio: 0.5 });
-    await pause();
-    await runHidStep("5. Swipe up", { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 });
-    await pause();
-    await runHidStep("6. Swipe down", { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 });
-    await pause();
-    await runHidStep("7. Scroll down", { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "down", amount: 3 });
-    await pause();
-    await runHidStep("8. Scroll up", { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "up", amount: 3 });
-    await pause();
-
-    // ── Phase 3: App + Navigation ────────────────────────────
-    console.log("   ── Phase 3: App + Navigation ──");
-    await runHidStep("9. Press Home", { action: "home" });
-    await pause();
-    {
-      const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "android";
-      const openParams = platform === "ios"
-        ? { action: "open_app", bundleId: "com.tencent.xin" }
-        : { action: "open_app", appPackage: "com.tencent.mm" };
-      await runHidStep(`10. Open WeChat (${platform})`, openParams);
-    }
-    await pause();
-    await runHidStep("11. Press Back", { action: "back" });
-    await pause();
-
-    // ── Phase 4: Clipboard Set ─────────────────────────────
-    // Note: App only supports clipboard set, not get
-    console.log("   ── Phase 4: Clipboard ──");
-    const clipboardTestText = `zhihand_test_${Date.now()}`;
-    await runHidStep("12. Clipboard set", { action: "clipboard", text: clipboardTestText });
-    await pause();
-
-    // ── Phase 5: System & Media (zhihand_system) ─────────────
-    console.log("   ── Phase 5: System & Media ──");
-    await runSystemStep("13. Notification shade", { action: "notification" });
-    await pause();
-    await runSystemStep("14. Recent apps", { action: "recent" });
-    await pause();
-    await runHidStep("15. Home (dismiss)", { action: "home" });
-    await pause();
-    await runSystemStep("16. Volume up", { action: "volume_up" });
-    await pause();
-    await runSystemStep("17. Volume down", { action: "volume_down" });
-    await pause();
 
     // ── Summary ──────────────────────────────────────────────
-    console.log(`\n   Result: ${passed}/${totalSteps} passed`);
+    console.log(`\n   Result: ${passed}/${totalSteps} passed, ${failed} failed, ${skipped} skipped`);
     if (failed === 0) {
       console.log("   ✅ All tests passed! Device is fully responsive.");
     } else {

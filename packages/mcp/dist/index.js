@@ -7,7 +7,7 @@ import { executeSystem } from "./tools/system.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
 import { getStaticContext, getDynamicContext, fetchDeviceProfile, buildControlToolDescription, buildSystemToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
-export const PACKAGE_VERSION = "0.27.0";
+export const PACKAGE_VERSION = "0.28.0";
 export function createServer(deviceName) {
     const server = new McpServer({
         name: "zhihand",
