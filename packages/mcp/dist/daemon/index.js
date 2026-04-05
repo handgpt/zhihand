@@ -11,7 +11,7 @@ import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta }
 import { PromptListener } from "./prompt-listener.js";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.js";
 import { setDebugEnabled, dbg } from "./logger.js";
-import { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded } from "../core/device.js";
+import { registry } from "../core/registry.js";
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
 // ── State ──────────────────────────────────────────────────
@@ -190,10 +190,11 @@ export async function startDaemon(options) {
     else {
         log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
     }
-    // Fetch device profile (platform, model, screen size) — non-blocking, best-effort
-    await fetchDeviceProfile(config);
-    if (isDeviceProfileLoaded()) {
-        const s = getStaticContext();
+    // Init the multi-device registry (single-device in daemon context) and log profile.
+    await registry.init();
+    const defaultState = registry.resolveDefault();
+    if (defaultState?.profile) {
+        const s = defaultState.profile;
         log(`[device] ${s.platform} ${s.model} (${s.osVersion}), ${s.screenWidthPx}x${s.screenHeightPx}, ${s.locale}`);
     }
     else {
@@ -244,7 +245,7 @@ export async function startDaemon(options) {
                 }
                 else if (!sessionId) {
                     // New session: create dedicated McpServer + Transport
-                    const server = createMcpServer(options?.deviceName);
+                    const server = createMcpServer();
                     const transport = new StreamableHTTPServerTransport({
                         sessionIdGenerator: () => randomUUID(),
                         onsessioninitialized: (sid) => {
@@ -341,6 +342,7 @@ export async function startDaemon(options) {
             catch { /* ignore */ }
         }
         mcpSessions.clear();
+        registry.shutdown();
         httpServer.close();
         removePid();
         log("Daemon stopped.");

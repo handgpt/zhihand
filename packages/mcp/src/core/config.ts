@@ -2,20 +2,31 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-export interface DeviceCredential {
-  credentialId: string;
-  controllerToken: string;
+// ── Types ──────────────────────────────────────────────────
+
+export type DevicePlatform = "ios" | "android" | "unknown";
+
+export interface DeviceRecord {
+  credential_id: string;
+  controller_token: string;
   endpoint: string;
-  deviceName?: string;
-  pairedAt?: string;
+  label: string;
+  platform: DevicePlatform;
+  paired_at: string;
+  last_seen_at: string;
 }
 
-export interface CredentialStore {
-  default: string;
-  devices: Record<string, DeviceCredential>;
+export interface ZhihandConfig {
+  schema_version: 2;
+  default_credential_id: string | null;
+  devices: Record<string, DeviceRecord>;
 }
 
-export interface ZhiHandConfig {
+/**
+ * Legacy-shaped config passed to HTTP callers (command/sse/device endpoints).
+ * Corresponds to what the old single-device code called ZhiHandConfig.
+ */
+export interface ZhiHandRuntimeConfig {
   controlPlaneEndpoint: string;
   credentialId: string;
   controllerToken: string;
@@ -27,24 +38,20 @@ export type BackendName = "claudecode" | "codex" | "gemini" | "openclaw";
 
 export interface BackendConfig {
   activeBackend: BackendName | null;
-  model?: string | null;          // user-selected model alias (e.g. "flash", "sonnet", "o4-mini")
+  model?: string | null;
 }
 
-/**
- * Default model aliases per backend.
- * These are generic aliases that the respective CLIs resolve to the latest version:
- *   - Gemini CLI: "flash" → latest flash model (e.g. gemini-2.5-flash)
- *   - Claude Code: "sonnet" → latest sonnet (e.g. claude-sonnet-4-20250514)
- *   - Codex CLI: requires full model name, no alias support
- */
 export const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string> = {
-  gemini: "flash",            // Gemini CLI resolves to latest flash
-  claudecode: "sonnet",       // Claude Code resolves to latest sonnet
-  codex: "gpt-5.4-mini",      // Codex default: latest GPT mini model
+  gemini: "flash",
+  claudecode: "sonnet",
+  codex: "gpt-5.4-mini",
 };
 
+// ── Paths ──────────────────────────────────────────────────
+
 const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
-const CREDENTIALS_PATH = path.join(ZHIHAND_DIR, "credentials.json");
+const CONFIG_PATH = path.join(ZHIHAND_DIR, "config.json");
+const LEGACY_CREDENTIALS_PATH = path.join(ZHIHAND_DIR, "credentials.json");
 const STATE_PATH = path.join(ZHIHAND_DIR, "state.json");
 const BACKEND_PATH = path.join(ZHIHAND_DIR, "backend.json");
 
@@ -56,46 +63,128 @@ export function ensureZhiHandDir(): void {
   fs.mkdirSync(ZHIHAND_DIR, { recursive: true, mode: 0o700 });
 }
 
-export function loadCredentialStore(): CredentialStore | null {
-  if (!fs.existsSync(CREDENTIALS_PATH)) return null;
+// ── v2 config I/O ──────────────────────────────────────────
+
+let legacyWarningPrinted = false;
+
+function emptyConfig(): ZhihandConfig {
+  return { schema_version: 2, default_credential_id: null, devices: {} };
+}
+
+export function loadConfig(): ZhihandConfig {
+  if (!fs.existsSync(CONFIG_PATH)) {
+    if (!legacyWarningPrinted && fs.existsSync(LEGACY_CREDENTIALS_PATH)) {
+      legacyWarningPrinted = true;
+      process.stderr.write(
+        "[zhihand] legacy credentials.json detected — run 'zhihand pair' to re-pair on v0.30 schema\n",
+      );
+    }
+    return emptyConfig();
+  }
   try {
-    return JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8")) as CredentialStore;
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) as Partial<ZhihandConfig>;
+    if (raw && raw.schema_version === 2) {
+      return {
+        schema_version: 2,
+        default_credential_id: raw.default_credential_id ?? null,
+        devices: raw.devices ?? {},
+      };
+    }
   } catch {
-    return null;
+    // fall through
   }
+  return emptyConfig();
 }
 
-export function loadDefaultCredential(): DeviceCredential | null {
-  const store = loadCredentialStore();
-  if (!store) return null;
-  return store.devices[store.default] ?? null;
-}
-
-export function saveCredential(name: string, cred: DeviceCredential, setDefault: boolean = true): void {
+export function saveConfig(cfg: ZhihandConfig): void {
   ensureZhiHandDir();
-  let store = loadCredentialStore() ?? { default: name, devices: {} };
-  store.devices[name] = cred;
-  if (setDefault) store.default = name;
-  fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(store, null, 2), { mode: 0o600 });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 });
 }
 
-export function resolveConfig(deviceName?: string): ZhiHandConfig {
-  const store = loadCredentialStore();
-  if (!store) {
-    throw new Error("No ZhiHand credentials found. Run 'zhihand pair' first.");
+export function addDevice(record: DeviceRecord, makeDefault?: boolean): void {
+  const cfg = loadConfig();
+  cfg.devices[record.credential_id] = record;
+  if (makeDefault || cfg.default_credential_id === null) {
+    cfg.default_credential_id = record.credential_id;
   }
-  const name = deviceName ?? store.default;
-  const cred = store.devices[name];
-  if (!cred) {
-    throw new Error(`Device '${name}' not found. Available: ${Object.keys(store.devices).join(", ")}`);
+  saveConfig(cfg);
+}
+
+export function removeDevice(credentialId: string): void {
+  const cfg = loadConfig();
+  delete cfg.devices[credentialId];
+  if (cfg.default_credential_id === credentialId) {
+    const remaining = Object.keys(cfg.devices);
+    cfg.default_credential_id = remaining[0] ?? null;
   }
+  saveConfig(cfg);
+}
+
+export function renameDevice(credentialId: string, label: string): void {
+  const cfg = loadConfig();
+  const r = cfg.devices[credentialId];
+  if (!r) throw new Error(`Device '${credentialId}' not found`);
+  r.label = label;
+  saveConfig(cfg);
+}
+
+export function setDefaultDevice(credentialId: string): void {
+  const cfg = loadConfig();
+  if (!cfg.devices[credentialId]) {
+    throw new Error(`Device '${credentialId}' not found`);
+  }
+  cfg.default_credential_id = credentialId;
+  saveConfig(cfg);
+}
+
+export function updateLastSeen(credentialId: string, iso: string): void {
+  const cfg = loadConfig();
+  const r = cfg.devices[credentialId];
+  if (!r) return;
+  r.last_seen_at = iso;
+  saveConfig(cfg);
+}
+
+export function getDeviceRecord(credentialId: string): DeviceRecord | null {
+  const cfg = loadConfig();
+  return cfg.devices[credentialId] ?? null;
+}
+
+export function listDeviceRecords(): DeviceRecord[] {
+  const cfg = loadConfig();
+  return Object.values(cfg.devices);
+}
+
+// ── Runtime config resolution ─────────────────────────────
+
+export function recordToRuntimeConfig(r: DeviceRecord): ZhiHandRuntimeConfig {
   return {
-    controlPlaneEndpoint: cred.endpoint,
-    credentialId: cred.credentialId,
-    controllerToken: cred.controllerToken,
+    controlPlaneEndpoint: r.endpoint,
+    credentialId: r.credential_id,
+    controllerToken: r.controller_token,
     timeoutMs: 10_000,
   };
 }
+
+/**
+ * Resolve a runtime config for HTTP calls. If credentialId provided, look it up;
+ * else use default_credential_id; else throw.
+ */
+export function resolveConfig(credentialId?: string): ZhiHandRuntimeConfig {
+  const cfg = loadConfig();
+  const id = credentialId ?? cfg.default_credential_id;
+  if (!id) {
+    throw new Error("No default device — run zhihand pair");
+  }
+  const r = cfg.devices[id];
+  if (!r) {
+    const known = Object.keys(cfg.devices).join(", ") || "(none)";
+    throw new Error(`Device '${id}' not found. Known: ${known}`);
+  }
+  return recordToRuntimeConfig(r);
+}
+
+// ── State / backend ───────────────────────────────────────
 
 export function loadState<T = unknown>(): T | null {
   if (!fs.existsSync(STATE_PATH)) return null;

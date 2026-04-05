@@ -5,7 +5,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODELS } from "../core/config.js";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.js";
-import { getStaticContext, isDeviceProfileLoaded } from "../core/device.js";
+import { registry } from "../core/registry.js";
 import { dbg } from "./logger.js";
 const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
 const SIGKILL_DELAY = 2_000; // 2s after SIGTERM
@@ -357,7 +357,8 @@ export async function killActiveChild() {
  * so the AI sends correct platform-specific parameters (e.g. appPackage vs bundleId).
  */
 function buildSystemContext() {
-    const static_ = isDeviceProfileLoaded() ? getStaticContext() : null;
+    const defaultState = registry.resolveDefault();
+    const static_ = defaultState?.profile ?? null;
     const deviceLine = static_
         ? `Connected device: ${static_.platform} ${static_.model} (${static_.osVersion}), ${static_.screenWidthPx}x${static_.screenHeightPx}, ${static_.formFactor}, ${static_.locale}`
         : "Connected device: unknown platform";

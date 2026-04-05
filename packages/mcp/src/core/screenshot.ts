@@ -1,4 +1,4 @@
-import type { ZhiHandConfig } from "./config.ts";
+import type { ZhiHandRuntimeConfig } from "./config.ts";
 import { dbg } from "../daemon/logger.ts";
 
 // Snapshot is considered stale if the server-reported age exceeds this
@@ -30,7 +30,7 @@ function parseIntHeader(h: string | null): number {
   return Number.isFinite(n) ? n : -1;
 }
 
-export async function fetchScreenshot(config: ZhiHandConfig): Promise<ScreenshotResult> {
+export async function fetchScreenshot(config: ZhiHandRuntimeConfig): Promise<ScreenshotResult> {
   const controller = new AbortController();
   const timeoutMs = config.timeoutMs ?? 10_000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -78,7 +78,7 @@ export async function fetchScreenshot(config: ZhiHandConfig): Promise<Screenshot
 
 // Backward-compatible wrapper — returns only the Buffer.
 // New code should prefer fetchScreenshot() for staleness info.
-export async function fetchScreenshotBinary(config: ZhiHandConfig): Promise<Buffer> {
+export async function fetchScreenshotBinary(config: ZhiHandRuntimeConfig): Promise<Buffer> {
   const res = await fetchScreenshot(config);
   return res.buffer;
 }

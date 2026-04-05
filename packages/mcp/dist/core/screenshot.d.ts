@@ -1,4 +1,4 @@
-import type { ZhiHandConfig } from "./config.ts";
+import type { ZhiHandRuntimeConfig } from "./config.ts";
 export declare function getSnapshotStaleThresholdMs(): number;
 export interface ScreenshotResult {
     buffer: Buffer;
@@ -9,5 +9,5 @@ export interface ScreenshotResult {
     sequence: number;
     stale: boolean;
 }
-export declare function fetchScreenshot(config: ZhiHandConfig): Promise<ScreenshotResult>;
-export declare function fetchScreenshotBinary(config: ZhiHandConfig): Promise<Buffer>;
+export declare function fetchScreenshot(config: ZhiHandRuntimeConfig): Promise<ScreenshotResult>;
+export declare function fetchScreenshotBinary(config: ZhiHandRuntimeConfig): Promise<Buffer>;

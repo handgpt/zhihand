@@ -1,5 +1,4 @@
-import type { ZhiHandConfig } from "./config.ts";
-import { getStaticContext, isDeviceProfileLoaded } from "./device.ts";
+import type { ZhiHandRuntimeConfig } from "./config.ts";
 import { dbg } from "../daemon/logger.ts";
 
 export type ScrollDirection = "up" | "down" | "left" | "right";
@@ -50,7 +49,7 @@ function nextMessageId(): number {
   return (Date.now() * 1000) + messageCounter;
 }
 
-export function createControlCommand(params: ControlParams): QueuedControlCommand {
+export function createControlCommand(params: ControlParams, platform: string = "unknown"): QueuedControlCommand {
   switch (params.action) {
     case "click":
       return { type: "receive_click", payload: { x: params.xRatio, y: params.yRatio } };
@@ -102,7 +101,6 @@ export function createControlCommand(params: ControlParams): QueuedControlComman
       };
     case "open_app": {
       const appPayload: Record<string, unknown> = {};
-      const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
       // Only send platform-appropriate fields — Android strict JSON rejects unknown keys
       if (platform === "android") {
         // Android: only app_package
@@ -141,9 +139,7 @@ export interface SystemParams {
 const IOS_ONLY_ACTIONS = new Set(["siri", "control_center"]);
 const ANDROID_ONLY_ACTIONS = new Set(["open_browser", "shortcut_help"]);
 
-export function createSystemCommand(params: SystemParams): QueuedControlCommand {
-  const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
-
+export function createSystemCommand(params: SystemParams, platform: string = "unknown"): QueuedControlCommand {
   // Platform validation — block mismatched platform-specific actions
   if (platform === "android" && IOS_ONLY_ACTIONS.has(params.action)) {
     throw new Error(`Action '${params.action}' is not supported on Android.`);
@@ -202,7 +198,7 @@ export function createSystemCommand(params: SystemParams): QueuedControlCommand 
 }
 
 export async function enqueueCommand(
-  config: ZhiHandConfig,
+  config: ZhiHandRuntimeConfig,
   command: QueuedControlCommand
 ): Promise<QueuedCommandRecord> {
   const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands`;
@@ -227,7 +223,7 @@ export async function enqueueCommand(
 }
 
 export async function getCommand(
-  config: ZhiHandConfig,
+  config: ZhiHandRuntimeConfig,
   commandId: string
 ): Promise<QueuedCommandRecord> {
   const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;

@@ -1,82 +1,121 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
 
-import { resolveConfig } from "./core/config.ts";
-import { controlSchema, systemSchema, screenshotSchema, pairSchema } from "./tools/schemas.ts";
+import {
+  controlSchema,
+  systemSchema,
+  screenshotSchema,
+  pairSchema,
+  listDevicesSchema,
+  statusSchema,
+} from "./tools/schemas.ts";
 import { executeControl } from "./tools/control.ts";
 import { executeSystem } from "./tools/system.ts";
 import { handleScreenshot } from "./tools/screenshot.ts";
 import { handlePair } from "./tools/pair.ts";
+import { resolveTargetDevice } from "./tools/resolve.ts";
 import {
-  getStaticContext,
-  getDynamicContext,
-  isDeviceProfileLoaded,
-  fetchDeviceProfile,
   buildControlToolDescription,
   buildSystemToolDescription,
   buildScreenshotToolDescription,
   formatDeviceStatus,
 } from "./core/device.ts";
+import { registry } from "./core/registry.ts";
 
-export const PACKAGE_VERSION = "0.29.0";
+export const PACKAGE_VERSION = "0.30.0";
 
-export function createServer(deviceName?: string): McpServer {
+type TextContent = { type: "text"; text: string };
+type ToolResult = { content: TextContent[]; isError?: boolean };
+
+function errorResult(message: string): ToolResult {
+  return { content: [{ type: "text" as const, text: message }], isError: true };
+}
+
+export function createServer(): McpServer {
   const server = new McpServer({
     name: "zhihand",
     version: PACKAGE_VERSION,
   });
 
-  // zhihand_control — main phone control tool
-  // Description includes device info (platform, model, screen size) when available
-  server.tool(
+  const controlTool = server.tool(
     "zhihand_control",
-    buildControlToolDescription(),
+    buildControlToolDescription(null, registry.listOnline()),
     controlSchema,
     async (params) => {
-      const config = resolveConfig(deviceName);
-      return await executeControl(config, params);
+      const resolved = resolveTargetDevice(params.device_id);
+      if ("error" in resolved) return errorResult(resolved.error);
+      const { state } = resolved;
+      const cfg = registry.toRuntimeConfig(state);
+      const platform = state.profile?.platform ?? "unknown";
+      return await executeControl(cfg, params, platform, state.capabilities);
     },
   );
 
-  // zhihand_system — system navigation + media controls (separate tool per Gemini design review)
-  server.tool(
+  const systemTool = server.tool(
     "zhihand_system",
-    buildSystemToolDescription(),
+    buildSystemToolDescription(null, registry.listOnline()),
     systemSchema,
     async (params) => {
-      const config = resolveConfig(deviceName);
-      return await executeSystem(config, params);
+      const resolved = resolveTargetDevice(params.device_id);
+      if ("error" in resolved) return errorResult(resolved.error);
+      const { state } = resolved;
+      const cfg = registry.toRuntimeConfig(state);
+      const platform = state.profile?.platform ?? "unknown";
+      return await executeSystem(cfg, params, platform);
     },
   );
 
-  // zhihand_screenshot — capture current screen without any action
-  server.tool(
+  const screenshotTool = server.tool(
     "zhihand_screenshot",
-    buildScreenshotToolDescription(),
+    buildScreenshotToolDescription(null, registry.listOnline()),
     screenshotSchema,
-    async () => {
-      const config = resolveConfig(deviceName);
-      return await handleScreenshot(config);
+    async (params) => {
+      const resolved = resolveTargetDevice(params.device_id);
+      if ("error" in resolved) return errorResult(resolved.error);
+      const { state } = resolved;
+      const cfg = registry.toRuntimeConfig(state);
+      return await handleScreenshot(cfg, state.capabilities);
     },
   );
 
-  // zhihand_status — return device context for LLM to query on demand
   server.tool(
     "zhihand_status",
-    "Get device status and capability readiness. Returns curated fields (platform, model, OS, screen, battery, network, BLE, ...), a `capabilities` object with `ready`/`reason` for screen_sharing, hid, live_session, profile.age, AND a `raw` map of allowlisted device attributes (wire-format names). Call this BEFORE issuing commands if you are unsure whether the phone is screen-sharing or the ZhiHand (BLE HID) is connected.",
-    {},
-    async () => {
+    "Get device status and capability readiness for a device. Returns curated fields (platform, model, OS, screen, battery, network, BLE, ...), a `capabilities` object with `ready`/`reason` for screen_sharing, hid, live_session, profile.age, AND a `raw` map of allowlisted device attributes. Pass device_id when multiple devices are online.",
+    statusSchema,
+    async (params) => {
+      const resolved = resolveTargetDevice(params.device_id);
+      if ("error" in resolved) return errorResult(resolved.error);
       return {
         content: [{
           type: "text" as const,
-          text: JSON.stringify(formatDeviceStatus(), null, 2),
+          text: JSON.stringify(formatDeviceStatus(resolved.state), null, 2),
         }],
       };
     },
   );
 
-  // zhihand_pair — device pairing
+  server.tool(
+    "zhihand_list_devices",
+    "List ALL configured ZhiHand devices with their online status. Returns credential_id, label, platform, online, last_seen_ms_ago for each. Call this before zhihand_control/system/screenshot/status when multiple devices may be online.",
+    listDevicesSchema,
+    async () => {
+      const now = Date.now();
+      const devices = registry.list().map((d) => ({
+        credential_id: d.credentialId,
+        label: d.label,
+        platform: d.platform,
+        online: d.online,
+        last_seen_ms_ago: d.lastSeenAtMs > 0 ? now - d.lastSeenAtMs : -1,
+      }));
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({ devices }, null, 2),
+        }],
+      };
+    },
+  );
+
   server.tool(
     "zhihand_pair",
     "Pair a new mobile device via QR code.",
@@ -86,19 +125,39 @@ export function createServer(deviceName?: string): McpServer {
     },
   );
 
-  // device://profile — MCP resource for device profile
+  // Dynamic tool-description updates on online-set change.
+  // Each .update() call also triggers sendToolListChanged() internally, but we
+  // wrap each individually so one throwing does NOT block the others, and we
+  // still call sendToolListChanged() explicitly as a belt-and-braces signal.
+  registry.subscribe(() => {
+    const online = registry.listOnline();
+    try { controlTool.update({ description: buildControlToolDescription(null, online) }); } catch { /* best-effort */ }
+    try { systemTool.update({ description: buildSystemToolDescription(null, online) }); } catch { /* best-effort */ }
+    try { screenshotTool.update({ description: buildScreenshotToolDescription(null, online) }); } catch { /* best-effort */ }
+    try { server.server.sendToolListChanged(); } catch { /* best-effort */ }
+  });
+
+  // device://profile — returns default online device
   server.resource(
     "device-profile",
     "device://profile",
-    { description: "Device static and dynamic context (platform, model, screen, battery, network, etc.)" },
+    { description: "Device static and dynamic context for the default online device." },
     async () => {
-      const staticCtx = getStaticContext();
-      const dynamicCtx = getDynamicContext();
+      const state = registry.resolveDefault();
+      if (!state) {
+        return {
+          contents: [{
+            uri: "device://profile",
+            mimeType: "application/json",
+            text: JSON.stringify({ error: "No device online" }, null, 2),
+          }],
+        };
+      }
       return {
         contents: [{
           uri: "device://profile",
           mimeType: "application/json",
-          text: JSON.stringify({ ...staticCtx, ...dynamicCtx }, null, 2),
+          text: JSON.stringify(formatDeviceStatus(state), null, 2),
         }],
       };
     },
@@ -107,24 +166,27 @@ export function createServer(deviceName?: string): McpServer {
   return server;
 }
 
-export async function startStdioServer(deviceName?: string): Promise<void> {
-  // Fetch device profile before creating server so tool descriptions have platform info
-  try {
-    const config = resolveConfig(deviceName);
-    await fetchDeviceProfile(config);
-  } catch {
-    // Non-fatal — server will use generic descriptions
-  }
-  const server = createServer(deviceName);
+export async function startStdioServer(): Promise<void> {
+  await registry.init();
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-// Direct execution: start stdio server
+function setupShutdown(): void {
+  const shutdown = () => {
+    registry.shutdown();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+setupShutdown();
+
 const isDirectRun = process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js");
 if (isDirectRun) {
-  const deviceArg = process.argv.find((a) => a.startsWith("--device="))?.split("=")[1];
-  startStdioServer(deviceArg ?? process.env.ZHIHAND_DEVICE).catch((err) => {
+  startStdioServer().catch((err) => {
     process.stderr.write(`ZhiHand MCP Server failed: ${err.message}\n`);
     process.exit(1);
   });

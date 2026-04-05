@@ -3,10 +3,12 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import type { ZhiHandConfig, BackendName } from "../core/config.ts";
+import type { ZhiHandRuntimeConfig, BackendName } from "../core/config.ts";
 import { DEFAULT_MODELS } from "../core/config.ts";
 import { resolveGemini, resolveClaude, resolveCodex } from "../core/resolve-path.ts";
-import { getStaticContext, isDeviceProfileLoaded } from "../core/device.ts";
+import { registry } from "../core/registry.ts";
+
+type ZhiHandConfig = ZhiHandRuntimeConfig;
 import { dbg } from "./logger.ts";
 
 const CLI_TIMEOUT = 300_000; // 300s (5min) per prompt — MCP tool chains need multiple turns
@@ -382,7 +384,8 @@ export async function killActiveChild(): Promise<void> {
  * so the AI sends correct platform-specific parameters (e.g. appPackage vs bundleId).
  */
 function buildSystemContext(): string {
-  const static_ = isDeviceProfileLoaded() ? getStaticContext() : null;
+  const defaultState = registry.resolveDefault();
+  const static_ = defaultState?.profile ?? null;
   const deviceLine = static_
     ? `Connected device: ${static_.platform} ${static_.model} (${static_.osVersion}), ${static_.screenWidthPx}x${static_.screenHeightPx}, ${static_.formFactor}, ${static_.locale}`
     : "Connected device: unknown platform";

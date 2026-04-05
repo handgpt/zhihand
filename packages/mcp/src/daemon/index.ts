@@ -16,14 +16,16 @@ import {
   ensureZhiHandDir,
   DEFAULT_MODELS,
   type BackendName,
-  type ZhiHandConfig,
+  type ZhiHandRuntimeConfig,
 } from "../core/config.ts";
 import { PACKAGE_VERSION } from "../index.ts";
 import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
 import { setDebugEnabled, dbg } from "./logger.ts";
-import { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded } from "../core/device.ts";
+import { registry } from "../core/registry.ts";
+
+type ZhiHandConfig = ZhiHandRuntimeConfig;
 
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
@@ -219,10 +221,11 @@ export async function startDaemon(options?: {
     log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
   }
 
-  // Fetch device profile (platform, model, screen size) — non-blocking, best-effort
-  await fetchDeviceProfile(config);
-  if (isDeviceProfileLoaded()) {
-    const s = getStaticContext();
+  // Init the multi-device registry (single-device in daemon context) and log profile.
+  await registry.init();
+  const defaultState = registry.resolveDefault();
+  if (defaultState?.profile) {
+    const s = defaultState.profile;
     log(`[device] ${s.platform} ${s.model} (${s.osVersion}), ${s.screenWidthPx}x${s.screenHeightPx}, ${s.locale}`);
   } else {
     log(`[device] Device profile not available — tool descriptions will use generic defaults`);
@@ -274,7 +277,7 @@ export async function startDaemon(options?: {
           }
         } else if (!sessionId) {
           // New session: create dedicated McpServer + Transport
-          const server = createMcpServer(options?.deviceName);
+          const server = createMcpServer();
           const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sid) => {
@@ -378,6 +381,7 @@ export async function startDaemon(options?: {
       try { await session.transport.close(); } catch { /* ignore */ }
     }
     mcpSessions.clear();
+    registry.shutdown();
     httpServer.close();
     removePid();
     log("Daemon stopped.");

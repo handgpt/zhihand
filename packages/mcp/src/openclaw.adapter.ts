@@ -8,6 +8,7 @@ import { handleScreenshot } from "./tools/screenshot.ts";
 import { handlePair } from "./tools/pair.ts";
 import { detectCLITools, formatDetectedTools } from "./cli/detect.ts";
 import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.ts";
+import { registry } from "./core/registry.ts";
 
 type OpenClawLogger = {
   info?: (message: string) => void;
@@ -58,6 +59,8 @@ function zodSchemaToJsonSchema(zodShape: Record<string, unknown>): Record<string
 
 export function registerOpenClawTools(api: OpenClawPluginApi, deviceName?: string): void {
   const log = (msg: string) => api.logger.info?.(msg);
+  // Kick off registry in the background so runtime config resolution benefits.
+  void registry.init().catch(() => { /* best-effort */ });
 
   // zhihand_control
   api.registerTool({
@@ -67,7 +70,10 @@ export function registerOpenClawTools(api: OpenClawPluginApi, deviceName?: strin
     parameters: zodSchemaToJsonSchema(controlSchema),
     execute: async (_id, params) => {
       const config = resolveConfig(deviceName);
-      const result = await executeControl(config, params as unknown as Parameters<typeof executeControl>[1]);
+      const state = registry.get(config.credentialId);
+      const platform = state?.profile?.platform ?? "unknown";
+      const caps = state?.capabilities ?? null;
+      const result = await executeControl(config, params as unknown as Parameters<typeof executeControl>[1], platform, caps);
       return result as unknown as Record<string, unknown>;
     },
   });
@@ -80,7 +86,9 @@ export function registerOpenClawTools(api: OpenClawPluginApi, deviceName?: strin
     parameters: zodSchemaToJsonSchema(screenshotSchema),
     execute: async (_id, _params) => {
       const config = resolveConfig(deviceName);
-      const result = await handleScreenshot(config);
+      const state = registry.get(config.credentialId);
+      const caps = state?.capabilities ?? null;
+      const result = await handleScreenshot(config, caps);
       return result as unknown as Record<string, unknown>;
     },
   });

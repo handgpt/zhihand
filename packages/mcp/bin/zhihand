@@ -5,12 +5,22 @@ import { parseArgs } from "node:util";
 import { startStdioServer } from "../dist/index.js";
 import { startDaemon, stopDaemon, isAlreadyRunning } from "../dist/daemon/index.js";
 import { detectCLITools, formatDetectedTools } from "../dist/cli/detect.js";
-import { detectAndSetupOpenClaw } from "../dist/cli/openclaw.js";
-import { loadDefaultCredential, loadBackendConfig, saveBackendConfig, DEFAULT_MODELS } from "../dist/core/config.js";
+import {
+  loadConfig,
+  listDeviceRecords,
+  removeDevice,
+  renameDevice,
+  setDefaultDevice,
+  loadBackendConfig,
+  saveBackendConfig,
+  DEFAULT_MODELS,
+  resolveConfig,
+} from "../dist/core/config.js";
 import { executePairing } from "../dist/core/pair.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
+const VERSION = "0.30.0";
 
 const CLI_TOOL_MAP = {
   claude: "claudecode",
@@ -23,8 +33,10 @@ const { positionals, values } = parseArgs({
   strict: false,
   options: {
     device: { type: "string" },
+    label: { type: "string" },
     model: { type: "string", short: "m" },
     help: { type: "boolean", short: "h", default: false },
+    version: { type: "boolean", short: "v", default: false },
     detach: { type: "boolean", short: "d", default: false },
     debug: { type: "boolean", default: false },
     force: { type: "boolean", default: false },
@@ -32,42 +44,47 @@ const { positionals, values } = parseArgs({
   },
 });
 
-const command = positionals[0] ?? "serve";
+const command = positionals[0] ?? "mcp";
+
+if (values.version) {
+  console.log(VERSION);
+  process.exit(0);
+}
 
 if (values.help) {
   console.log(`
-zhihand — MCP Server and Relay for phone control
+zhihand v${VERSION} — MCP Server and Relay for phone control
 
 Usage:
   zhihand start              Start daemon (MCP Server + Relay, foreground)
   zhihand start -d           Start daemon in background (detach)
-  zhihand start --debug      Start daemon with verbose debug logging
   zhihand stop               Stop daemon
   zhihand status             Show status (pairing, backend, brain)
 
-  zhihand gemini             Switch backend to Gemini CLI (default model: flash)
-  zhihand claude             Switch backend to Claude Code (default model: sonnet)
-  zhihand codex              Switch backend to Codex CLI (default model: gpt-5.4-mini)
-  zhihand gemini --model pro Switch backend with custom model
+  zhihand gemini             Switch backend to Gemini CLI
+  zhihand claude             Switch backend to Claude Code
+  zhihand codex              Switch backend to Codex CLI
 
   zhihand setup              Interactive setup: pair + configure + start
-  zhihand pair               Pair with a phone device
+  zhihand pair [--label X]   Pair with a phone device
+  zhihand list               List paired devices
+  zhihand unpair <cred_id>   Revoke + remove a device
+  zhihand rename <cred> <n>  Rename a device
+  zhihand default <cred_id>  Set default device
   zhihand detect             Detect available CLI tools
 
-  zhihand list               List all available tests with IDs
-  zhihand test               Run all safe device tests (skips capability-gated)
-  zhihand test <ids>         Run specific test(s), e.g. 'zhihand test 4' or '4,9,20'
-  zhihand test all           Run ALL tests (including unsafe, e.g. power button)
-  zhihand test --force       Bypass capability gates (run anyway even if NOT ready)
-  zhihand serve              Start MCP Server (stdio mode, backward compat)
+  zhihand test [cred] [ids]  Run device tests (all, specific ids, or for a credential)
+  zhihand mcp                Start stdio MCP server (for Claude/Codex/Gemini hosts)
 
 Options:
-  --device <name>    Use a specific paired device
-  --model, -m <name> Set model alias (e.g. flash, pro, sonnet, opus, gpt-5.4-mini)
+  --device <name>    Use a specific paired credential_id (test only)
+  --label <label>    Label for new device (pair only)
+  --model, -m <name> Backend model alias
   --port <port>      Override daemon port (default: 18686)
   -d, --detach       Run daemon in background
-  --debug            Enable verbose debug logging
+  --debug            Verbose debug logging
   --force            (test only) Run tests even if capability not ready
+  -v, --version      Print version
   -h, --help         Show this help
 `);
   process.exit(0);
@@ -90,7 +107,6 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
     console.error(`Warning: ${command} is installed but not logged in.`);
   }
 
-  // Check if daemon is running — if so, notify it via HTTP
   const daemonPid = isAlreadyRunning();
   const config = loadBackendConfig();
   const previous = config.activeBackend;
@@ -105,11 +121,9 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
 
   console.log(`Switching backend to ${displayName(backendName)} (model: ${effectiveModel})...`);
 
-  // Configure MCP (HTTP transport)
   const { configured, removed } = configureMCP(backendName, previous);
 
   if (configured) {
-    // Notify daemon if running
     if (daemonPid) {
       try {
         const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
@@ -123,7 +137,6 @@ if (Object.prototype.hasOwnProperty.call(CLI_TOOL_MAP, command)) {
           console.log(`\nDaemon notified. Backend switched to ${displayName(backendName)}.`);
         }
       } catch {
-        // Daemon not responding, just save config
         saveBackendConfig({ activeBackend: backendName, model: userModel });
         console.log(`\nBackend config saved. Daemon not responding — restart with 'zhihand start'.`);
       }
@@ -153,10 +166,8 @@ switch (command) {
 
       const args = [process.argv[1], "start"];
       if (values.port) args.push("--port", values.port);
-      if (values.device) args.push("--device", values.device);
       if (values.debug) args.push("--debug");
 
-      // Write daemon logs to ~/.zhihand/daemon.log
       const zhihandDir = pathMod.default.join(osMod.default.homedir(), ".zhihand");
       fsSync.default.mkdirSync(zhihandDir, { recursive: true });
       const logPath = pathMod.default.join(zhihandDir, "daemon.log");
@@ -174,48 +185,121 @@ switch (command) {
       process.exit(0);
     }
     const port = values.port ? parseInt(values.port, 10) : undefined;
-    await startDaemon({
-      port,
-      deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
-      debug: values.debug,
-    });
+    await startDaemon({ port, debug: values.debug });
     break;
   }
 
   case "stop": {
     const stopped = stopDaemon();
-    if (stopped) {
-      console.log("Daemon stopped.");
-    } else {
-      console.log("No daemon is running.");
-    }
+    console.log(stopped ? "Daemon stopped." : "No daemon is running.");
     break;
   }
 
+  case "mcp":
   case "serve": {
-    // Backward compatible: stdio MCP server (for old configs)
-    await startStdioServer(values.device ?? process.env.ZHIHAND_DEVICE);
+    await startStdioServer();
     break;
   }
 
   case "pair": {
     const edgeId = `mcp-${Date.now().toString(36)}`;
-    const deviceName = values.device ?? `mcp-${os.hostname()}`;
-    await executePairing(DEFAULT_ENDPOINT, edgeId, deviceName);
+    const label = values.label ?? undefined;
+    await executePairing(DEFAULT_ENDPOINT, edgeId, label);
+    break;
+  }
+
+  case "list": {
+    const records = listDeviceRecords();
+    const cfg = loadConfig();
+    if (records.length === 0) {
+      console.log("No paired devices. Run: zhihand pair");
+      break;
+    }
+    const header = ["credential_id", "label", "platform", "default", "paired_at", "last_seen"];
+    const rows = records.map((r) => [
+      r.credential_id,
+      r.label,
+      r.platform,
+      cfg.default_credential_id === r.credential_id ? "*" : "",
+      r.paired_at,
+      r.last_seen_at,
+    ]);
+    const widths = header.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)));
+    const fmt = (row) => row.map((c, i) => c.padEnd(widths[i])).join("  ");
+    console.log(fmt(header));
+    console.log(widths.map((w) => "-".repeat(w)).join("  "));
+    for (const r of rows) console.log(fmt(r));
+    break;
+  }
+
+  case "unpair": {
+    const credId = positionals[1];
+    if (!credId) {
+      console.error("Usage: zhihand unpair <credential_id>");
+      process.exit(1);
+    }
+    const cfg = loadConfig();
+    const record = cfg.devices[credId];
+    if (!record) {
+      console.error(`Device '${credId}' not found.`);
+      process.exit(1);
+    }
+    // Best-effort revoke
+    try {
+      const url = `${record.endpoint}/v1/credentials/${encodeURIComponent(credId)}/revoke`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "x-zhihand-controller-token": record.controller_token },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) {
+        console.warn(`Warning: server revoke returned ${res.status} (continuing to remove locally)`);
+      }
+    } catch (err) {
+      console.warn(`Warning: server revoke failed: ${err.message} (continuing to remove locally)`);
+    }
+    removeDevice(credId);
+    console.log(`Unpaired: ${credId}`);
+    break;
+  }
+
+  case "rename": {
+    const credId = positionals[1];
+    const newLabel = positionals[2];
+    if (!credId || !newLabel) {
+      console.error("Usage: zhihand rename <credential_id> <new_label>");
+      process.exit(1);
+    }
+    renameDevice(credId, newLabel);
+    console.log(`Renamed ${credId} to '${newLabel}'`);
+    break;
+  }
+
+  case "default": {
+    const credId = positionals[1];
+    if (!credId) {
+      console.error("Usage: zhihand default <credential_id>");
+      process.exit(1);
+    }
+    setDefaultDevice(credId);
+    console.log(`Default device set to ${credId}`);
     break;
   }
 
   case "status": {
-    const cred = loadDefaultCredential();
+    const records = listDeviceRecords();
+    const cfg = loadConfig();
     const backend = loadBackendConfig();
     const daemonPid = isAlreadyRunning();
 
-    if (cred) {
-      console.log(`Paired device: ${cred.deviceName}`);
-      console.log(`Credential ID: ${cred.credentialId}`);
-      console.log(`Endpoint: ${cred.endpoint}`);
+    if (records.length === 0) {
+      console.log("No paired devices. Run: zhihand setup");
     } else {
-      console.log("No paired device. Run: zhihand setup");
+      console.log(`Paired devices: ${records.length}`);
+      for (const r of records) {
+        const mark = cfg.default_credential_id === r.credential_id ? " *" : "";
+        console.log(`  ${r.credential_id} (${r.label}, ${r.platform})${mark}`);
+      }
     }
     const backendLabel = backend.activeBackend ? displayName(backend.activeBackend) : "(none)";
     const modelLabel = backend.activeBackend
@@ -224,7 +308,6 @@ switch (command) {
     console.log(`Active backend: ${backendLabel} (model: ${modelLabel})`);
     console.log(`Daemon: ${daemonPid ? `running (PID ${daemonPid})` : "not running"}`);
 
-    // If daemon running, get live status
     if (daemonPid) {
       try {
         const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
@@ -248,20 +331,19 @@ switch (command) {
   }
 
   case "setup": {
-    // 1. Pair
-    let cred = loadDefaultCredential();
-    if (!cred) {
+    const records = listDeviceRecords();
+    if (records.length === 0) {
       console.log("No paired device found. Starting pairing...\n");
       const edgeId = `mcp-${Date.now().toString(36)}`;
-      const deviceName = values.device ?? `mcp-${os.hostname()}`;
-      await executePairing(DEFAULT_ENDPOINT, edgeId, deviceName);
-      cred = loadDefaultCredential();
+      await executePairing(DEFAULT_ENDPOINT, edgeId, values.label);
     }
-    if (cred) {
-      console.log(`\nPaired: ${cred.deviceName} (${cred.credentialId})\n`);
+    const updated = listDeviceRecords();
+    if (updated.length > 0) {
+      const cfg = loadConfig();
+      const def = updated.find((r) => r.credential_id === cfg.default_credential_id) ?? updated[0];
+      console.log(`\nPaired: ${def.label} (${def.credential_id})\n`);
     }
 
-    // 2. Detect tools
     const tools = await detectCLITools();
     console.log(formatDetectedTools(tools));
 
@@ -270,88 +352,51 @@ switch (command) {
       break;
     }
 
-    // 3. Auto-select best tool and configure MCP (HTTP transport)
     const best = tools.find((t) => t.loggedIn) ?? tools[0];
     const config = loadBackendConfig();
 
     console.log(`\nAuto-selecting backend: ${displayName(best.name)}...`);
-    // Ensure MCP URL uses correct port
-    if (values.port) {
-      process.env.ZHIHAND_PORT = values.port;
-    }
+    if (values.port) process.env.ZHIHAND_PORT = values.port;
     configureMCP(best.name, config.activeBackend);
     saveBackendConfig({ activeBackend: best.name });
 
-    // 4. Start daemon
     console.log(`\nStarting daemon...\n`);
     const port = values.port ? parseInt(values.port, 10) : undefined;
-    await startDaemon({
-      port,
-      deviceName: values.device ?? process.env.ZHIHAND_DEVICE,
-    });
+    await startDaemon({ port });
     break;
   }
 
-  case "list":
   case "test": {
-    const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
     const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
     const { waitForCommandAck } = await import("../dist/core/sse.js");
     const { fetchScreenshot, getSnapshotStaleThresholdMs } = await import("../dist/core/screenshot.js");
-    const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus, getCapabilities } = await import("../dist/core/device.js");
+    const { fetchDeviceProfileOnce, extractStatic, computeCapabilities, formatDeviceStatus } = await import("../dist/core/device.js");
 
-    // ── Test Registry ────────────────────────────────────────
-    // Kind: "profile" | "status" | "screenshot" | "hid" | "system"
-    //   - Each kind maps to a required capability (see KIND_CAPABILITY).
-    // Platform: undefined | "android" | "ios" (skipped on non-matching)
-    // Unsafe: won't run in full-suite unless explicitly requested
-
-    // Required capability per test kind. Tests whose required capability
-    // is not ready are SKIPPED (not failed), unless --force is passed.
-    //
-    // NOTE: `system` commands (volume, brightness, notification, media,
-    // etc.) are executed by the phone app via native OS APIs
-    // (AccessibilityService on Android, Shortcuts/system hooks on iOS)
-    // and do NOT depend on the BLE HID channel. Only the `hid` kind
-    // (click, swipe, type, keycombo — which inject into the paired
-    // target via the ZhiHand peripheral) needs the HID capability.
     const KIND_CAPABILITY = {
-      profile: "none",
-      status: "none",
-      screenshot: "screen",
-      hid: "hid",
-      system: "none",
+      profile: "none", status: "none", screenshot: "screen", hid: "hid", system: "none",
     };
     const REGISTRY = [
-      // Phase A — Device Info API
       { id: 1, phase: "Device Info", label: "Fetch device profile", kind: "profile" },
       { id: 2, phase: "Device Info", label: "Device status fields", kind: "status" },
-      // Phase B — Screenshot
       { id: 3, phase: "Screenshot", label: "Screenshot", kind: "screenshot" },
-      // Phase C — Tap / Touch
       { id: 4, phase: "Tap/Touch", label: "Click center", kind: "hid", params: { action: "click", xRatio: 0.5, yRatio: 0.5 } },
       { id: 5, phase: "Tap/Touch", label: "Double click", kind: "hid", params: { action: "doubleclick", xRatio: 0.5, yRatio: 0.5 } },
       { id: 6, phase: "Tap/Touch", label: "Long click (800ms)", kind: "hid", params: { action: "longclick", xRatio: 0.5, yRatio: 0.5, durationMs: 800 } },
       { id: 7, phase: "Tap/Touch", label: "Right click", kind: "hid", params: { action: "rightclick", xRatio: 0.5, yRatio: 0.5 } },
       { id: 8, phase: "Tap/Touch", label: "Middle click", kind: "hid", params: { action: "middleclick", xRatio: 0.5, yRatio: 0.5 } },
-      // Phase D — Swipe / Scroll
       { id: 9, phase: "Swipe/Scroll", label: "Swipe up", kind: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.7, endXRatio: 0.5, endYRatio: 0.3, durationMs: 300 } },
       { id: 10, phase: "Swipe/Scroll", label: "Swipe down", kind: "hid", params: { action: "swipe", startXRatio: 0.5, startYRatio: 0.3, endXRatio: 0.5, endYRatio: 0.7, durationMs: 300 } },
       { id: 11, phase: "Swipe/Scroll", label: "Swipe left", kind: "hid", params: { action: "swipe", startXRatio: 0.7, startYRatio: 0.5, endXRatio: 0.3, endYRatio: 0.5, durationMs: 300 } },
       { id: 12, phase: "Swipe/Scroll", label: "Swipe right", kind: "hid", params: { action: "swipe", startXRatio: 0.3, startYRatio: 0.5, endXRatio: 0.7, endYRatio: 0.5, durationMs: 300 } },
       { id: 13, phase: "Swipe/Scroll", label: "Scroll down", kind: "hid", params: { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "down", amount: 3 } },
       { id: 14, phase: "Swipe/Scroll", label: "Scroll up", kind: "hid", params: { action: "scroll", xRatio: 0.5, yRatio: 0.5, direction: "up", amount: 3 } },
-      // Phase E — Text + Keys
       { id: 15, phase: "Text+Keys", label: "Type text", kind: "hid", params: { action: "type", text: "zhihand" } },
       { id: 16, phase: "Text+Keys", label: "Enter key", kind: "hid", params: { action: "enter" } },
       { id: 17, phase: "Text+Keys", label: "Key combo (select all)", kind: "hid", platformAware: "select_all" },
-      // Phase F — App Navigation
       { id: 18, phase: "Navigation", label: "Press Home", kind: "hid", params: { action: "home" } },
       { id: 19, phase: "Navigation", label: "Press Back", kind: "hid", params: { action: "back" } },
       { id: 20, phase: "Navigation", label: "Open WeChat", kind: "hid", platformAware: "open_wechat" },
-      // Phase G — Clipboard
       { id: 21, phase: "Clipboard", label: "Clipboard set", kind: "hid", platformAware: "clipboard_set" },
-      // Phase H — System Navigation
       { id: 22, phase: "System Nav", label: "Notification shade", kind: "system", params: { action: "notification" } },
       { id: 23, phase: "System Nav", label: "Recent apps", kind: "system", params: { action: "recent" } },
       { id: 24, phase: "System Nav", label: "Search (query='zhihand')", kind: "system", params: { action: "search", text: "zhihand" } },
@@ -360,7 +405,6 @@ switch (command) {
       { id: 27, phase: "System Nav", label: "Control Center", kind: "system", params: { action: "control_center" }, platform: "ios" },
       { id: 28, phase: "System Nav", label: "Open browser", kind: "system", params: { action: "open_browser" }, platform: "android" },
       { id: 29, phase: "System Nav", label: "Shortcut help", kind: "system", params: { action: "shortcut_help" }, platform: "android" },
-      // Phase I — Media
       { id: 30, phase: "Media", label: "Volume up", kind: "system", params: { action: "volume_up" } },
       { id: 31, phase: "Media", label: "Volume down", kind: "system", params: { action: "volume_down" } },
       { id: 32, phase: "Media", label: "Mute toggle", kind: "system", params: { action: "mute" } },
@@ -370,50 +414,36 @@ switch (command) {
       { id: 36, phase: "Media", label: "Fast forward", kind: "system", params: { action: "fast_forward" } },
       { id: 37, phase: "Media", label: "Rewind", kind: "system", params: { action: "rewind" } },
       { id: 38, phase: "Media", label: "Stop", kind: "system", params: { action: "stop" } },
-      // Phase J — Hardware
       { id: 39, phase: "Hardware", label: "Brightness up", kind: "system", params: { action: "brightness_up" } },
       { id: 40, phase: "Hardware", label: "Brightness down", kind: "system", params: { action: "brightness_down" } },
       { id: 41, phase: "Hardware", label: "Power button (⚠️ may lock screen)", kind: "system", params: { action: "power" }, unsafe: true },
     ];
 
-    // ── "list" sub-command ───────────────────────────────────
-    if (command === "list") {
-      console.log("📋 ZhiHand Test Registry\n");
-      let currentPhase = "";
-      for (const t of REGISTRY) {
-        if (t.phase !== currentPhase) {
-          console.log(`\n   ── ${t.phase} ──`);
-          currentPhase = t.phase;
-        }
-        const tags = [];
-        if (t.platform) tags.push(`${t.platform}-only`);
-        if (t.unsafe) tags.push("unsafe");
-        const tagStr = tags.length ? ` [${tags.join(", ")}]` : "";
-        console.log(`   ${String(t.id).padStart(2)}. ${t.label}${tagStr}`);
+    // Parse first positional: credential_id (crd_*) or test ids
+    let credentialArg = values.device ?? process.env.ZHIHAND_DEVICE;
+    let filterArg = null;
+    const arg1 = positionals[1];
+    const arg2 = positionals[2];
+    if (arg1) {
+      if (/^crd_/.test(arg1)) {
+        credentialArg = arg1;
+        filterArg = arg2 ?? null;
+      } else {
+        filterArg = arg1;
       }
-      console.log(`\n   Total: ${REGISTRY.length} tests`);
-      console.log("\nUsage:");
-      console.log("   zhihand test            # run all safe tests");
-      console.log("   zhihand test 4          # run test #4 only");
-      console.log("   zhihand test 4,9,20     # run tests #4, #9, #20");
-      console.log("   zhihand test all        # run ALL tests (including unsafe)");
-      process.exit(0);
     }
 
-    // ── "test" sub-command ───────────────────────────────────
     let testConfig;
     try {
-      testConfig = resolveTestConfig(values.device ?? process.env.ZHIHAND_DEVICE);
+      testConfig = resolveConfig(credentialArg);
     } catch (err) {
       console.error(`Error: ${err.message}`);
-      console.error("Run 'zhihand setup' to pair a device first.");
+      console.error("Run 'zhihand pair' to add a device first.");
       process.exit(1);
     }
 
-    // Parse which tests to run from positional args
-    const filterArg = positionals[1];  // e.g. "4" or "4,9,20" or "all"
     const forceRun = values.force === true;
-    let selectedIds = null;   // null = default (all safe)
+    let selectedIds = null;
     let includeUnsafe = false;
     if (filterArg) {
       if (filterArg === "all") {
@@ -423,16 +453,13 @@ switch (command) {
           filterArg.split(",").map((s) => {
             const trimmed = s.trim();
             const n = Number(trimmed);
-            // Strict: reject ranges like "4-10" (Number returns NaN), floats, empty
             return Number.isInteger(n) && n > 0 ? n : NaN;
           }).filter((n) => !isNaN(n))
         );
         if (selectedIds.size === 0) {
           console.error(`Invalid test IDs: ${filterArg}`);
-          console.error("Run 'zhihand list' to see available tests.");
           process.exit(1);
         }
-        // Explicit selection implies user knows what they're doing
         includeUnsafe = true;
       }
     }
@@ -441,38 +468,40 @@ switch (command) {
     console.log(`   Device: ${testConfig.credentialId}`);
     console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
 
-    // Pre-fetch device profile so platform-aware tests work.
-    // Note: platform is read dynamically via getDevicePlatform() so Test 1
-    // (Fetch device profile) can populate it before later tests consume it.
+    // Pre-fetch device profile
+    let currentRawAttrs = {};
+    let currentProfile = null;
+    let currentCaps = null;
+    let profileReceivedAtMs = 0;
     try {
-      await fetchDeviceProfile(testConfig);
-    } catch { /* non-fatal — Test 1 will retry and platform will update */ }
-    const getDevicePlatform = () => isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+      const fetched = await fetchDeviceProfileOnce(testConfig);
+      if (fetched) {
+        currentRawAttrs = fetched.rawAttrs;
+        profileReceivedAtMs = fetched.receivedAtMs;
+        currentProfile = extractStatic(currentRawAttrs);
+        currentCaps = computeCapabilities(currentRawAttrs, profileReceivedAtMs);
+      }
+    } catch { /* non-fatal */ }
+    const getDevicePlatform = () => currentProfile?.platform ?? "unknown";
 
-    // ── Capability readiness pre-flight ──
     console.log("   ── Capability readiness ──");
-    const preCaps = isDeviceProfileLoaded() ? getCapabilities() : null;
-    if (!preCaps) {
+    if (!currentCaps) {
       console.log("   ⚠️  Device profile not loaded — all capability gates will allow tests through.");
     } else {
       const fmt = (name, cap) => `   ${cap.ready ? "✅" : "⚠️"} ${name.padEnd(14)} ${cap.ready ? "ready" : "NOT ready"}  — ${cap.reason}`;
-      console.log(fmt("screen_sharing", preCaps.screen_sharing));
-      console.log(fmt("hid",            preCaps.hid));
-      console.log(fmt("live_session",   preCaps.live_session));
-      const ageStr = preCaps.profile.age_ms >= 0 ? `${(preCaps.profile.age_ms / 1000).toFixed(1)}s` : "unknown";
-      console.log(`   ${preCaps.profile.stale ? "⚠️" : "✅"} profile        age=${ageStr}${preCaps.profile.stale ? " (STALE)" : ""}`);
+      console.log(fmt("screen_sharing", currentCaps.screen_sharing));
+      console.log(fmt("hid", currentCaps.hid));
+      console.log(fmt("live_session", currentCaps.live_session));
+      const ageStr = currentCaps.profile.age_ms >= 0 ? `${(currentCaps.profile.age_ms / 1000).toFixed(1)}s` : "unknown";
+      console.log(`   ${currentCaps.profile.stale ? "⚠️" : "✅"} profile        age=${ageStr}${currentCaps.profile.stale ? " (STALE)" : ""}`);
       if (forceRun) {
         console.log("   --force passed: capability gates disabled.");
       }
     }
     console.log("");
 
-    let passed = 0;
-    let failed = 0;
-    let skipped = 0;
-    let totalSteps = 0;
+    let passed = 0, failed = 0, skipped = 0, totalSteps = 0;
 
-    // ── Resolve platform-aware params (evaluated at test time) ──
     function resolvePlatformAwareParams(variant) {
       const platform = getDevicePlatform();
       if (variant === "open_wechat") {
@@ -490,7 +519,6 @@ switch (command) {
       return null;
     }
 
-    // ── Test runners (shared ACK logic) ──
     async function runCommandTest(t, command) {
       totalSteps++;
       process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
@@ -520,25 +548,18 @@ switch (command) {
     }
 
     async function runSingleTest(t) {
-      // Platform skip (evaluated at test time — Test 1 may have just populated the profile)
       const currentPlatform = getDevicePlatform();
       if (t.platform && t.platform !== currentPlatform) {
-        totalSteps++;
-        skipped++;
+        totalSteps++; skipped++;
         console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  Skipped (${t.platform}-only, device is ${currentPlatform})`);
         return;
       }
-
-      // Capability gate (unless --force) — evaluated per-test so later
-      // tests see fresh readiness flags pushed after Test 1's profile fetch.
-      if (!forceRun && isDeviceProfileLoaded()) {
+      if (!forceRun && currentCaps) {
         const requiredCap = KIND_CAPABILITY[t.kind] ?? "none";
         if (requiredCap !== "none") {
-          const caps = getCapabilities();
-          const gate = requiredCap === "screen" ? caps.screen_sharing : caps.hid;
+          const gate = requiredCap === "screen" ? currentCaps.screen_sharing : currentCaps.hid;
           if (!gate.ready) {
-            totalSteps++;
-            skipped++;
+            totalSteps++; skipped++;
             console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  Skipped (${requiredCap} not ready: ${gate.reason})`);
             return;
           }
@@ -551,10 +572,14 @@ switch (command) {
           process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
           const t0 = Date.now();
           try {
-            await fetchDeviceProfile(testConfig);
+            const fetched = await fetchDeviceProfileOnce(testConfig);
             const ms = Date.now() - t0;
-            if (isDeviceProfileLoaded()) {
-              const s = getStaticContext();
+            if (fetched) {
+              currentRawAttrs = fetched.rawAttrs;
+              profileReceivedAtMs = fetched.receivedAtMs;
+              currentProfile = extractStatic(currentRawAttrs);
+              currentCaps = computeCapabilities(currentRawAttrs, profileReceivedAtMs);
+              const s = currentProfile;
               console.log(`✅ ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
               passed++;
             } else {
@@ -571,11 +596,22 @@ switch (command) {
           totalSteps++;
           process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
           try {
-            const status = formatDeviceStatus();
-            // Count curated top-level fields (excluding the nested 'raw'
-            // and 'capabilities' containers) plus every allowlisted raw
-            // attribute — this is what the LLM actually sees via
-            // zhihand_status.
+            const state = {
+              credentialId: testConfig.credentialId,
+              label: "(test)",
+              platform: getDevicePlatform(),
+              online: true,
+              lastSeenAtMs: Date.now(),
+              profile: currentProfile,
+              capabilities: currentCaps,
+              profileReceivedAtMs,
+              rawAttributes: currentRawAttrs,
+              sseController: null,
+              sseConnected: false,
+              heartbeatTimer: null,
+              record: { credential_id: testConfig.credentialId, controller_token: "", endpoint: "", label: "", platform: "unknown", paired_at: "", last_seen_at: "" },
+            };
+            const status = formatDeviceStatus(state);
             const topLevel = Object.keys(status).filter((k) => k !== "raw" && k !== "capabilities");
             const rawKeys = Object.keys(status.raw ?? {});
             const caps = status.capabilities ?? {};
@@ -608,9 +644,6 @@ switch (command) {
             const shot = await fetchScreenshot(testConfig);
             const kb = (shot.buffer.length / 1024).toFixed(0);
             const ms = Date.now() - t0;
-            // The screenshot endpoint returns the last cached frame even
-            // when the phone isn't actively sharing — the age header is
-            // the only way to tell. Treat stale as failure.
             if (shot.stale) {
               const threshold = getSnapshotStaleThresholdMs();
               console.log(`❌ Stale (${kb}KB, age=${(shot.ageMs / 1000).toFixed(1)}s > ${(threshold / 1000).toFixed(1)}s) ${shot.width}x${shot.height} seq=${shot.sequence} — phone may not be screen-sharing (${ms}ms)`);
@@ -627,11 +660,11 @@ switch (command) {
         }
         case "hid": {
           const params = t.platformAware ? resolvePlatformAwareParams(t.platformAware) : t.params;
-          await runCommandTest(t, createControlCommand(params));
+          await runCommandTest(t, createControlCommand(params, getDevicePlatform()));
           break;
         }
         case "system": {
-          await runCommandTest(t, createSystemCommand(t.params));
+          await runCommandTest(t, createSystemCommand(t.params, getDevicePlatform()));
           break;
         }
       }
@@ -639,7 +672,6 @@ switch (command) {
 
     const pause = () => new Promise((r) => setTimeout(r, 1500));
 
-    // Select tests to run
     const toRun = REGISTRY.filter((t) => {
       if (selectedIds) return selectedIds.has(t.id);
       if (t.unsafe && !includeUnsafe) return false;
@@ -648,17 +680,13 @@ switch (command) {
 
     if (toRun.length === 0) {
       console.error("No matching tests.");
-      console.error("Run 'zhihand list' to see available tests.");
       process.exit(1);
     }
 
-    // Warn about missing IDs
     if (selectedIds) {
       const foundIds = new Set(toRun.map((t) => t.id));
       const missing = [...selectedIds].filter((id) => !foundIds.has(id));
-      if (missing.length) {
-        console.warn(`⚠️  Unknown test IDs: ${missing.join(", ")}`);
-      }
+      if (missing.length) console.warn(`⚠️  Unknown test IDs: ${missing.join(", ")}`);
     }
 
     let currentPhase = "";
@@ -672,13 +700,9 @@ switch (command) {
       if (i < toRun.length - 1) await pause();
     }
 
-    // ── Summary ──────────────────────────────────────────────
     console.log(`\n   Result: ${passed}/${totalSteps} passed, ${failed} failed, ${skipped} skipped`);
-    if (failed === 0) {
-      console.log("   ✅ All tests passed! Device is fully responsive.");
-    } else {
-      console.log(`   ⚠️  ${failed} test(s) failed. Check phone connectivity.`);
-    }
+    if (failed === 0) console.log("   ✅ All tests passed! Device is fully responsive.");
+    else console.log(`   ⚠️  ${failed} test(s) failed. Check phone connectivity.`);
     process.exit(failed > 0 ? 1 : 0);
   }
 

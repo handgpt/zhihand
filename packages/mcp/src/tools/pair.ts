@@ -1,9 +1,8 @@
-import { loadDefaultCredential } from "../core/config.ts";
+import { loadConfig } from "../core/config.ts";
 import {
   createPairingSession,
   registerPlugin,
   renderPairingQRCode,
-  formatPairingStatus,
 } from "../core/pair.ts";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
@@ -15,33 +14,30 @@ function generateEdgeId(): string {
 
 export async function handlePair(
   params: { forceNew?: boolean },
-  endpoint?: string
+  endpoint?: string,
 ) {
   const resolvedEndpoint = endpoint ?? DEFAULT_ENDPOINT;
 
-  // Check existing credential
   if (!params.forceNew) {
-    const existing = loadDefaultCredential();
-    if (existing) {
-      return {
-        content: [
-          { type: "text" as const, text: formatPairingStatus(existing) },
-        ],
-      };
+    const cfg = loadConfig();
+    const records = Object.values(cfg.devices);
+    if (records.length > 0) {
+      const lines = [
+        "Already paired with:",
+        "",
+        ...records.map(
+          (r) => `  - ${r.credential_id} (${r.label}, ${r.platform}) via ${r.endpoint}`,
+        ),
+        "",
+        "Pass forceNew=true to pair another device.",
+      ];
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     }
   }
 
-  // Register plugin first — server requires a known edge_id before pairing
   const stableIdentity = generateEdgeId();
-  const plugin = await registerPlugin(resolvedEndpoint, {
-    stableIdentity,
-  });
-
-  // Create new pairing session with the registered edge_id
-  const session = await createPairingSession(resolvedEndpoint, {
-    edgeId: plugin.edge_id,
-  });
-
+  const plugin = await registerPlugin(resolvedEndpoint, { stableIdentity });
+  const session = await createPairingSession(resolvedEndpoint, { edgeId: plugin.edge_id });
   const qr = await renderPairingQRCode(session.pair_url);
 
   return {

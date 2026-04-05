@@ -1,11 +1,10 @@
-import { getStaticContext, isDeviceProfileLoaded } from "./device.js";
 import { dbg } from "../daemon/logger.js";
 let messageCounter = 0;
 function nextMessageId() {
     messageCounter = (messageCounter + 1) % 1000;
     return (Date.now() * 1000) + messageCounter;
 }
-export function createControlCommand(params) {
+export function createControlCommand(params, platform = "unknown") {
     switch (params.action) {
         case "click":
             return { type: "receive_click", payload: { x: params.xRatio, y: params.yRatio } };
@@ -57,7 +56,6 @@ export function createControlCommand(params) {
             };
         case "open_app": {
             const appPayload = {};
-            const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
             // Only send platform-appropriate fields — Android strict JSON rejects unknown keys
             if (platform === "android") {
                 // Android: only app_package
@@ -95,8 +93,7 @@ export function createControlCommand(params) {
 }
 const IOS_ONLY_ACTIONS = new Set(["siri", "control_center"]);
 const ANDROID_ONLY_ACTIONS = new Set(["open_browser", "shortcut_help"]);
-export function createSystemCommand(params) {
-    const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+export function createSystemCommand(params, platform = "unknown") {
     // Platform validation — block mismatched platform-specific actions
     if (platform === "android" && IOS_ONLY_ACTIONS.has(params.action)) {
         throw new Error(`Action '${params.action}' is not supported on Android.`);

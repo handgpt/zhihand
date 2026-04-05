@@ -1,5 +1,6 @@
 import { z } from "zod";
 export declare const controlSchema: {
+    device_id: z.ZodOptional<z.ZodString>;
     action: z.ZodEnum<["click", "doubleclick", "longclick", "rightclick", "middleclick", "type", "swipe", "scroll", "keycombo", "back", "home", "enter", "clipboard", "open_app", "wait", "screenshot"]>;
     xRatio: z.ZodOptional<z.ZodNumber>;
     yRatio: z.ZodOptional<z.ZodNumber>;
@@ -17,10 +18,17 @@ export declare const controlSchema: {
     urlScheme: z.ZodOptional<z.ZodString>;
 };
 export declare const systemSchema: {
+    device_id: z.ZodOptional<z.ZodString>;
     action: z.ZodEnum<["notification", "recent", "search", "switch_input", "siri", "control_center", "open_browser", "shortcut_help", "volume_up", "volume_down", "mute", "play_pause", "stop", "next_track", "prev_track", "fast_forward", "rewind", "brightness_up", "brightness_down", "power"]>;
     text: z.ZodOptional<z.ZodString>;
 };
-export declare const screenshotSchema: {};
+export declare const screenshotSchema: {
+    device_id: z.ZodOptional<z.ZodString>;
+};
 export declare const pairSchema: {
     forceNew: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+};
+export declare const listDevicesSchema: {};
+export declare const statusSchema: {
+    device_id: z.ZodOptional<z.ZodString>;
 };

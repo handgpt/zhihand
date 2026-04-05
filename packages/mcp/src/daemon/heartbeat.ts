@@ -1,4 +1,4 @@
-import type { ZhiHandConfig } from "../core/config.ts";
+import type { ZhiHandRuntimeConfig } from "../core/config.ts";
 import { dbg } from "./logger.ts";
 
 const HEARTBEAT_INTERVAL = 30_000; // 30s
@@ -21,11 +21,11 @@ export function setBrainMeta(meta: BrainMeta): void {
   currentMeta = meta;
 }
 
-function buildUrl(config: ZhiHandConfig): string {
+function buildUrl(config: ZhiHandRuntimeConfig): string {
   return `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/brain-status`;
 }
 
-async function sendHeartbeat(config: ZhiHandConfig, online: boolean): Promise<boolean> {
+async function sendHeartbeat(config: ZhiHandRuntimeConfig, online: boolean): Promise<boolean> {
   try {
     const body: Record<string, unknown> = { plugin_online: online };
     if (currentMeta.backend) body.backend = currentMeta.backend;
@@ -49,15 +49,15 @@ async function sendHeartbeat(config: ZhiHandConfig, online: boolean): Promise<bo
   }
 }
 
-export async function sendBrainOnline(config: ZhiHandConfig): Promise<boolean> {
+export async function sendBrainOnline(config: ZhiHandRuntimeConfig): Promise<boolean> {
   return sendHeartbeat(config, true);
 }
 
-export async function sendBrainOffline(config: ZhiHandConfig): Promise<boolean> {
+export async function sendBrainOffline(config: ZhiHandRuntimeConfig): Promise<boolean> {
   return sendHeartbeat(config, false);
 }
 
-export function startHeartbeatLoop(config: ZhiHandConfig, log: (msg: string) => void): void {
+export function startHeartbeatLoop(config: ZhiHandRuntimeConfig, log: (msg: string) => void): void {
   let retrying = false;
   stopped = false;
 

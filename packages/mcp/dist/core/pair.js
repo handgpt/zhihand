@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
-import { saveCredential, saveState } from "./config.js";
+import { addDevice, ensureZhiHandDir, saveState } from "./config.js";
+import { fetchDeviceProfileOnce, extractStatic } from "./device.js";
 const DEFAULT_SCOPES = [
     "observe",
     "session.control",
@@ -7,11 +8,6 @@ const DEFAULT_SCOPES = [
     "screen.capture",
     "ble.control",
 ];
-/**
- * Register this MCP instance as a plugin with the server.
- * Server requires a registered plugin (edge_id) before pairing can begin.
- * Idempotent — re-registering with the same stable_identity returns the existing plugin.
- */
 export async function registerPlugin(endpoint, options) {
     const response = await fetch(`${endpoint}/v1/plugins`, {
         method: "POST",
@@ -72,16 +68,18 @@ export async function waitForPairingClaim(endpoint, sessionId, timeoutMs = 600_0
 export async function renderPairingQRCode(url) {
     return QRCode.toString(url, { type: "utf8", margin: 2 });
 }
-export async function executePairing(endpoint, edgeId, deviceName) {
-    // Step 0: Register plugin first — server requires a known edge_id before pairing.
-    // Uses edgeId as stable_identity so re-runs are idempotent.
+/**
+ * Drive the full interactive pairing flow. Saves a new device record into the
+ * v2 config on success. Label defaults to the device model (fetched post-claim)
+ * and falls back to the supplied preferredLabel or timestamp.
+ */
+export async function executePairing(endpoint, edgeId, preferredLabel) {
     const plugin = await registerPlugin(endpoint, {
         stableIdentity: edgeId,
-        displayName: deviceName ? `ZhiHand MCP — ${deviceName}` : "ZhiHand MCP Server",
+        displayName: preferredLabel ? `ZhiHand MCP — ${preferredLabel}` : "ZhiHand MCP Server",
     });
     const registeredEdgeId = plugin.edge_id;
     const session = await createPairingSession(endpoint, { edgeId: registeredEdgeId });
-    // Save pending state
     saveState({
         sessionId: session.id,
         controllerToken: session.controller_token,
@@ -90,41 +88,67 @@ export async function executePairing(endpoint, edgeId, deviceName) {
         status: "pending",
         expiresAt: session.expires_at,
     });
-    // Display QR code and pairing URL
     const qr = await renderPairingQRCode(session.pair_url);
     console.log(qr);
     console.log(`Open this URL on your phone to pair:\n  ${session.pair_url}\n`);
     console.log(`Expires at: ${session.expires_at}`);
     console.log("Waiting for phone to scan...\n");
-    // Wait for phone to scan
     const claimed = await waitForPairingClaim(endpoint, session.id);
-    const credential = {
-        credentialId: claimed.credential_id,
-        controllerToken: claimed.controller_token ?? session.controller_token,
-        endpoint,
-        deviceName: deviceName ?? `device_${Date.now()}`,
-        pairedAt: new Date().toISOString(),
+    const credentialId = claimed.credential_id;
+    const controllerToken = claimed.controller_token ?? session.controller_token;
+    const runtimeCfg = {
+        controlPlaneEndpoint: endpoint,
+        credentialId,
+        controllerToken,
+        timeoutMs: 10_000,
     };
-    const name = deviceName ?? credential.deviceName;
-    saveCredential(name, credential, true);
-    // Update state
+    // Try to fetch profile to infer label/platform
+    let label = preferredLabel ?? "";
+    let platform = "unknown";
+    try {
+        const fetched = await fetchDeviceProfileOnce(runtimeCfg);
+        if (fetched) {
+            const st = extractStatic(fetched.rawAttrs);
+            if (!label)
+                label = st.model && st.model !== "unknown" ? st.model : "";
+            if (st.platform === "ios" || st.platform === "android")
+                platform = st.platform;
+        }
+    }
+    catch {
+        // fall through
+    }
+    if (!label)
+        label = `device-${Date.now().toString(36)}`;
+    const now = new Date().toISOString();
+    const record = {
+        credential_id: credentialId,
+        controller_token: controllerToken,
+        endpoint,
+        label,
+        platform,
+        paired_at: now,
+        last_seen_at: now,
+    };
+    addDevice(record, true);
+    ensureZhiHandDir();
     saveState({
         sessionId: session.id,
-        controllerToken: credential.controllerToken,
+        controllerToken,
         edgeId: session.edge_id,
-        credentialId: credential.credentialId,
+        credentialId,
         pairUrl: session.pair_url,
         status: "claimed",
     });
-    return { session: claimed, credential };
+    return { session: claimed, record };
 }
-export function formatPairingStatus(cred) {
-    if (!cred)
+export function formatPairingStatus(record) {
+    if (!record)
         return "Not paired. Run 'zhihand pair' to connect a device.";
     return [
-        `Paired to: ${cred.deviceName ?? "unknown device"}`,
-        `Endpoint: ${cred.endpoint}`,
-        `Credential: ${cred.credentialId}`,
-        `Paired at: ${cred.pairedAt ?? "unknown"}`,
+        `Paired: ${record.label} (${record.platform})`,
+        `Credential: ${record.credential_id}`,
+        `Endpoint: ${record.endpoint}`,
+        `Paired at: ${record.paired_at}`,
     ].join("\n");
 }

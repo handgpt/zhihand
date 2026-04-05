@@ -1,4 +1,4 @@
-import type { ZhiHandConfig } from "./config.ts";
+import type { ZhiHandRuntimeConfig } from "./config.ts";
 import type { QueuedCommandRecord, WaitForCommandAckResult } from "./command.ts";
 import { getCommand } from "./command.ts";
 import { dbg } from "../daemon/logger.ts";
@@ -9,15 +9,12 @@ export interface SSEEvent {
   kind: string;
   credential_id: string;
   command?: QueuedCommandRecord;
+  device_profile?: Record<string, unknown>;
   sequence: number;
 }
 
-// Per-commandId callback registry for SSE-based ACK
+// Per-commandId callback registry for SSE-based ACK (global — ids are globally unique)
 const ackCallbacks = new Map<string, (command: QueuedCommandRecord) => void>();
-
-// Active SSE connection state
-let sseAbortController: AbortController | null = null;
-let sseConnected = false;
 
 export function handleSSEEvent(event: SSEEvent): void {
   dbg(`[sse-cmd] Event: kind=${event.kind}, command=${event.command?.id ?? "-"}`);
@@ -33,24 +30,32 @@ export function handleSSEEvent(event: SSEEvent): void {
 
 export function subscribeToCommandAck(
   commandId: string,
-  callback: (cmd: QueuedCommandRecord) => void
+  callback: (cmd: QueuedCommandRecord) => void,
 ): () => void {
   ackCallbacks.set(commandId, callback);
   return () => { ackCallbacks.delete(commandId); };
 }
 
+export interface SSEHandlers {
+  onEvent: (e: SSEEvent) => void;
+  onConnected: () => void;
+  onDisconnected: () => void;
+}
+
 /**
- * Connect to the SSE event stream for command ACKs.
- * Maintains a persistent connection that dispatches events to registered callbacks.
- * Reconnects automatically on connection loss.
+ * Open a per-credential SSE connection. Caller owns the returned AbortController.
+ * The loop auto-reconnects with exponential backoff until aborted.
  */
-export function connectSSE(config: ZhiHandConfig): void {
-  if (sseAbortController) return; // Already connected
+export function connectSSEForCredential(
+  config: ZhiHandRuntimeConfig,
+  handlers: SSEHandlers,
+): AbortController {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/events/stream`;
 
-  sseAbortController = new AbortController();
-  const { signal } = sseAbortController;
-
-  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/events/stream?topic=commands`;
+  let backoffMs = 1000;
+  const BACKOFF_MAX = 30_000;
 
   (async () => {
     while (!signal.aborted) {
@@ -62,36 +67,35 @@ export function connectSSE(config: ZhiHandConfig): void {
           },
           signal,
         });
-
         if (!response.ok) {
           throw new Error(`SSE connect failed: ${response.status}`);
         }
 
-        sseConnected = true;
+        handlers.onConnected();
+        backoffMs = 1000;
+
         const reader = response.body?.getReader();
         if (!reader) throw new Error("No response body for SSE");
 
         const decoder = new TextDecoder();
         let buffer = "";
+        let eventData = "";
 
         while (!signal.aborted) {
           const { done, value } = await reader.read();
           if (done) break;
-
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-
-          let eventData = "";
           for (const line of lines) {
             if (line.startsWith("data: ")) {
-              eventData += line.slice(6);
+              eventData += (eventData ? "\n" : "") + line.slice(6);
             } else if (line === "" && eventData) {
               try {
-                const event = JSON.parse(eventData) as SSEEvent;
-                handleSSEEvent(event);
+                const ev = JSON.parse(eventData) as SSEEvent;
+                handlers.onEvent(ev);
               } catch {
-                // Malformed event, skip
+                // malformed, skip
               }
               eventData = "";
             }
@@ -99,44 +103,27 @@ export function connectSSE(config: ZhiHandConfig): void {
         }
       } catch (err) {
         if (signal.aborted) break;
-        sseConnected = false;
-        // Backoff before reconnect
-        await new Promise((r) => setTimeout(r, 3000));
+        handlers.onDisconnected();
+        await new Promise((r) => setTimeout(r, backoffMs));
+        backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX);
       }
     }
-    sseConnected = false;
+    handlers.onDisconnected();
   })();
+
+  return controller;
 }
 
 /**
- * Disconnect the SSE event stream.
- */
-export function disconnectSSE(): void {
-  sseAbortController?.abort();
-  sseAbortController = null;
-  sseConnected = false;
-}
-
-/**
- * Whether the SSE stream is currently connected.
- */
-export function isSSEConnected(): boolean {
-  return sseConnected;
-}
-
-/**
- * Wait for command ACK via SSE push.
- * Falls back to polling if SSE is not active.
+ * Wait for command ACK via SSE push (which should already be connected by the
+ * registry). Falls back to polling.
  */
 export async function waitForCommandAck(
-  config: ZhiHandConfig,
-  options: { commandId: string; timeoutMs?: number; signal?: AbortSignal }
+  config: ZhiHandRuntimeConfig,
+  options: { commandId: string; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<WaitForCommandAckResult> {
   const timeoutMs = options.timeoutMs ?? 15_000;
   dbg(`[sse-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
-
-  // Ensure SSE is connected for real-time ACKs
-  connectSSE(config);
 
   return new Promise<WaitForCommandAckResult>((resolve, reject) => {
     let resolved = false;
@@ -154,20 +141,28 @@ export async function waitForCommandAck(
       resolve({ acked: true, command: ackedCommand });
     });
 
-    // Also poll as fallback (SSE may not be connected yet or may be reconnecting)
-    pollInterval = setInterval(async () => {
+    // Delay polling startup by 2s so SSE push ACK normally wins in the
+    // registry-connected path. CLI (zhihand test) still resolves via polling
+    // after the initial delay. This avoids hammering the backend with 500ms
+    // HTTP polls for every command when SSE is healthy.
+    const POLL_START_DELAY_MS = 2000;
+    const POLL_INTERVAL_MS = 500;
+    const startPolling = setTimeout(() => {
       if (resolved) return;
-      try {
-        const cmd = await getCommand(config, options.commandId);
-        if (cmd.acked_at) {
-          resolved = true;
-          cleanup();
-          resolve({ acked: true, command: cmd });
+      pollInterval = setInterval(async () => {
+        if (resolved) return;
+        try {
+          const cmd = await getCommand(config, options.commandId);
+          if (cmd.acked_at) {
+            resolved = true;
+            cleanup();
+            resolve({ acked: true, command: cmd });
+          }
+        } catch {
+          // non-fatal
         }
-      } catch {
-        // Polling failure is non-fatal; SSE or next poll may succeed
-      }
-    }, 500);
+      }, POLL_INTERVAL_MS);
+    }, POLL_START_DELAY_MS);
 
     options.signal?.addEventListener("abort", () => {
       cleanup();
@@ -176,6 +171,7 @@ export async function waitForCommandAck(
 
     function cleanup() {
       clearTimeout(timeout);
+      clearTimeout(startPolling);
       unsubscribe();
       if (pollInterval) clearInterval(pollInterval);
     }

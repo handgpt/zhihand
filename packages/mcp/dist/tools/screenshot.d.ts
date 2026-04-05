@@ -1,5 +1,6 @@
-import type { ZhiHandConfig } from "../core/config.ts";
-export declare function handleScreenshot(config: ZhiHandConfig): Promise<{
+import type { ZhiHandRuntimeConfig } from "../core/config.ts";
+import type { Capabilities } from "../core/device.ts";
+export declare function handleScreenshot(config: ZhiHandRuntimeConfig, capabilities: Capabilities | null): Promise<{
     content: ({
         type: "text";
         text: string;

@@ -1,6 +1,7 @@
-import type { ZhiHandConfig } from "../core/config.ts";
-import { updateDeviceProfile } from "../core/device.ts";
+import type { ZhiHandRuntimeConfig } from "../core/config.ts";
 import { dbg } from "./logger.ts";
+
+type ZhiHandConfig = ZhiHandRuntimeConfig;
 
 export interface MobilePrompt {
   id: string;
@@ -156,11 +157,8 @@ export class PromptListener {
         }
       }
     } else if (event.kind === "device_profile.updated" && event.device_profile) {
-      // NOTE: This event may only arrive if the server sends cross-topic events on
-      // the prompts stream, or if the API is updated to support multi-topic SSE.
-      // If not received, device profile is still fetched at daemon startup.
-      this.log("[device] Device profile updated via SSE");
-      updateDeviceProfile(event.device_profile);
+      // Registry owns device-profile updates; this listener is only for prompts.
+      this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
     }
   }
 

@@ -1,13 +1,12 @@
 /**
- * Device Context — static + dynamic device info fetched from control plane.
+ * Device profile extraction & formatting — stateless.
  *
- * Static info (platform, model, screen size) is set once after pairing and
- * injected into MCP tool descriptions so the LLM always knows the device.
- *
- * Dynamic info (battery, network, BLE) is updated via SSE push and exposed
- * through the zhihand_status tool and device://profile resource.
+ * Per-device state (profile, raw attributes, timestamps) lives in the
+ * device registry (see ./registry.ts). This module exposes pure helpers
+ * to extract, classify, and format device data so the same logic can be
+ * applied to any number of devices.
  */
-import type { ZhiHandConfig } from "./config.ts";
+import type { ZhiHandRuntimeConfig } from "./config.ts";
 export interface StaticContext {
     platform: string;
     model: string;
@@ -35,11 +34,8 @@ export interface DynamicContext {
     thermalState?: string;
     fontScale: number;
 }
-export declare function getStaticContext(): StaticContext;
-export declare function getDynamicContext(): DynamicContext;
-export declare function getRawAttributes(): Record<string, unknown>;
-export declare function getProfileAgeMs(): number;
-export declare function isDeviceProfileLoaded(): boolean;
+declare const DEFAULT_STATIC: StaticContext;
+declare const DEFAULT_DYNAMIC: DynamicContext;
 export interface Capability {
     ready: boolean;
     reason: string;
@@ -53,12 +49,25 @@ export interface Capabilities {
         stale: boolean;
     };
 }
-export declare function getCapabilities(): Capabilities;
+export declare function computeCapabilities(rawAttributes: Record<string, unknown>, profileReceivedAtMs: number): Capabilities;
 export declare function extractStatic(profile: Record<string, unknown>): StaticContext;
 export declare function extractDynamic(profile: Record<string, unknown>): DynamicContext;
-export declare function updateDeviceProfile(raw: Record<string, unknown>): void;
-export declare function fetchDeviceProfile(config: ZhiHandConfig): Promise<void>;
-export declare function buildControlToolDescription(): string;
-export declare function buildSystemToolDescription(): string;
-export declare function buildScreenshotToolDescription(): string;
-export declare function formatDeviceStatus(): Record<string, unknown>;
+/**
+ * Fetch and normalize the device profile from the control plane once.
+ * Returns null on failure (HTTP or network).
+ */
+export declare function fetchDeviceProfileOnce(config: ZhiHandRuntimeConfig): Promise<{
+    rawAttrs: Record<string, unknown>;
+    receivedAtMs: number;
+} | null>;
+/**
+ * Normalize an SSE device_profile.updated payload into rawAttrs shape.
+ */
+export declare function normalizeProfilePayload(raw: Record<string, unknown>): Record<string, unknown>;
+export declare function pickAllowlistedRawAttributes(rawAttributes: Record<string, unknown>): Record<string, unknown>;
+export { DEFAULT_STATIC, DEFAULT_DYNAMIC };
+import type { DeviceState } from "./registry.ts";
+export declare function buildControlToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
+export declare function buildSystemToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
+export declare function buildScreenshotToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
+export declare function formatDeviceStatus(state: DeviceState): Record<string, unknown>;

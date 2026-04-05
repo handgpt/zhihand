@@ -8,6 +8,7 @@ import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
 import { detectCLITools, formatDetectedTools } from "./cli/detect.js";
 import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.js";
+import { registry } from "./core/registry.js";
 function zodSchemaToJsonSchema(zodShape) {
     // Simplified conversion — OpenClaw uses JSON Schema-like parameter objects.
     // The actual Zod schemas are used for validation inside tool handlers.
@@ -23,6 +24,8 @@ function zodSchemaToJsonSchema(zodShape) {
 }
 export function registerOpenClawTools(api, deviceName) {
     const log = (msg) => api.logger.info?.(msg);
+    // Kick off registry in the background so runtime config resolution benefits.
+    void registry.init().catch(() => { });
     // zhihand_control
     api.registerTool({
         name: "zhihand_control",
@@ -31,7 +34,10 @@ export function registerOpenClawTools(api, deviceName) {
         parameters: zodSchemaToJsonSchema(controlSchema),
         execute: async (_id, params) => {
             const config = resolveConfig(deviceName);
-            const result = await executeControl(config, params);
+            const state = registry.get(config.credentialId);
+            const platform = state?.profile?.platform ?? "unknown";
+            const caps = state?.capabilities ?? null;
+            const result = await executeControl(config, params, platform, caps);
             return result;
         },
     });
@@ -43,7 +49,9 @@ export function registerOpenClawTools(api, deviceName) {
         parameters: zodSchemaToJsonSchema(screenshotSchema),
         execute: async (_id, _params) => {
             const config = resolveConfig(deviceName);
-            const result = await handleScreenshot(config);
+            const state = registry.get(config.credentialId);
+            const caps = state?.capabilities ?? null;
+            const result = await handleScreenshot(config, caps);
             return result;
         },
     });

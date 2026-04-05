@@ -1,6 +1,10 @@
-import type { ZhiHandConfig } from "../core/config.ts";
+import type { ZhiHandRuntimeConfig } from "../core/config.ts";
+import type { Capabilities } from "../core/device.ts";
 import { executeScreenshot } from "./control.ts";
 
-export async function handleScreenshot(config: ZhiHandConfig) {
-  return await executeScreenshot(config);
+export async function handleScreenshot(
+  config: ZhiHandRuntimeConfig,
+  capabilities: Capabilities | null,
+) {
+  return await executeScreenshot(config, capabilities);
 }

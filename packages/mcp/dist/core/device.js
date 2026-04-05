@@ -1,14 +1,12 @@
 /**
- * Device Context — static + dynamic device info fetched from control plane.
+ * Device profile extraction & formatting — stateless.
  *
- * Static info (platform, model, screen size) is set once after pairing and
- * injected into MCP tool descriptions so the LLM always knows the device.
- *
- * Dynamic info (battery, network, BLE) is updated via SSE push and exposed
- * through the zhihand_status tool and device://profile resource.
+ * Per-device state (profile, raw attributes, timestamps) lives in the
+ * device registry (see ./registry.ts). This module exposes pure helpers
+ * to extract, classify, and format device data so the same logic can be
+ * applied to any number of devices.
  */
 import { dbg } from "../daemon/logger.js";
-// ── Default values ────────────────────────────────────────
 const DEFAULT_STATIC = {
     platform: "unknown",
     model: "unknown",
@@ -33,36 +31,8 @@ const DEFAULT_DYNAMIC = {
     availableStorageMb: -1,
     fontScale: 1,
 };
-// ── Module state ──────────────────────────────────────────
-let staticCtx = { ...DEFAULT_STATIC };
-let dynamicCtx = { ...DEFAULT_DYNAMIC };
-let rawAttributes = {};
-// Local monotonic timestamp (Date.now()) captured when the profile was last
-// updated. Used for age calculations — avoids distributed clock skew vs.
-// reading server-side `updated_at`.
-let profileReceivedAtMs = 0;
-let loaded = false;
-export function getStaticContext() {
-    return staticCtx;
-}
-export function getDynamicContext() {
-    return dynamicCtx;
-}
-export function getRawAttributes() {
-    return rawAttributes;
-}
-export function getProfileAgeMs() {
-    if (!loaded || profileReceivedAtMs === 0)
-        return Number.POSITIVE_INFINITY;
-    return Date.now() - profileReceivedAtMs;
-}
-export function isDeviceProfileLoaded() {
-    return loaded;
-}
-// Max age (ms) before the device profile is considered stale. Bounds to
-// 60s: profile updates are pushed ~every 10–30s by the phone app.
 const PROFILE_STALE_THRESHOLD_MS = 60_000;
-export function getCapabilities() {
+export function computeCapabilities(rawAttributes, profileReceivedAtMs) {
     const a = rawAttributes;
     const b = (k) => typeof a[k] === "boolean" ? a[k] : undefined;
     const recordingActive = b("recording_active");
@@ -73,15 +43,9 @@ export function getCapabilities() {
     const liveSessionActive = b("live_session_active");
     const pairedHostReady = b("paired_host_ready");
     const screenSharingReady = recordingActive === true;
-    // HID is "ready" when we have a connected bonded peripheral and aren't
-    // mid-pairing. `hid_session_ready` is advisory — some devices keep it
-    // false while HID still works, so we don't require it.
     const hidReady = hidConnected === true && hidBonded === true && hidPairing !== true;
-    // Strict AND: a "ready" live session requires both an active socket
-    // and a paired host. Using OR here would mask a dead session when a
-    // host is still paired from a previous run.
     const liveReady = liveSessionActive === true && pairedHostReady === true;
-    const ageMs = getProfileAgeMs();
+    const ageMs = profileReceivedAtMs === 0 ? Number.POSITIVE_INFINITY : Date.now() - profileReceivedAtMs;
     const stale = ageMs > PROFILE_STALE_THRESHOLD_MS;
     return {
         screen_sharing: {
@@ -119,7 +83,6 @@ function bool(v, fallback) {
     return typeof v === "boolean" ? v : fallback;
 }
 export function extractStatic(profile) {
-    // Build OS version string from platform + system_release + api_level
     const platform = str(profile.platform, DEFAULT_STATIC.platform);
     const sysRelease = str(profile.system_release, "");
     const apiLevel = typeof profile.api_level === "number" ? profile.api_level : null;
@@ -133,12 +96,9 @@ export function extractStatic(profile) {
     else {
         osVersion = sysRelease || DEFAULT_STATIC.osVersion;
     }
-    // Screen size: Android uses display_width_px/display_height_px, iOS uses display_width_pixels/display_height_pixels
     const screenW = num(profile.display_width_px, num(profile.display_width_pixels, DEFAULT_STATIC.screenWidthPx));
     const screenH = num(profile.display_height_px, num(profile.display_height_pixels, DEFAULT_STATIC.screenHeightPx));
-    // Density: Android uses density, iOS uses display_scale
     const density = num(profile.density, num(profile.display_scale, DEFAULT_STATIC.density));
-    // Text direction: rtl is boolean
     const textDirection = profile.rtl === true ? "rtl" : "ltr";
     return {
         platform,
@@ -170,26 +130,11 @@ export function extractDynamic(profile) {
         fontScale: num(profile.font_scale, DEFAULT_DYNAMIC.fontScale),
     };
 }
-// ── Update from SSE event ─────────────────────────────────
-export function updateDeviceProfile(raw) {
-    // SSE events may also wrap in { platform, attributes: {...} } — flatten if needed
-    let profile;
-    if (typeof raw.attributes === "object" && raw.attributes !== null) {
-        const attrs = raw.attributes;
-        profile = { ...attrs, platform: raw.platform ?? attrs.platform };
-    }
-    else {
-        profile = raw;
-    }
-    staticCtx = extractStatic(profile);
-    dynamicCtx = extractDynamic(profile);
-    rawAttributes = profile;
-    profileReceivedAtMs = Date.now();
-    loaded = true;
-    dbg(`[device] Profile updated: platform=${staticCtx.platform}, model=${staticCtx.model}, screen=${staticCtx.screenWidthPx}x${staticCtx.screenHeightPx}`);
-}
-// ── Fetch initial profile from API ────────────────────────
-export async function fetchDeviceProfile(config) {
+/**
+ * Fetch and normalize the device profile from the control plane once.
+ * Returns null on failure (HTTP or network).
+ */
+export async function fetchDeviceProfileOnce(config) {
     const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/device-profile`;
     dbg(`[device] Fetching profile: GET ${url}`);
     try {
@@ -199,96 +144,44 @@ export async function fetchDeviceProfile(config) {
         });
         if (!response.ok) {
             dbg(`[device] Profile fetch failed: ${response.status} ${response.statusText}`);
-            return;
+            return null;
         }
-        const data = await response.json();
-        // API returns { profile: { credential_id, platform, attributes: {...} } }
+        const data = (await response.json());
         const wrapper = (typeof data.profile === "object" && data.profile !== null)
             ? data.profile
             : data;
-        // Merge top-level fields (platform, edge_id) with attributes for flat extraction
         const attrs = (typeof wrapper.attributes === "object" && wrapper.attributes !== null)
             ? wrapper.attributes
             : {};
-        const profile = { ...attrs, platform: wrapper.platform ?? attrs.platform };
-        dbg(`[device] Raw profile keys: ${Object.keys(profile).join(", ")}`);
-        updateDeviceProfile(profile);
+        const rawAttrs = { ...attrs, platform: wrapper.platform ?? attrs.platform };
+        return { rawAttrs, receivedAtMs: Date.now() };
     }
     catch (err) {
         dbg(`[device] Profile fetch error: ${err.message}`);
+        return null;
     }
 }
-// ── Build tool description with device info ───────────────
-export function buildControlToolDescription() {
-    if (!loaded || staticCtx.platform === "unknown") {
-        return "Control the connected mobile device. Supports click, swipe, type, scroll, open_app, back, home, and more. All coordinates use normalized ratios [0,1].";
+/**
+ * Normalize an SSE device_profile.updated payload into rawAttrs shape.
+ */
+export function normalizeProfilePayload(raw) {
+    if (typeof raw.attributes === "object" && raw.attributes !== null) {
+        const attrs = raw.attributes;
+        return { ...attrs, platform: raw.platform ?? attrs.platform };
     }
-    const parts = [
-        `Control a ${staticCtx.platform} device`,
-        `(${staticCtx.model}, ${staticCtx.osVersion}`,
-        `${staticCtx.screenWidthPx}x${staticCtx.screenHeightPx}`,
-        `${staticCtx.formFactor}, ${staticCtx.locale})`,
-    ];
-    let desc = parts.join(", ") + ".";
-    desc += " All coordinates use normalized ratios [0,1].";
-    // Platform-specific open_app guidance
-    if (staticCtx.platform === "android") {
-        desc += " For open_app, use appPackage (e.g. 'com.tencent.mm'). Do NOT send bundleId or urlScheme.";
-    }
-    else if (staticCtx.platform === "ios") {
-        desc += " For open_app, use bundleId (e.g. 'com.tencent.xin') or urlScheme (e.g. 'weixin://'). Do NOT send appPackage.";
-    }
-    return desc;
+    return raw;
 }
-export function buildSystemToolDescription() {
-    if (!loaded || staticCtx.platform === "unknown") {
-        return "System navigation and media controls. Actions: notification, recent, search, switch_input, siri (iOS), control_center (iOS), open_browser (Android), shortcut_help (Android), volume_up/down, mute, play_pause, stop, next/prev_track, fast_forward, rewind, brightness_up/down, power.";
-    }
-    const platform = staticCtx.platform;
-    const parts = [
-        `System navigation and media controls for ${platform} device (${staticCtx.model}).`,
-    ];
-    // Navigation
-    parts.push("Navigation: notification, recent, search (optional text query), switch_input.");
-    if (platform === "ios") {
-        parts.push("iOS: siri, control_center.");
-    }
-    else if (platform === "android") {
-        parts.push("Android: open_browser, shortcut_help.");
-    }
-    // Media
-    parts.push("Media: volume_up, volume_down, mute, play_pause, stop, next_track, prev_track, fast_forward, rewind.");
-    // Hardware
-    parts.push("Hardware: brightness_up, brightness_down, power.");
-    return parts.join(" ");
-}
-export function buildScreenshotToolDescription() {
-    if (!loaded || staticCtx.platform === "unknown") {
-        return "Take a screenshot of the phone screen.";
-    }
-    return `Take a screenshot of the ${staticCtx.platform} device (${staticCtx.model}, ${staticCtx.screenWidthPx}x${staticCtx.screenHeightPx}).`;
-}
-// ── Format status for zhihand_status tool ─────────────────
-// Allowlist of raw attribute keys exposed via zhihand_status.
-// Keeps context window manageable and blocks sensitive/internal fields
-// (e.g. credential_status, full_access_*). Wire-format names are kept
-// verbatim so the LLM can cite them consistently with the server logs.
+// ── Allowlist for zhihand_status raw attributes ───────────
 const RAW_ATTRIBUTE_ALLOWLIST = [
-    // Device identity
     "brand", "manufacturer", "model", "rom_family", "rom_version",
     "system_release", "api_level", "app_version", "app_build",
-    // Display / form factor
     "display_width_px", "display_height_px", "density", "density_dpi",
     "screen_width_dp", "screen_height_dp", "smallest_width_dp",
     "form_factor", "orientation", "touchscreen", "navigation_mode",
-    // Locale / UI
     "locale", "language", "timezone", "rtl", "dark_mode", "font_scale",
-    // Power / thermal / storage
     "battery_level", "battery_state", "available_storage_mb",
     "thermal_state", "low_ram_device",
-    // Network
     "network_type",
-    // Capability / readiness signals (most important for LLM diagnosis)
     "hid_connected", "hid_bonded", "hid_pairing", "hid_session_ready",
     "live_session_active", "paired_host_ready", "recording_active",
     "recording_archive_enabled", "app_in_foreground", "task_running",
@@ -296,7 +189,7 @@ const RAW_ATTRIBUTE_ALLOWLIST = [
     "hardware_keyboard_present", "hard_keyboard_hidden",
     "supports_keyboard_prompt_navigation",
 ];
-function pickAllowlistedRawAttributes() {
+export function pickAllowlistedRawAttributes(rawAttributes) {
     const out = {};
     for (const k of RAW_ATTRIBUTE_ALLOWLIST) {
         if (k in rawAttributes && rawAttributes[k] !== undefined) {
@@ -305,9 +198,133 @@ function pickAllowlistedRawAttributes() {
     }
     return out;
 }
-export function formatDeviceStatus() {
+// ── Default static/dynamic export for empty-state rendering ──
+export { DEFAULT_STATIC, DEFAULT_DYNAMIC };
+function singleDeviceOpenAppGuidance(platform) {
+    if (platform === "android") {
+        return " For open_app, use appPackage (e.g. 'com.tencent.mm'). Do NOT send bundleId or urlScheme.";
+    }
+    if (platform === "ios") {
+        return " For open_app, use bundleId (e.g. 'com.tencent.xin') or urlScheme (e.g. 'weixin://'). Do NOT send appPackage.";
+    }
+    return "";
+}
+export function buildControlToolDescription(state, onlineStates) {
+    const baseGeneric = "Control the connected mobile device. Supports click, swipe, type, scroll, open_app, back, home, and more. All coordinates use normalized ratios [0,1]. Call zhihand_list_devices to see online devices, then pass device_id.";
+    if (onlineStates) {
+        if (onlineStates.length === 0) {
+            return "No devices online — ask user to open the ZhiHand app. " + baseGeneric;
+        }
+        if (onlineStates.length === 1) {
+            const s = onlineStates[0];
+            const ctx = s.profile;
+            if (!ctx || ctx.platform === "unknown") {
+                return `Control the connected mobile device (${s.label}). device_id is optional (single device online). All coordinates use normalized ratios [0,1].`;
+            }
+            const parts = [
+                `Control a ${ctx.platform} device`,
+                `(${ctx.model}, ${ctx.osVersion}`,
+                `${ctx.screenWidthPx}x${ctx.screenHeightPx}`,
+                `${ctx.formFactor}, ${ctx.locale})`,
+            ];
+            let desc = parts.join(", ") + `. device_id is optional (single device online: ${s.credentialId}).`;
+            desc += " All coordinates use normalized ratios [0,1].";
+            desc += singleDeviceOpenAppGuidance(ctx.platform);
+            return desc;
+        }
+        // 2+ devices
+        const ids = onlineStates.map((d) => `${d.credentialId} (${d.label}, ${d.platform})`).join("; ");
+        return `Control a mobile device. device_id is REQUIRED (multiple online). Online devices: ${ids}. Call zhihand_list_devices first. All coordinates use normalized ratios [0,1].`;
+    }
+    // No explicit onlineStates: describe single state or generic
+    if (!state || !state.profile || state.profile.platform === "unknown") {
+        return baseGeneric;
+    }
+    const ctx = state.profile;
+    const parts = [
+        `Control a ${ctx.platform} device`,
+        `(${ctx.model}, ${ctx.osVersion}`,
+        `${ctx.screenWidthPx}x${ctx.screenHeightPx}`,
+        `${ctx.formFactor}, ${ctx.locale})`,
+    ];
+    let desc = parts.join(", ") + ".";
+    desc += " All coordinates use normalized ratios [0,1].";
+    desc += singleDeviceOpenAppGuidance(ctx.platform);
+    return desc;
+}
+export function buildSystemToolDescription(state, onlineStates) {
+    const genericBase = "System navigation and media controls. Actions: notification, recent, search, switch_input, siri (iOS), control_center (iOS), open_browser (Android), shortcut_help (Android), volume_up/down, mute, play_pause, stop, next/prev_track, fast_forward, rewind, brightness_up/down, power.";
+    if (onlineStates) {
+        if (onlineStates.length === 0) {
+            return "No devices online — ask user to open the ZhiHand app. " + genericBase;
+        }
+        if (onlineStates.length === 1) {
+            const s = onlineStates[0];
+            const platform = s.profile?.platform ?? s.platform;
+            const parts = [
+                `System navigation and media controls for ${platform} device (${s.profile?.model ?? s.label}). device_id is optional (single device online).`,
+            ];
+            parts.push("Navigation: notification, recent, search (optional text query), switch_input.");
+            if (platform === "ios")
+                parts.push("iOS: siri, control_center.");
+            else if (platform === "android")
+                parts.push("Android: open_browser, shortcut_help.");
+            parts.push("Media: volume_up, volume_down, mute, play_pause, stop, next_track, prev_track, fast_forward, rewind.");
+            parts.push("Hardware: brightness_up, brightness_down, power.");
+            return parts.join(" ");
+        }
+        const ids = onlineStates.map((d) => `${d.credentialId} (${d.label}, ${d.platform})`).join("; ");
+        return `System navigation and media controls for mobile device. device_id is REQUIRED (multiple online). Online: ${ids}. ` + genericBase;
+    }
+    if (!state || !state.profile || state.profile.platform === "unknown") {
+        return genericBase;
+    }
+    const platform = state.profile.platform;
+    const parts = [
+        `System navigation and media controls for ${platform} device (${state.profile.model}).`,
+    ];
+    parts.push("Navigation: notification, recent, search (optional text query), switch_input.");
+    if (platform === "ios")
+        parts.push("iOS: siri, control_center.");
+    else if (platform === "android")
+        parts.push("Android: open_browser, shortcut_help.");
+    parts.push("Media: volume_up, volume_down, mute, play_pause, stop, next_track, prev_track, fast_forward, rewind.");
+    parts.push("Hardware: brightness_up, brightness_down, power.");
+    return parts.join(" ");
+}
+export function buildScreenshotToolDescription(state, onlineStates) {
+    if (onlineStates) {
+        if (onlineStates.length === 0) {
+            return "Take a screenshot of the phone screen. No devices online — ask user to open the ZhiHand app.";
+        }
+        if (onlineStates.length === 1) {
+            const s = onlineStates[0];
+            const ctx = s.profile;
+            if (!ctx || ctx.platform === "unknown") {
+                return `Take a screenshot of the phone screen (${s.label}). device_id is optional (single device online).`;
+            }
+            return `Take a screenshot of the ${ctx.platform} device (${ctx.model}, ${ctx.screenWidthPx}x${ctx.screenHeightPx}). device_id is optional (single device online).`;
+        }
+        const ids = onlineStates.map((d) => `${d.credentialId} (${d.label})`).join("; ");
+        return `Take a screenshot of a mobile device. device_id is REQUIRED (multiple online). Online: ${ids}.`;
+    }
+    if (!state || !state.profile || state.profile.platform === "unknown") {
+        return "Take a screenshot of the phone screen.";
+    }
+    const ctx = state.profile;
+    return `Take a screenshot of the ${ctx.platform} device (${ctx.model}, ${ctx.screenWidthPx}x${ctx.screenHeightPx}).`;
+}
+// ── Format status for zhihand_status tool ─────────────────
+export function formatDeviceStatus(state) {
+    const staticCtx = state.profile ?? DEFAULT_STATIC;
+    const dynamicCtx = state.rawAttributes
+        ? extractDynamic(state.rawAttributes)
+        : DEFAULT_DYNAMIC;
+    const caps = state.capabilities ?? computeCapabilities(state.rawAttributes ?? {}, state.profileReceivedAtMs);
     return {
-        // Curated summary (human-readable, stable schema)
+        credential_id: state.credentialId,
+        label: state.label,
+        online: state.online,
         platform: staticCtx.platform,
         model: staticCtx.model,
         os_version: staticCtx.osVersion,
@@ -326,9 +343,7 @@ export function formatDeviceStatus() {
         storage_available_mb: dynamicCtx.availableStorageMb,
         thermal: dynamicCtx.thermalState ?? "normal",
         font_scale: dynamicCtx.fontScale,
-        // Readiness — always present so LLM knows what works right now
-        capabilities: getCapabilities(),
-        // Full (allowlisted) attributes from the device — wire-format names
-        raw: pickAllowlistedRawAttributes(),
+        capabilities: caps,
+        raw: pickAllowlistedRawAttributes(state.rawAttributes ?? {}),
     };
 }

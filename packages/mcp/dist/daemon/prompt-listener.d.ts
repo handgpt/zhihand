@@ -1,4 +1,5 @@
-import type { ZhiHandConfig } from "../core/config.ts";
+import type { ZhiHandRuntimeConfig } from "../core/config.ts";
+type ZhiHandConfig = ZhiHandRuntimeConfig;
 export interface MobilePrompt {
     id: string;
     credential_id: string;
@@ -32,3 +33,4 @@ export declare class PromptListener {
     private stopPolling;
     private poll;
 }
+export {};

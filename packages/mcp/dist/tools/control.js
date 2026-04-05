@@ -1,40 +1,36 @@
 import { createControlCommand, enqueueCommand, formatAckSummary } from "../core/command.js";
 import { fetchScreenshot } from "../core/screenshot.js";
 import { waitForCommandAck } from "../core/sse.js";
-import { getCapabilities, isDeviceProfileLoaded } from "../core/device.js";
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 /**
  * Build a short human-readable warning for the LLM if the underlying
- * capability isn't ready, or if the last screenshot is stale. Returns
- * empty string when everything is nominal.
+ * capability isn't ready, or if the last screenshot is stale.
  */
-function buildReadinessWarning(requiredCapability, screenshot) {
-    if (!isDeviceProfileLoaded())
+export function buildReadinessWarning(requiredCapability, capabilities, screenshot) {
+    if (!capabilities)
         return "";
-    const caps = getCapabilities();
     const warnings = [];
-    if (requiredCapability === "hid" && !caps.hid.ready) {
-        warnings.push(`⚠️ HID not ready: ${caps.hid.reason}`);
+    if (requiredCapability === "hid" && !capabilities.hid.ready) {
+        warnings.push(`⚠️ HID not ready: ${capabilities.hid.reason}`);
     }
-    if (requiredCapability === "screen" && !caps.screen_sharing.ready) {
-        warnings.push(`⚠️ Screen sharing not active: ${caps.screen_sharing.reason}`);
+    if (requiredCapability === "screen" && !capabilities.screen_sharing.ready) {
+        warnings.push(`⚠️ Screen sharing not active: ${capabilities.screen_sharing.reason}`);
     }
     if (screenshot && screenshot.stale) {
         warnings.push(`⚠️ Stale screenshot: age=${(screenshot.ageMs / 1000).toFixed(1)}s (phone may not be actively sharing the screen).`);
     }
-    if (caps.profile.stale) {
-        warnings.push(`⚠️ Stale device profile: ${(caps.profile.age_ms / 1000).toFixed(1)}s old — readiness flags may be out of date.`);
+    if (capabilities.profile.stale) {
+        warnings.push(`⚠️ Stale device profile: ${(capabilities.profile.age_ms / 1000).toFixed(1)}s old — readiness flags may be out of date.`);
     }
     return warnings.join("\n");
 }
-export async function executeControl(config, params) {
-    // wait: Plugin-local implementation, no server round-trip
+export async function executeControl(config, params, platform, capabilities) {
     if (params.action === "wait") {
         await sleep(params.durationMs ?? 1000);
         const shot = await fetchScreenshot(config);
-        const warning = buildReadinessWarning("screen", shot);
+        const warning = buildReadinessWarning("screen", capabilities, shot);
         const content = [];
         if (warning)
             content.push({ type: "text", text: warning });
@@ -42,12 +38,10 @@ export async function executeControl(config, params) {
         content.push({ type: "image", data: shot.buffer.toString("base64"), mimeType: "image/jpeg" });
         return { content };
     }
-    // screenshot: send receive_screenshot, App captures immediately (no 2s delay)
     if (params.action === "screenshot") {
-        return await executeScreenshot(config);
+        return await executeScreenshot(config, capabilities);
     }
-    // HID operations: enqueue → ACK → GET screenshot
-    const command = createControlCommand(params);
+    const command = createControlCommand(params, platform);
     const queued = await enqueueCommand(config, command);
     const ack = await waitForCommandAck(config, { commandId: queued.id, timeoutMs: 15_000 });
     const content = [];
@@ -57,10 +51,10 @@ export async function executeControl(config, params) {
             shot = await fetchScreenshot(config);
         }
         catch {
-            // Screenshot is best-effort after ACK
+            // best-effort
         }
     }
-    const warning = buildReadinessWarning("hid", shot);
+    const warning = buildReadinessWarning("hid", capabilities, shot);
     if (warning)
         content.push({ type: "text", text: warning });
     content.push({ type: "text", text: formatAckSummary(params.action, ack) });
@@ -69,12 +63,12 @@ export async function executeControl(config, params) {
     }
     return { content };
 }
-export async function executeScreenshot(config) {
+export async function executeScreenshot(config, capabilities) {
     const command = createControlCommand({ action: "screenshot" });
     const queued = await enqueueCommand(config, command);
     const ack = await waitForCommandAck(config, { commandId: queued.id, timeoutMs: 5_000 });
     const shot = await fetchScreenshot(config);
-    const warning = buildReadinessWarning("screen", shot);
+    const warning = buildReadinessWarning("screen", capabilities, shot);
     const content = [];
     if (warning)
         content.push({ type: "text", text: warning });
