@@ -19,7 +19,7 @@ import {
   formatDeviceStatus,
 } from "./core/device.ts";
 
-export const PACKAGE_VERSION = "0.28.0";
+export const PACKAGE_VERSION = "0.29.0";
 
 export function createServer(deviceName?: string): McpServer {
   const server = new McpServer({
@@ -64,7 +64,7 @@ export function createServer(deviceName?: string): McpServer {
   // zhihand_status — return device context for LLM to query on demand
   server.tool(
     "zhihand_status",
-    "Get device status: platform, model, OS version, screen size, battery, network, BLE, dark mode, storage, and more.",
+    "Get device status and capability readiness. Returns curated fields (platform, model, OS, screen, battery, network, BLE, ...), a `capabilities` object with `ready`/`reason` for screen_sharing, hid, live_session, profile.age, AND a `raw` map of allowlisted device attributes (wire-format names). Call this BEFORE issuing commands if you are unsure whether the phone is screen-sharing or the ZhiHand (BLE HID) is connected.",
     {},
     async () => {
       return {

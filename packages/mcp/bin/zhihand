@@ -27,6 +27,7 @@ const { positionals, values } = parseArgs({
     help: { type: "boolean", short: "h", default: false },
     detach: { type: "boolean", short: "d", default: false },
     debug: { type: "boolean", default: false },
+    force: { type: "boolean", default: false },
     port: { type: "string" },
   },
 });
@@ -54,9 +55,10 @@ Usage:
   zhihand detect             Detect available CLI tools
 
   zhihand list               List all available tests with IDs
-  zhihand test               Run all safe device tests
+  zhihand test               Run all safe device tests (skips capability-gated)
   zhihand test <ids>         Run specific test(s), e.g. 'zhihand test 4' or '4,9,20'
   zhihand test all           Run ALL tests (including unsafe, e.g. power button)
+  zhihand test --force       Bypass capability gates (run anyway even if NOT ready)
   zhihand serve              Start MCP Server (stdio mode, backward compat)
 
 Options:
@@ -65,6 +67,7 @@ Options:
   --port <port>      Override daemon port (default: 18686)
   -d, --detach       Run daemon in background
   --debug            Enable verbose debug logging
+  --force            (test only) Run tests even if capability not ready
   -h, --help         Show this help
 `);
   process.exit(0);
@@ -294,13 +297,31 @@ switch (command) {
     const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
     const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
     const { waitForCommandAck } = await import("../dist/core/sse.js");
-    const { fetchScreenshotBinary } = await import("../dist/core/screenshot.js");
-    const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus } = await import("../dist/core/device.js");
+    const { fetchScreenshot, getSnapshotStaleThresholdMs } = await import("../dist/core/screenshot.js");
+    const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus, getCapabilities } = await import("../dist/core/device.js");
 
     // ── Test Registry ────────────────────────────────────────
     // Kind: "profile" | "status" | "screenshot" | "hid" | "system"
+    //   - Each kind maps to a required capability (see KIND_CAPABILITY).
     // Platform: undefined | "android" | "ios" (skipped on non-matching)
     // Unsafe: won't run in full-suite unless explicitly requested
+
+    // Required capability per test kind. Tests whose required capability
+    // is not ready are SKIPPED (not failed), unless --force is passed.
+    //
+    // NOTE: `system` commands (volume, brightness, notification, media,
+    // etc.) are executed by the phone app via native OS APIs
+    // (AccessibilityService on Android, Shortcuts/system hooks on iOS)
+    // and do NOT depend on the BLE HID channel. Only the `hid` kind
+    // (click, swipe, type, keycombo — which inject into the paired
+    // target via the ZhiHand peripheral) needs the HID capability.
+    const KIND_CAPABILITY = {
+      profile: "none",
+      status: "none",
+      screenshot: "screen",
+      hid: "hid",
+      system: "none",
+    };
     const REGISTRY = [
       // Phase A — Device Info API
       { id: 1, phase: "Device Info", label: "Fetch device profile", kind: "profile" },
@@ -391,6 +412,7 @@ switch (command) {
 
     // Parse which tests to run from positional args
     const filterArg = positionals[1];  // e.g. "4" or "4,9,20" or "all"
+    const forceRun = values.force === true;
     let selectedIds = null;   // null = default (all safe)
     let includeUnsafe = false;
     if (filterArg) {
@@ -426,6 +448,24 @@ switch (command) {
       await fetchDeviceProfile(testConfig);
     } catch { /* non-fatal — Test 1 will retry and platform will update */ }
     const getDevicePlatform = () => isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+
+    // ── Capability readiness pre-flight ──
+    console.log("   ── Capability readiness ──");
+    const preCaps = isDeviceProfileLoaded() ? getCapabilities() : null;
+    if (!preCaps) {
+      console.log("   ⚠️  Device profile not loaded — all capability gates will allow tests through.");
+    } else {
+      const fmt = (name, cap) => `   ${cap.ready ? "✅" : "⚠️"} ${name.padEnd(14)} ${cap.ready ? "ready" : "NOT ready"}  — ${cap.reason}`;
+      console.log(fmt("screen_sharing", preCaps.screen_sharing));
+      console.log(fmt("hid",            preCaps.hid));
+      console.log(fmt("live_session",   preCaps.live_session));
+      const ageStr = preCaps.profile.age_ms >= 0 ? `${(preCaps.profile.age_ms / 1000).toFixed(1)}s` : "unknown";
+      console.log(`   ${preCaps.profile.stale ? "⚠️" : "✅"} profile        age=${ageStr}${preCaps.profile.stale ? " (STALE)" : ""}`);
+      if (forceRun) {
+        console.log("   --force passed: capability gates disabled.");
+      }
+    }
+    console.log("");
 
     let passed = 0;
     let failed = 0;
@@ -489,6 +529,22 @@ switch (command) {
         return;
       }
 
+      // Capability gate (unless --force) — evaluated per-test so later
+      // tests see fresh readiness flags pushed after Test 1's profile fetch.
+      if (!forceRun && isDeviceProfileLoaded()) {
+        const requiredCap = KIND_CAPABILITY[t.kind] ?? "none";
+        if (requiredCap !== "none") {
+          const caps = getCapabilities();
+          const gate = requiredCap === "screen" ? caps.screen_sharing : caps.hid;
+          if (!gate.ready) {
+            totalSteps++;
+            skipped++;
+            console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  Skipped (${requiredCap} not ready: ${gate.reason})`);
+            return;
+          }
+        }
+      }
+
       switch (t.kind) {
         case "profile": {
           totalSteps++;
@@ -516,14 +572,19 @@ switch (command) {
           process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
           try {
             const status = formatDeviceStatus();
-            const ignoredDefaults = new Set(["unknown", "0x0", "-1% (unknown)", "0"]);
-            const fields = Object.keys(status).filter((k) => {
-              const v = status[k];
-              if (v === null || v === undefined) return false;
-              if (ignoredDefaults.has(String(v))) return false;
-              return true;
-            });
-            console.log(`✅ ${fields.length} fields (${fields.join(", ")})`);
+            // Count curated top-level fields (excluding the nested 'raw'
+            // and 'capabilities' containers) plus every allowlisted raw
+            // attribute — this is what the LLM actually sees via
+            // zhihand_status.
+            const topLevel = Object.keys(status).filter((k) => k !== "raw" && k !== "capabilities");
+            const rawKeys = Object.keys(status.raw ?? {});
+            const caps = status.capabilities ?? {};
+            const capReadySummary = ["screen_sharing", "hid", "live_session"]
+              .map((k) => `${k}=${caps[k]?.ready ? "ready" : "not-ready"}`)
+              .join(", ");
+            console.log(`✅ ${topLevel.length} curated + ${rawKeys.length} raw attributes; ${capReadySummary}`);
+            console.log(`      curated: ${topLevel.join(", ")}`);
+            console.log(`      raw:     ${rawKeys.join(", ")}`);
             passed++;
           } catch (err) {
             console.log(`❌ ${err.message}`);
@@ -539,13 +600,24 @@ switch (command) {
             const cmd = createControlCommand({ action: "screenshot" });
             const queued = await enqueueCommand(testConfig, cmd);
             const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-            if (ack.acked) {
-              const buf = await fetchScreenshotBinary(testConfig);
-              console.log(`✅ ${(buf.length / 1024).toFixed(0)}KB (${Date.now() - t0}ms)`);
-              passed++;
-            } else {
+            if (!ack.acked) {
               console.log(`⏱️  Timeout (${Date.now() - t0}ms)`);
               failed++;
+              break;
+            }
+            const shot = await fetchScreenshot(testConfig);
+            const kb = (shot.buffer.length / 1024).toFixed(0);
+            const ms = Date.now() - t0;
+            // The screenshot endpoint returns the last cached frame even
+            // when the phone isn't actively sharing — the age header is
+            // the only way to tell. Treat stale as failure.
+            if (shot.stale) {
+              const threshold = getSnapshotStaleThresholdMs();
+              console.log(`❌ Stale (${kb}KB, age=${(shot.ageMs / 1000).toFixed(1)}s > ${(threshold / 1000).toFixed(1)}s) ${shot.width}x${shot.height} seq=${shot.sequence} — phone may not be screen-sharing (${ms}ms)`);
+              failed++;
+            } else {
+              console.log(`✅ ${kb}KB, ${shot.width}x${shot.height}, age=${shot.ageMs >= 0 ? `${shot.ageMs}ms` : "?"}, seq=${shot.sequence} (${ms}ms)`);
+              passed++;
             }
           } catch (err) {
             console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);

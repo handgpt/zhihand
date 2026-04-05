@@ -74,6 +74,11 @@ const DEFAULT_DYNAMIC: DynamicContext = {
 
 let staticCtx: StaticContext = { ...DEFAULT_STATIC };
 let dynamicCtx: DynamicContext = { ...DEFAULT_DYNAMIC };
+let rawAttributes: Record<string, unknown> = {};
+// Local monotonic timestamp (Date.now()) captured when the profile was last
+// updated. Used for age calculations — avoids distributed clock skew vs.
+// reading server-side `updated_at`.
+let profileReceivedAtMs = 0;
 let loaded = false;
 
 export function getStaticContext(): StaticContext {
@@ -84,8 +89,92 @@ export function getDynamicContext(): DynamicContext {
   return dynamicCtx;
 }
 
+export function getRawAttributes(): Record<string, unknown> {
+  return rawAttributes;
+}
+
+export function getProfileAgeMs(): number {
+  if (!loaded || profileReceivedAtMs === 0) return Number.POSITIVE_INFINITY;
+  return Date.now() - profileReceivedAtMs;
+}
+
 export function isDeviceProfileLoaded(): boolean {
   return loaded;
+}
+
+// ── Capability readiness ─────────────────────────────────
+// Derived from DeviceProfile.attributes. Each capability is exposed with
+// both the boolean `ready` flag and a human-readable `reason` string so
+// the LLM can second-guess us if needed.
+
+export interface Capability {
+  ready: boolean;
+  reason: string;
+}
+
+export interface Capabilities {
+  screen_sharing: Capability;
+  hid: Capability;
+  live_session: Capability;
+  profile: { age_ms: number; stale: boolean };
+}
+
+// Max age (ms) before the device profile is considered stale. Bounds to
+// 60s: profile updates are pushed ~every 10–30s by the phone app.
+const PROFILE_STALE_THRESHOLD_MS = 60_000;
+
+export function getCapabilities(): Capabilities {
+  const a = rawAttributes;
+  const b = (k: string): boolean | undefined =>
+    typeof a[k] === "boolean" ? (a[k] as boolean) : undefined;
+
+  const recordingActive = b("recording_active");
+  const hidConnected = b("hid_connected");
+  const hidBonded = b("hid_bonded");
+  const hidPairing = b("hid_pairing");
+  const hidSessionReady = b("hid_session_ready");
+  const liveSessionActive = b("live_session_active");
+  const pairedHostReady = b("paired_host_ready");
+
+  const screenSharingReady = recordingActive === true;
+  // HID is "ready" when we have a connected bonded peripheral and aren't
+  // mid-pairing. `hid_session_ready` is advisory — some devices keep it
+  // false while HID still works, so we don't require it.
+  const hidReady =
+    hidConnected === true && hidBonded === true && hidPairing !== true;
+  // Strict AND: a "ready" live session requires both an active socket
+  // and a paired host. Using OR here would mask a dead session when a
+  // host is still paired from a previous run.
+  const liveReady =
+    liveSessionActive === true && pairedHostReady === true;
+
+  const ageMs = getProfileAgeMs();
+  const stale = ageMs > PROFILE_STALE_THRESHOLD_MS;
+
+  return {
+    screen_sharing: {
+      ready: screenSharingReady,
+      reason: screenSharingReady
+        ? "recording_active=true"
+        : `recording_active=${recordingActive ?? "unknown"} — phone is not screen-sharing; start sharing in the app to enable screenshots`,
+    },
+    hid: {
+      ready: hidReady,
+      reason: hidReady
+        ? `connected=true, bonded=true, session_ready=${hidSessionReady ?? "unknown"}`
+        : `connected=${hidConnected ?? "unknown"}, bonded=${hidBonded ?? "unknown"}, pairing=${hidPairing ?? "unknown"}, session_ready=${hidSessionReady ?? "unknown"} — connect the ZhiHand (BLE HID) to enable input`,
+    },
+    live_session: {
+      ready: liveReady,
+      reason: liveReady
+        ? `live_session_active=${liveSessionActive ?? "-"}, paired_host_ready=${pairedHostReady ?? "-"}`
+        : `live_session_active=${liveSessionActive ?? "unknown"}, paired_host_ready=${pairedHostReady ?? "unknown"}`,
+    },
+    profile: {
+      age_ms: Number.isFinite(ageMs) ? ageMs : -1,
+      stale,
+    },
+  };
 }
 
 // ── Extract helpers ───────────────────────────────────────
@@ -169,6 +258,8 @@ export function updateDeviceProfile(raw: Record<string, unknown>): void {
   }
   staticCtx = extractStatic(profile);
   dynamicCtx = extractDynamic(profile);
+  rawAttributes = profile;
+  profileReceivedAtMs = Date.now();
   loaded = true;
   dbg(`[device] Profile updated: platform=${staticCtx.platform}, model=${staticCtx.model}, screen=${staticCtx.screenWidthPx}x${staticCtx.screenHeightPx}`);
 }
@@ -264,8 +355,47 @@ export function buildScreenshotToolDescription(): string {
 
 // ── Format status for zhihand_status tool ─────────────────
 
+// Allowlist of raw attribute keys exposed via zhihand_status.
+// Keeps context window manageable and blocks sensitive/internal fields
+// (e.g. credential_status, full_access_*). Wire-format names are kept
+// verbatim so the LLM can cite them consistently with the server logs.
+const RAW_ATTRIBUTE_ALLOWLIST: readonly string[] = [
+  // Device identity
+  "brand", "manufacturer", "model", "rom_family", "rom_version",
+  "system_release", "api_level", "app_version", "app_build",
+  // Display / form factor
+  "display_width_px", "display_height_px", "density", "density_dpi",
+  "screen_width_dp", "screen_height_dp", "smallest_width_dp",
+  "form_factor", "orientation", "touchscreen", "navigation_mode",
+  // Locale / UI
+  "locale", "language", "timezone", "rtl", "dark_mode", "font_scale",
+  // Power / thermal / storage
+  "battery_level", "battery_state", "available_storage_mb",
+  "thermal_state", "low_ram_device",
+  // Network
+  "network_type",
+  // Capability / readiness signals (most important for LLM diagnosis)
+  "hid_connected", "hid_bonded", "hid_pairing", "hid_session_ready",
+  "live_session_active", "paired_host_ready", "recording_active",
+  "recording_archive_enabled", "app_in_foreground", "task_running",
+  "emergency_stop_armed", "firmware_update_in_progress",
+  "hardware_keyboard_present", "hard_keyboard_hidden",
+  "supports_keyboard_prompt_navigation",
+];
+
+function pickAllowlistedRawAttributes(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of RAW_ATTRIBUTE_ALLOWLIST) {
+    if (k in rawAttributes && rawAttributes[k] !== undefined) {
+      out[k] = rawAttributes[k];
+    }
+  }
+  return out;
+}
+
 export function formatDeviceStatus(): Record<string, unknown> {
   return {
+    // Curated summary (human-readable, stable schema)
     platform: staticCtx.platform,
     model: staticCtx.model,
     os_version: staticCtx.osVersion,
@@ -284,5 +414,9 @@ export function formatDeviceStatus(): Record<string, unknown> {
     storage_available_mb: dynamicCtx.availableStorageMb,
     thermal: dynamicCtx.thermalState ?? "normal",
     font_scale: dynamicCtx.fontScale,
+    // Readiness — always present so LLM knows what works right now
+    capabilities: getCapabilities(),
+    // Full (allowlisted) attributes from the device — wire-format names
+    raw: pickAllowlistedRawAttributes(),
   };
 }

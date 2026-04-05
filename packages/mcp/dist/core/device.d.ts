@@ -37,7 +37,23 @@ export interface DynamicContext {
 }
 export declare function getStaticContext(): StaticContext;
 export declare function getDynamicContext(): DynamicContext;
+export declare function getRawAttributes(): Record<string, unknown>;
+export declare function getProfileAgeMs(): number;
 export declare function isDeviceProfileLoaded(): boolean;
+export interface Capability {
+    ready: boolean;
+    reason: string;
+}
+export interface Capabilities {
+    screen_sharing: Capability;
+    hid: Capability;
+    live_session: Capability;
+    profile: {
+        age_ms: number;
+        stale: boolean;
+    };
+}
+export declare function getCapabilities(): Capabilities;
 export declare function extractStatic(profile: Record<string, unknown>): StaticContext;
 export declare function extractDynamic(profile: Record<string, unknown>): DynamicContext;
 export declare function updateDeviceProfile(raw: Record<string, unknown>): void;
