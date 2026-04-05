@@ -43,5 +43,6 @@ export declare function extractDynamic(profile: Record<string, unknown>): Dynami
 export declare function updateDeviceProfile(raw: Record<string, unknown>): void;
 export declare function fetchDeviceProfile(config: ZhiHandConfig): Promise<void>;
 export declare function buildControlToolDescription(): string;
+export declare function buildSystemToolDescription(): string;
 export declare function buildScreenshotToolDescription(): string;
 export declare function formatDeviceStatus(): Record<string, unknown>;

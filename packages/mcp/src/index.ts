@@ -3,8 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { resolveConfig } from "./core/config.ts";
-import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.ts";
+import { controlSchema, systemSchema, screenshotSchema, pairSchema } from "./tools/schemas.ts";
 import { executeControl } from "./tools/control.ts";
+import { executeSystem } from "./tools/system.ts";
 import { handleScreenshot } from "./tools/screenshot.ts";
 import { handlePair } from "./tools/pair.ts";
 import {
@@ -13,11 +14,12 @@ import {
   isDeviceProfileLoaded,
   fetchDeviceProfile,
   buildControlToolDescription,
+  buildSystemToolDescription,
   buildScreenshotToolDescription,
   formatDeviceStatus,
 } from "./core/device.ts";
 
-export const PACKAGE_VERSION = "0.26.4";
+export const PACKAGE_VERSION = "0.27.0";
 
 export function createServer(deviceName?: string): McpServer {
   const server = new McpServer({
@@ -34,6 +36,17 @@ export function createServer(deviceName?: string): McpServer {
     async (params) => {
       const config = resolveConfig(deviceName);
       return await executeControl(config, params);
+    },
+  );
+
+  // zhihand_system — system navigation + media controls (separate tool per Gemini design review)
+  server.tool(
+    "zhihand_system",
+    buildSystemToolDescription(),
+    systemSchema,
+    async (params) => {
+      const config = resolveConfig(deviceName);
+      return await executeSystem(config, params);
     },
   );
 

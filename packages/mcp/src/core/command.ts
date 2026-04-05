@@ -131,6 +131,76 @@ export function createControlCommand(params: ControlParams): QueuedControlComman
   }
 }
 
+// ── System / Media command mapping ──────────────────────────
+
+export interface SystemParams {
+  action: string;
+  text?: string;
+}
+
+const IOS_ONLY_ACTIONS = new Set(["siri", "control_center"]);
+const ANDROID_ONLY_ACTIONS = new Set(["open_browser", "shortcut_help"]);
+
+export function createSystemCommand(params: SystemParams): QueuedControlCommand {
+  const platform = isDeviceProfileLoaded() ? getStaticContext().platform : "unknown";
+
+  // Platform validation — block mismatched platform-specific actions
+  if (platform === "android" && IOS_ONLY_ACTIONS.has(params.action)) {
+    throw new Error(`Action '${params.action}' is not supported on Android.`);
+  }
+  if (platform === "ios" && ANDROID_ONLY_ACTIONS.has(params.action)) {
+    throw new Error(`Action '${params.action}' is not supported on iOS.`);
+  }
+
+  switch (params.action) {
+    // System navigation
+    case "notification":
+      return { type: "receive_notification", payload: {} };
+    case "recent":
+      return { type: "receive_recent", payload: {} };
+    case "search":
+      return { type: "receive_search", payload: { query: params.text ?? "" } };
+    case "switch_input":
+      return { type: "receive_switch_input", payload: {} };
+    case "siri":
+      return { type: "receive_siri", payload: {} };
+    case "control_center":
+      return { type: "receive_control_center", payload: {} };
+    case "open_browser":
+      return { type: "receive_open_browser", payload: {} };
+    case "shortcut_help":
+      return { type: "receive_shortcut_help", payload: {} };
+    // Media controls
+    case "volume_up":
+      return { type: "receive_volume_up", payload: {} };
+    case "volume_down":
+      return { type: "receive_volume_down", payload: {} };
+    case "mute":
+      return { type: "receive_mute", payload: {} };
+    case "play_pause":
+      return { type: "receive_play_pause", payload: {} };
+    case "stop":
+      return { type: "receive_stop", payload: {} };
+    case "next_track":
+      return { type: "receive_next_track", payload: {} };
+    case "prev_track":
+      return { type: "receive_prev_track", payload: {} };
+    case "fast_forward":
+      return { type: "receive_fast_forward", payload: {} };
+    case "rewind":
+      return { type: "receive_rewind", payload: {} };
+    // Hardware
+    case "brightness_up":
+      return { type: "receive_brightness_up", payload: {} };
+    case "brightness_down":
+      return { type: "receive_brightness_down", payload: {} };
+    case "power":
+      return { type: "receive_power", payload: {} };
+    default:
+      throw new Error(`Unsupported system action: ${params.action}`);
+  }
+}
+
 export async function enqueueCommand(
   config: ZhiHandConfig,
   command: QueuedControlCommand

@@ -16,6 +16,10 @@ export declare const controlSchema: {
     bundleId: z.ZodOptional<z.ZodString>;
     urlScheme: z.ZodOptional<z.ZodString>;
 };
+export declare const systemSchema: {
+    action: z.ZodEnum<["notification", "recent", "search", "switch_input", "siri", "control_center", "open_browser", "shortcut_help", "volume_up", "volume_down", "mute", "play_pause", "stop", "next_track", "prev_track", "fast_forward", "rewind", "brightness_up", "brightness_down", "power"]>;
+    text: z.ZodOptional<z.ZodString>;
+};
 export declare const screenshotSchema: {};
 export declare const pairSchema: {
     forceNew: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;

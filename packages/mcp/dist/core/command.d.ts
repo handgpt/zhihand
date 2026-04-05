@@ -37,6 +37,11 @@ export interface WaitForCommandAckResult {
     command?: QueuedCommandRecord;
 }
 export declare function createControlCommand(params: ControlParams): QueuedControlCommand;
+export interface SystemParams {
+    action: string;
+    text?: string;
+}
+export declare function createSystemCommand(params: SystemParams): QueuedControlCommand;
 export declare function enqueueCommand(config: ZhiHandConfig, command: QueuedControlCommand): Promise<QueuedCommandRecord>;
 export declare function getCommand(config: ZhiHandConfig, commandId: string): Promise<QueuedCommandRecord>;
 export declare function formatAckSummary(action: string, result: WaitForCommandAckResult): string;

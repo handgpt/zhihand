@@ -372,6 +372,17 @@ function buildSystemContext() {
     else {
         openAppDoc = "- open_app: Open an app. Params: appPackage (Android, e.g. 'com.tencent.mm'), bundleId (iOS), urlScheme (e.g. 'weixin://')";
     }
+    // Platform-specific system actions
+    let platformSystemDoc;
+    if (static_?.platform === "ios") {
+        platformSystemDoc = "- siri: Activate Siri\n- control_center: Open Control Center";
+    }
+    else if (static_?.platform === "android") {
+        platformSystemDoc = "- open_browser: Launch default browser\n- shortcut_help: Show keyboard shortcuts overlay";
+    }
+    else {
+        platformSystemDoc = "- siri: Activate Siri (iOS only)\n- control_center: Open Control Center (iOS only)\n- open_browser: Launch default browser (Android only)\n- shortcut_help: Show keyboard shortcuts overlay (Android only)";
+    }
     return `You are ZhiHand, an AI assistant connected to the user's mobile phone via MCP tools.
 
 ## Device
@@ -401,13 +412,35 @@ ${openAppDoc}
 - screenshot: Capture screen via control (same as zhihand_screenshot)
 - wait: Wait before next action. Params: durationMs (default 1000)
 
+### zhihand_system
+System navigation and media controls. Requires "action" parameter.
+
+**System navigation:**
+- notification: Open notification shade/center
+- recent: Show app switcher / recent apps
+- search: Open system search. Optional "text" param to type query after opening
+- switch_input: Switch input method (only works in text input fields)
+${platformSystemDoc}
+
+**Media controls:**
+- volume_up / volume_down: Adjust volume
+- mute: Toggle mute
+- play_pause / stop: Playback control
+- next_track / prev_track: Skip track
+- fast_forward / rewind: Seek
+
+**Hardware:**
+- brightness_up / brightness_down: Adjust brightness
+- power: Press power button
+
 ### zhihand_status
 Get device status: platform, battery, network, BLE connection, dark mode, storage, etc.
 
 ## Rules
 - When the user asks to see their screen, ALWAYS call zhihand_screenshot first.
-- When the user asks to open an app (e.g. WeChat, Settings), use open_app action.
-- When the user asks to go back/home, use back/home actions.
+- When the user asks to open an app (e.g. WeChat, Settings), use open_app action with zhihand_control.
+- When the user asks to go back/home, use back/home actions with zhihand_control.
+- For system functions (notifications, volume, brightness, media), use zhihand_system.
 - For all tap/click operations, use xRatio and yRatio (0-1 normalized coordinates based on the screenshot).`;
 }
 /**

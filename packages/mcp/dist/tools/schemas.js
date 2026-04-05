@@ -23,6 +23,24 @@ export const controlSchema = {
     bundleId: z.string().optional().describe("iOS bundle ID, e.g. 'com.tencent.xin'"),
     urlScheme: z.string().optional().describe("URL scheme, e.g. 'weixin://'"),
 };
+// zhihand_system — system navigation + media controls (separate from UI control)
+export const systemSchema = {
+    action: z.enum([
+        // System navigation — cross-platform
+        "notification", "recent", "search", "switch_input",
+        // System navigation — iOS only
+        "siri", "control_center",
+        // System navigation — Android only
+        "open_browser", "shortcut_help",
+        // Media controls — cross-platform
+        "volume_up", "volume_down", "mute",
+        "play_pause", "stop", "next_track", "prev_track",
+        "fast_forward", "rewind",
+        // Hardware — cross-platform
+        "brightness_up", "brightness_down", "power",
+    ]).describe("System or media action to perform"),
+    text: z.string().optional().describe("Optional text, e.g. search query for 'search' action"),
+};
 export const screenshotSchema = {};
 export const pairSchema = {
     forceNew: z.boolean().default(false).optional().describe("Force new pairing even if already paired"),

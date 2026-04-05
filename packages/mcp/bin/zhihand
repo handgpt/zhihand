@@ -288,7 +288,7 @@ switch (command) {
 
   case "test": {
     const { resolveConfig: resolveTestConfig } = await import("../dist/core/config.js");
-    const { createControlCommand, enqueueCommand } = await import("../dist/core/command.js");
+    const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
     const { waitForCommandAck } = await import("../dist/core/sse.js");
     const { fetchScreenshotBinary } = await import("../dist/core/screenshot.js");
     const { fetchDeviceProfile, getStaticContext, isDeviceProfileLoaded, formatDeviceStatus } = await import("../dist/core/device.js");
@@ -360,6 +360,35 @@ switch (command) {
       } catch (err) {
         console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
         failed++;
+      }
+    }
+
+    // ── Helper: run a system command step ──
+    async function runSystemStep(label, params) {
+      totalSteps++;
+      process.stdout.write(`   ${label}... `);
+      const t0 = Date.now();
+      try {
+        const cmd = createSystemCommand(params);
+        const queued = await enqueueCommand(testConfig, cmd);
+        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+        const ms = Date.now() - t0;
+        if (ack.acked) {
+          const ackStatus = ack.command?.ack_status ?? "ok";
+          const detail = ackStatus !== "ok" ? ` [${ackStatus}]` : "";
+          const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
+          console.log(`✅ (${ms}ms)${detail}${resultInfo}`);
+          passed++;
+          return ack;
+        } else {
+          console.log(`⏱️  Timeout (${ms}ms)`);
+          failed++;
+          return null;
+        }
+      } catch (err) {
+        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
+        failed++;
+        return null;
       }
     }
 
@@ -445,6 +474,20 @@ switch (command) {
     console.log("   ── Phase 4: Clipboard ──");
     const clipboardTestText = `zhihand_test_${Date.now()}`;
     await runHidStep("12. Clipboard set", { action: "clipboard", text: clipboardTestText });
+    await pause();
+
+    // ── Phase 5: System & Media (zhihand_system) ─────────────
+    console.log("   ── Phase 5: System & Media ──");
+    await runSystemStep("13. Notification shade", { action: "notification" });
+    await pause();
+    await runSystemStep("14. Recent apps", { action: "recent" });
+    await pause();
+    await runHidStep("15. Home (dismiss)", { action: "home" });
+    await pause();
+    await runSystemStep("16. Volume up", { action: "volume_up" });
+    await pause();
+    await runSystemStep("17. Volume down", { action: "volume_down" });
+    await pause();
 
     // ── Summary ──────────────────────────────────────────────
     console.log(`\n   Result: ${passed}/${totalSteps} passed`);

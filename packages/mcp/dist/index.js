@@ -1,12 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { resolveConfig } from "./core/config.js";
-import { controlSchema, screenshotSchema, pairSchema } from "./tools/schemas.js";
+import { controlSchema, systemSchema, screenshotSchema, pairSchema } from "./tools/schemas.js";
 import { executeControl } from "./tools/control.js";
+import { executeSystem } from "./tools/system.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
-import { getStaticContext, getDynamicContext, fetchDeviceProfile, buildControlToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
-export const PACKAGE_VERSION = "0.26.4";
+import { getStaticContext, getDynamicContext, fetchDeviceProfile, buildControlToolDescription, buildSystemToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
+export const PACKAGE_VERSION = "0.27.0";
 export function createServer(deviceName) {
     const server = new McpServer({
         name: "zhihand",
@@ -17,6 +18,11 @@ export function createServer(deviceName) {
     server.tool("zhihand_control", buildControlToolDescription(), controlSchema, async (params) => {
         const config = resolveConfig(deviceName);
         return await executeControl(config, params);
+    });
+    // zhihand_system — system navigation + media controls (separate tool per Gemini design review)
+    server.tool("zhihand_system", buildSystemToolDescription(), systemSchema, async (params) => {
+        const config = resolveConfig(deviceName);
+        return await executeSystem(config, params);
     });
     // zhihand_screenshot — capture current screen without any action
     server.tool("zhihand_screenshot", buildScreenshotToolDescription(), screenshotSchema, async () => {

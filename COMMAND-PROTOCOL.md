@@ -1,6 +1,6 @@
 # ZhiHand Command Protocol — Unified Specification
 
-> **Version**: 1.1.0 (2026-04-02)
+> **Version**: 1.2.0 (2026-04-04)
 > **Status**: All 4 endpoints (Android, iOS, Server, MCP) are aligned to this spec.
 
 ## Overview
@@ -289,14 +289,34 @@ This table shows the mapping between high-level MCP `zhihand_control` action nam
 | `receive_app` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_clipboard` | ✅ | ✅ | ✅ relay | ✅ |
 | `receive_message` | ✅ | ✅ | ✅ relay | — internal |
+| `receive_notification` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_recent` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_search` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_switch_input` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_siri` | ✅ | — | ✅ relay | ✅ iOS only |
+| `receive_control_center` | ✅ | — | ✅ relay | ✅ iOS only |
+| `receive_open_browser` | — | ✅ | ✅ relay | ✅ Android only |
+| `receive_shortcut_help` | — | ✅ | ✅ relay | ✅ Android only |
+| `receive_volume_up` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_volume_down` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_mute` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_play_pause` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_stop` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_next_track` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_prev_track` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_fast_forward` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_rewind` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_brightness_up` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_brightness_down` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
+| `receive_power` | ✅ | ✅ | ✅ relay | ✅ `zhihand_system` |
 
-**Legend**: ✅ implemented, — not applicable
+**Legend**: ✅ implemented, — not applicable/unsupported
 
 ---
 
 ## Implementation Status
 
-### MCP (`zhihand/packages/mcp`) — All done as of v0.20.0
+### MCP (`zhihand/packages/mcp`)
 1. ~~**Add MCP actions**: `longclick`, `back`, `home`, `enter`, `open_app`~~ ✅ (v0.18.0)
 2. ~~**Fix wire type names**: `receive_swipe` → `receive_slide`, `receive_keycombo` → `receive_key_combo`, `receive_type` → `receive_input`~~ ✅ (v0.18.0)
 3. ~~**Fix payload field names**: swipe `startX/endX` → `x1/x2/y1/y2/time`, type `text` → `input`~~ ✅ (v0.18.0)
@@ -305,6 +325,8 @@ This table shows the mapping between high-level MCP `zhihand_control` action nam
 6. ~~**Fix SSE command ACK URL**~~ ✅ (v0.18.2)
 7. ~~**Platform-aware executable resolution for gemini/claude/codex**~~ ✅ (v0.19.0)
 8. ~~**Default model aliases + `--model` flag + version/model logging**~~ ✅ (v0.20.0)
+9. ~~**Device context system**: platform-aware tool descriptions, system prompt, `zhihand_status` tool~~ ✅ (v0.26.0)
+10. ~~**New `zhihand_system` tool**: 20 system navigation + media control actions~~ ✅ (v0.27.0)
 
 ### Server (`zhihand-server`)
 - No changes needed — server is a passthrough relay. Any `type` + `payload` object is accepted and forwarded.

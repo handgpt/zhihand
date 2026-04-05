@@ -229,6 +229,32 @@ export function buildControlToolDescription(): string {
   return desc;
 }
 
+export function buildSystemToolDescription(): string {
+  if (!loaded || staticCtx.platform === "unknown") {
+    return "System navigation and media controls. Actions: notification, recent, search, switch_input, siri (iOS), control_center (iOS), open_browser (Android), shortcut_help (Android), volume_up/down, mute, play_pause, stop, next/prev_track, fast_forward, rewind, brightness_up/down, power.";
+  }
+  const platform = staticCtx.platform;
+  const parts: string[] = [
+    `System navigation and media controls for ${platform} device (${staticCtx.model}).`,
+  ];
+
+  // Navigation
+  parts.push("Navigation: notification, recent, search (optional text query), switch_input.");
+  if (platform === "ios") {
+    parts.push("iOS: siri, control_center.");
+  } else if (platform === "android") {
+    parts.push("Android: open_browser, shortcut_help.");
+  }
+
+  // Media
+  parts.push("Media: volume_up, volume_down, mute, play_pause, stop, next_track, prev_track, fast_forward, rewind.");
+
+  // Hardware
+  parts.push("Hardware: brightness_up, brightness_down, power.");
+
+  return parts.join(" ");
+}
+
 export function buildScreenshotToolDescription(): string {
   if (!loaded || staticCtx.platform === "unknown") {
     return "Take a screenshot of the phone screen.";
