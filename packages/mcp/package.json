@@ -1,6 +1,6 @@
 {
   "name": "@zhihand/mcp",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "private": false,
   "type": "module",
   "description": "ZhiHand MCP Server — phone control tools for Claude Code, Codex, Gemini CLI, and OpenClaw",
@@ -38,6 +38,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "qrcode": "^1.5.4",
+    "ws": "^8.20.0",
     "zod": "^3.24.0"
   },
   "engines": {
@@ -46,6 +47,7 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
     "typescript": "^6.0.2"
   }
 }

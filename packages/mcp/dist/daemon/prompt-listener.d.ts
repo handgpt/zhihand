@@ -16,19 +16,18 @@ export declare class PromptListener {
     private handler;
     private log;
     private processedIds;
-    private sseAbort;
+    private rws;
     private pollTimer;
-    private sseConnected;
+    private wsConnected;
     private stopped;
     constructor(config: ZhiHandConfig, handler: PromptHandler, log: (msg: string) => void);
     start(): void;
     stop(): void;
     private dispatchPrompt;
-    private connectSSE;
-    private resetWatchdog;
-    private handleSSEEvent;
+    private connectWS;
+    private handleWSMessage;
+    private handleEvent;
     private startPolling;
-    /** Recursive setTimeout: waits for fetch to complete before scheduling next poll. */
     private schedulePoll;
     private stopPolling;
     private poll;

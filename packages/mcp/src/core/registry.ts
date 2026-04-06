@@ -1,8 +1,8 @@
 /**
  * Device registry — the single source of truth for all paired devices,
- * their live state, and multi-user SSE streams.
+ * their live state, and multi-user WebSocket streams.
  *
- * Groups devices under users. Each user has one UserEventStream.
+ * Groups devices under users. Each user has one UserEventWebSocket.
  * Online detection is server-authoritative (no local heartbeat polling).
  * Config hot-reload via fs.watchFile.
  */
@@ -27,12 +27,12 @@ import {
   type Capabilities,
 } from "./device.ts";
 import {
-  UserEventStream,
+  UserEventWebSocket,
   fetchUserCredentials,
-  handleSSEEvent,
-  type SSEEvent,
+  handleWSEvent,
+  type WSEvent,
   type CredentialResponse,
-} from "./sse.ts";
+} from "./ws.ts";
 import { log } from "./logger.ts";
 
 const LIST_CHANGED_DEBOUNCE_MS = 2500;
@@ -59,7 +59,7 @@ interface UserState {
   controllerToken: string;
   label: string;
   endpoint: string;
-  stream: UserEventStream | null;
+  stream: UserEventWebSocket | null;
   devices: Map<string, DeviceState>;
 }
 
@@ -137,7 +137,7 @@ class Registry {
     const endpoint = resolveDefaultEndpoint();
     const users = Object.values(cfg.users);
 
-    // Create user states and start SSE streams
+    // Create user states and start WS streams
     const fetchPromises: Promise<void>[] = [];
     for (const userRec of users) {
       const us = this.createUserState(userRec, endpoint);
@@ -287,11 +287,11 @@ class Registry {
     this.populateDevicesFromConfig(us, userRec);
   }
 
-  // ── SSE stream management ──────────────────────────────
+  // ── WS stream management ──────────────────────────────
 
   private startUserStream(us: UserState): void {
     if (us.stream) return;
-    us.stream = new UserEventStream(us.userId, us.controllerToken, us.endpoint, {
+    us.stream = new UserEventWebSocket(us.userId, us.controllerToken, us.endpoint, {
       onDeviceOnline: (credentialId) => {
         const d = us.devices.get(credentialId);
         if (d) {
@@ -326,8 +326,8 @@ class Registry {
           this.touchLastSeen(d);
         }
       },
-      onCommandAcked: (event: SSEEvent) => {
-        // Already handled by handleSSEEvent in the stream dispatch
+      onCommandAcked: (event: WSEvent) => {
+        // Already handled by handleWSEvent in the stream dispatch
       },
       onCredentialAdded: (credential) => {
         const credId = credential.credential_id as string;
@@ -359,7 +359,7 @@ class Registry {
         this.scheduleListChanged();
       },
       onConnected: () => {
-        log.debug(`[registry] SSE connected for user ${us.userId}`);
+        log.debug(`[registry] WS connected for user ${us.userId}`);
         // Re-fetch credentials to reconcile missed events
         fetchUserCredentials(us.endpoint, us.userId, us.controllerToken)
           .then((creds) => {
@@ -376,7 +376,7 @@ class Registry {
           .catch(() => { /* non-fatal */ });
       },
       onDisconnected: () => {
-        log.debug(`[registry] SSE disconnected for user ${us.userId}`);
+        log.debug(`[registry] WS disconnected for user ${us.userId}`);
       },
     });
     us.stream.start();
@@ -457,7 +457,7 @@ class Registry {
         const configDevIds = new Set(userRec.devices.map((d) => d.credential_id));
 
         // Remove devices no longer in config — but keep online devices
-        // that were added via SSE credential.added but not yet persisted
+        // that were added via WS credential.added but not yet persisted
         // by the pairing CLI (race window).
         for (const credId of us.devices.keys()) {
           if (!configDevIds.has(credId)) {

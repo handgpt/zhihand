@@ -1,6 +1,6 @@
 import { createControlCommand, enqueueCommand, formatAckSummary } from "../core/command.js";
 import { fetchScreenshot } from "../core/screenshot.js";
-import { waitForCommandAck } from "../core/sse.js";
+import { waitForCommandAck } from "../core/ws.js";
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }

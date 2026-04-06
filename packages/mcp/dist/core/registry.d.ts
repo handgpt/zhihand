@@ -1,8 +1,8 @@
 /**
  * Device registry — the single source of truth for all paired devices,
- * their live state, and multi-user SSE streams.
+ * their live state, and multi-user WebSocket streams.
  *
- * Groups devices under users. Each user has one UserEventStream.
+ * Groups devices under users. Each user has one UserEventWebSocket.
  * Online detection is server-authoritative (no local heartbeat polling).
  * Config hot-reload via fs.watchFile.
  */

@@ -1,4 +1,5 @@
 import type { ZhiHandRuntimeConfig } from "../core/config.ts";
+import { ReconnectingWebSocket } from "../core/ws.ts";
 import { dbg } from "./logger.ts";
 
 type ZhiHandConfig = ZhiHandRuntimeConfig;
@@ -16,8 +17,6 @@ export interface MobilePrompt {
 
 export type PromptHandler = (prompt: MobilePrompt) => void;
 
-const SSE_WATCHDOG_TIMEOUT = 120_000; // 120s no data → reconnect (servers may not send keepalive frequently)
-const SSE_RECONNECT_DELAY = 3_000;
 const POLL_INTERVAL = 2_000;
 
 export class PromptListener {
@@ -25,9 +24,9 @@ export class PromptListener {
   private handler: PromptHandler;
   private log: (msg: string) => void;
   private processedIds = new Set<string>();
-  private sseAbort: AbortController | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private sseConnected = false;
+  private rws: ReconnectingWebSocket | null = null;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private wsConnected = false;
   private stopped = false;
 
   constructor(config: ZhiHandConfig, handler: PromptHandler, log: (msg: string) => void) {
@@ -38,17 +37,15 @@ export class PromptListener {
 
   start(): void {
     this.stopped = false;
-    this.connectSSE();
+    this.connectWS();
   }
 
   stop(): void {
     this.stopped = true;
-    this.sseAbort?.abort();
-    this.sseAbort = null;
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer);
-      this.pollTimer = null;
-    }
+    this.rws?.stop();
+    this.rws = null;
+    this.wsConnected = false;
+    this.stopPolling();
   }
 
   private dispatchPrompt(prompt: MobilePrompt): void {
@@ -66,115 +63,83 @@ export class PromptListener {
     this.handler(prompt);
   }
 
-  private async connectSSE(): Promise<void> {
-    while (!this.stopped) {
-      try {
-        this.sseAbort = new AbortController();
-        const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/events/stream?topic=prompts`;
+  private connectWS(): void {
+    if (this.stopped) return;
 
-        dbg(`[sse] Connecting to ${url}`);
-        const response = await fetch(url, {
-          headers: {
-            "Accept": "text/event-stream",
-            "Authorization": `Bearer ${this.config.controllerToken}`,
-          },
-          signal: this.sseAbort.signal,
-        });
+    const wsUrl = `${this.config.controlPlaneEndpoint.replace(/^http/, "ws")}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/ws?topic=prompts`;
 
-        if (!response.ok) {
-          dbg(`[sse] Connect failed: ${response.status} ${response.statusText}`);
-          throw new Error(`SSE connect failed: ${response.status}`);
-        }
+    dbg(`[ws] Connecting to ${wsUrl}`);
 
-        this.sseConnected = true;
+    this.rws = new ReconnectingWebSocket({
+      url: wsUrl,
+      headers: {
+        "Authorization": `Bearer ${this.config.controllerToken}`,
+      },
+      onOpen: () => {
+        this.wsConnected = true;
         this.stopPolling();
-        this.log("[sse] Connected to prompt stream.");
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body for SSE");
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let watchdog = this.resetWatchdog();
-
-        try {
-          while (!this.stopped) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            // Reset watchdog on any data (including keepalive comments)
-            clearTimeout(watchdog);
-            watchdog = this.resetWatchdog();
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-
-            let eventData = "";
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                eventData += (eventData ? "\n" : "") + line.slice(6);
-              } else if (line === "" && eventData) {
-                try {
-                  const event = JSON.parse(eventData);
-                  this.handleSSEEvent(event);
-                } catch {
-                  // Malformed event
-                }
-                eventData = "";
-              }
-            }
-          }
-        } finally {
-          // Always clear watchdog — prevents leaked timer from aborting next connection
-          clearTimeout(watchdog);
+        this.log("[ws] Connected to prompt stream.");
+      },
+      onClose: (_code, _reason) => {
+        if (this.wsConnected) {
+          this.wsConnected = false;
+          this.log("[ws] Disconnected. Falling back to polling.");
+          this.startPolling();
         }
-      } catch (err) {
-        if (this.stopped) break;
-        this.sseConnected = false;
-        this.log(`[sse] Disconnected. Falling back to polling. (${(err as Error).message})`);
-        this.startPolling();
-        await new Promise((r) => setTimeout(r, SSE_RECONNECT_DELAY));
-      }
+      },
+      onMessage: (data) => {
+        this.handleWSMessage(data);
+      },
+      onError: (err) => {
+        dbg(`[ws] Error: ${err.message}`);
+      },
+    });
+    this.rws.start();
+  }
+
+  private handleWSMessage(data: unknown): void {
+    const msg = data as Record<string, unknown>;
+
+    // Application-level ping (if server sends these alongside protocol pings)
+    if (msg.type === "ping") {
+      this.rws?.send(JSON.stringify({ type: "pong" }));
+      return;
+    }
+
+    // Event dispatch
+    if (msg.type === "event" || msg.kind) {
+      this.handleEvent(msg as Record<string, unknown>);
     }
   }
 
-  private resetWatchdog(): ReturnType<typeof setTimeout> {
-    return setTimeout(() => {
-      this.log("[sse] Watchdog timeout (120s no data). Reconnecting...");
-      this.sseAbort?.abort();
-    }, SSE_WATCHDOG_TIMEOUT);
-  }
+  private handleEvent(event: Record<string, unknown>): void {
+    const kind = event.kind as string | undefined;
+    dbg(`[ws] Event: kind=${kind}, prompt=${(event.prompt as MobilePrompt)?.id ?? "-"}, prompts=${(event.prompts as MobilePrompt[])?.length ?? 0}`);
 
-  private handleSSEEvent(event: { kind?: string; prompt?: MobilePrompt; prompts?: MobilePrompt[]; device_profile?: Record<string, unknown> }): void {
-    dbg(`[sse] Event: kind=${event.kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
-    if (event.kind === "prompt.queued" && event.prompt) {
-      this.dispatchPrompt(event.prompt);
-    } else if (event.kind === "prompt.snapshot" && event.prompts) {
-      for (const p of event.prompts) {
+    if (kind === "prompt.queued" && event.prompt) {
+      this.dispatchPrompt(event.prompt as MobilePrompt);
+    } else if (kind === "prompt.snapshot" && event.prompts) {
+      for (const p of event.prompts as MobilePrompt[]) {
         if (p.status === "pending" || p.status === "processing") {
           this.dispatchPrompt(p);
         }
       }
-    } else if (event.kind === "device_profile.updated" && event.device_profile) {
-      // Registry owns device-profile updates; this listener is only for prompts.
+    } else if (kind === "device_profile.updated") {
       this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
     }
   }
 
   private startPolling(): void {
-    if (this.pollTimer) return;
+    if (this.pollTimer || this.stopped) return;
     this.schedulePoll();
   }
 
-  /** Recursive setTimeout: waits for fetch to complete before scheduling next poll. */
   private schedulePoll(): void {
     if (this.pollTimer) return;
     this.pollTimer = setTimeout(async () => {
       this.pollTimer = null;
       await this.poll();
-      // Schedule next poll only if SSE is still disconnected
-      if (!this.sseConnected && !this.stopped) {
+      if (!this.wsConnected && !this.stopped) {
         this.schedulePoll();
       }
     }, POLL_INTERVAL);
@@ -201,6 +166,7 @@ export class PromptListener {
       }
       const data = (await response.json()) as { items?: MobilePrompt[] };
       dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
+      if (this.stopped) return; // Guard against late responses after stop()
       for (const prompt of data.items ?? []) {
         this.dispatchPrompt(prompt);
       }

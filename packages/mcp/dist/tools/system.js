@@ -1,5 +1,5 @@
 import { createSystemCommand, enqueueCommand, formatAckSummary } from "../core/command.js";
-import { waitForCommandAck } from "../core/sse.js";
+import { waitForCommandAck } from "../core/ws.js";
 const IOS_ONLY = new Set(["siri", "control_center"]);
 const ANDROID_ONLY = new Set(["open_browser", "shortcut_help"]);
 export async function executeSystem(config, params, platform) {

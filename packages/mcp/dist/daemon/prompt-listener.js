@@ -1,15 +1,14 @@
+import { ReconnectingWebSocket } from "../core/ws.js";
 import { dbg } from "./logger.js";
-const SSE_WATCHDOG_TIMEOUT = 120_000; // 120s no data → reconnect (servers may not send keepalive frequently)
-const SSE_RECONNECT_DELAY = 3_000;
 const POLL_INTERVAL = 2_000;
 export class PromptListener {
     config;
     handler;
     log;
     processedIds = new Set();
-    sseAbort = null;
+    rws = null;
     pollTimer = null;
-    sseConnected = false;
+    wsConnected = false;
     stopped = false;
     constructor(config, handler, log) {
         this.config = config;
@@ -18,16 +17,14 @@ export class PromptListener {
     }
     start() {
         this.stopped = false;
-        this.connectSSE();
+        this.connectWS();
     }
     stop() {
         this.stopped = true;
-        this.sseAbort?.abort();
-        this.sseAbort = null;
-        if (this.pollTimer) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
-        }
+        this.rws?.stop();
+        this.rws = null;
+        this.wsConnected = false;
+        this.stopPolling();
     }
     dispatchPrompt(prompt) {
         if (this.processedIds.has(prompt.id)) {
@@ -43,113 +40,78 @@ export class PromptListener {
         }
         this.handler(prompt);
     }
-    async connectSSE() {
-        while (!this.stopped) {
-            try {
-                this.sseAbort = new AbortController();
-                const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/events/stream?topic=prompts`;
-                dbg(`[sse] Connecting to ${url}`);
-                const response = await fetch(url, {
-                    headers: {
-                        "Accept": "text/event-stream",
-                        "Authorization": `Bearer ${this.config.controllerToken}`,
-                    },
-                    signal: this.sseAbort.signal,
-                });
-                if (!response.ok) {
-                    dbg(`[sse] Connect failed: ${response.status} ${response.statusText}`);
-                    throw new Error(`SSE connect failed: ${response.status}`);
-                }
-                this.sseConnected = true;
+    connectWS() {
+        if (this.stopped)
+            return;
+        const wsUrl = `${this.config.controlPlaneEndpoint.replace(/^http/, "ws")}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/ws?topic=prompts`;
+        dbg(`[ws] Connecting to ${wsUrl}`);
+        this.rws = new ReconnectingWebSocket({
+            url: wsUrl,
+            headers: {
+                "Authorization": `Bearer ${this.config.controllerToken}`,
+            },
+            onOpen: () => {
+                this.wsConnected = true;
                 this.stopPolling();
-                this.log("[sse] Connected to prompt stream.");
-                const reader = response.body?.getReader();
-                if (!reader)
-                    throw new Error("No response body for SSE");
-                const decoder = new TextDecoder();
-                let buffer = "";
-                let watchdog = this.resetWatchdog();
-                try {
-                    while (!this.stopped) {
-                        const { done, value } = await reader.read();
-                        if (done)
-                            break;
-                        // Reset watchdog on any data (including keepalive comments)
-                        clearTimeout(watchdog);
-                        watchdog = this.resetWatchdog();
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split("\n");
-                        buffer = lines.pop() ?? "";
-                        let eventData = "";
-                        for (const line of lines) {
-                            if (line.startsWith("data: ")) {
-                                eventData += (eventData ? "\n" : "") + line.slice(6);
-                            }
-                            else if (line === "" && eventData) {
-                                try {
-                                    const event = JSON.parse(eventData);
-                                    this.handleSSEEvent(event);
-                                }
-                                catch {
-                                    // Malformed event
-                                }
-                                eventData = "";
-                            }
-                        }
-                    }
+                this.log("[ws] Connected to prompt stream.");
+            },
+            onClose: (_code, _reason) => {
+                if (this.wsConnected) {
+                    this.wsConnected = false;
+                    this.log("[ws] Disconnected. Falling back to polling.");
+                    this.startPolling();
                 }
-                finally {
-                    // Always clear watchdog — prevents leaked timer from aborting next connection
-                    clearTimeout(watchdog);
-                }
-            }
-            catch (err) {
-                if (this.stopped)
-                    break;
-                this.sseConnected = false;
-                this.log(`[sse] Disconnected. Falling back to polling. (${err.message})`);
-                this.startPolling();
-                await new Promise((r) => setTimeout(r, SSE_RECONNECT_DELAY));
-            }
+            },
+            onMessage: (data) => {
+                this.handleWSMessage(data);
+            },
+            onError: (err) => {
+                dbg(`[ws] Error: ${err.message}`);
+            },
+        });
+        this.rws.start();
+    }
+    handleWSMessage(data) {
+        const msg = data;
+        // Application-level ping (if server sends these alongside protocol pings)
+        if (msg.type === "ping") {
+            this.rws?.send(JSON.stringify({ type: "pong" }));
+            return;
+        }
+        // Event dispatch
+        if (msg.type === "event" || msg.kind) {
+            this.handleEvent(msg);
         }
     }
-    resetWatchdog() {
-        return setTimeout(() => {
-            this.log("[sse] Watchdog timeout (120s no data). Reconnecting...");
-            this.sseAbort?.abort();
-        }, SSE_WATCHDOG_TIMEOUT);
-    }
-    handleSSEEvent(event) {
-        dbg(`[sse] Event: kind=${event.kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
-        if (event.kind === "prompt.queued" && event.prompt) {
+    handleEvent(event) {
+        const kind = event.kind;
+        dbg(`[ws] Event: kind=${kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
+        if (kind === "prompt.queued" && event.prompt) {
             this.dispatchPrompt(event.prompt);
         }
-        else if (event.kind === "prompt.snapshot" && event.prompts) {
+        else if (kind === "prompt.snapshot" && event.prompts) {
             for (const p of event.prompts) {
                 if (p.status === "pending" || p.status === "processing") {
                     this.dispatchPrompt(p);
                 }
             }
         }
-        else if (event.kind === "device_profile.updated" && event.device_profile) {
-            // Registry owns device-profile updates; this listener is only for prompts.
+        else if (kind === "device_profile.updated") {
             this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
         }
     }
     startPolling() {
-        if (this.pollTimer)
+        if (this.pollTimer || this.stopped)
             return;
         this.schedulePoll();
     }
-    /** Recursive setTimeout: waits for fetch to complete before scheduling next poll. */
     schedulePoll() {
         if (this.pollTimer)
             return;
         this.pollTimer = setTimeout(async () => {
             this.pollTimer = null;
             await this.poll();
-            // Schedule next poll only if SSE is still disconnected
-            if (!this.sseConnected && !this.stopped) {
+            if (!this.wsConnected && !this.stopped) {
                 this.schedulePoll();
             }
         }, POLL_INTERVAL);
@@ -174,6 +136,8 @@ export class PromptListener {
             }
             const data = (await response.json());
             dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
+            if (this.stopped)
+                return; // Guard against late responses after stop()
             for (const prompt of data.items ?? []) {
                 this.dispatchPrompt(prompt);
             }

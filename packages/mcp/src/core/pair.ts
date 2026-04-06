@@ -9,7 +9,7 @@ import {
   getUserRecord,
 } from "./config.ts";
 import { fetchDeviceProfileOnce, extractStatic } from "./device.ts";
-import { fetchUserCredentials, type CredentialResponse } from "./sse.ts";
+import { fetchUserCredentials, type CredentialResponse } from "./ws.ts";
 
 export interface PairingSession {
   session_id: string;

@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { addUser, addDeviceToUser, ensureZhiHandDir, saveState, resolveDefaultEndpoint, getUserRecord, } from "./config.js";
 import { fetchDeviceProfileOnce, extractStatic } from "./device.js";
-import { fetchUserCredentials } from "./sse.js";
+import { fetchUserCredentials } from "./ws.js";
 // ── Server API helpers ─────────────────────────────────────
 /**
  * Create a new user on the server.

@@ -3,7 +3,7 @@ import { createControlCommand, enqueueCommand, formatAckSummary } from "../core/
 import type { ControlParams } from "../core/command.ts";
 import { fetchScreenshot } from "../core/screenshot.ts";
 import type { ScreenshotResult } from "../core/screenshot.ts";
-import { waitForCommandAck } from "../core/sse.ts";
+import { waitForCommandAck } from "../core/ws.ts";
 import type { Capabilities } from "../core/device.ts";
 
 type TextContent = { type: "text"; text: string };

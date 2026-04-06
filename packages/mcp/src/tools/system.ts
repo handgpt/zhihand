@@ -4,7 +4,7 @@
 import type { ZhiHandRuntimeConfig } from "../core/config.ts";
 import { createSystemCommand, enqueueCommand, formatAckSummary } from "../core/command.ts";
 import type { SystemParams } from "../core/command.ts";
-import { waitForCommandAck } from "../core/sse.ts";
+import { waitForCommandAck } from "../core/ws.ts";
 
 type TextContent = { type: "text"; text: string };
 type ToolResult = { content: TextContent[]; isError?: boolean };
