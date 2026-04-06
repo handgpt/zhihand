@@ -171,7 +171,7 @@ export async function startDaemon(options) {
     }
     catch (err) {
         log(`Error: ${err.message}`);
-        log("Run 'zhihand setup' to pair a device first.");
+        log("Run 'zhihand pair' to pair a device first.");
         process.exit(1);
     }
     // Load backend + model

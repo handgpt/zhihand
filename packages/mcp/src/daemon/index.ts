@@ -201,7 +201,7 @@ export async function startDaemon(options?: {
     config = resolveConfig(options?.deviceName);
   } catch (err) {
     log(`Error: ${(err as Error).message}`);
-    log("Run 'zhihand setup' to pair a device first.");
+    log("Run 'zhihand pair' to pair a device first.");
     process.exit(1);
   }
 

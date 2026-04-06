@@ -75,7 +75,6 @@ Usage:
   zhihand claude             Switch backend to Claude Code
   zhihand codex              Switch backend to Codex CLI
 
-  zhihand setup              Interactive setup: pair + configure + start
   zhihand pair [--label X]   Pair new user + first device + auto-configure MCP
   zhihand pair <user_id>     Add device to existing user
   zhihand list [<user_id>]   List users/devices with real-time online status
@@ -510,7 +509,7 @@ switch (command) {
     const daemonPid = isAlreadyRunning();
 
     if (users.length === 0) {
-      console.log("No users configured. Run: zhihand setup");
+      console.log("No users configured. Run: zhihand pair");
     } else {
       console.log(`Users: ${users.length}`);
       for (const u of users) {
@@ -550,38 +549,14 @@ switch (command) {
   }
 
   case "setup": {
-    const users = listUsers();
-    if (users.length === 0) {
-      console.log("No users found. Starting pairing...\n");
-      const { userRecord } = await executePairingNewUser(values.label);
-      console.log(`\nUser created: ${userRecord.label} (${userRecord.user_id})\n`);
-    }
-
-    const tools = await detectCLITools();
-    console.log(formatDetectedTools(tools));
-
-    if (tools.length === 0) {
-      console.log("\nNo CLI tools detected. Install one of: Claude Code, Codex CLI, Gemini CLI.");
-      break;
-    }
-
-    const best = tools.find((t) => t.loggedIn) ?? tools[0];
-    const config = loadBackendConfig();
-
-    console.log(`\nAuto-selecting backend: ${displayName(best.name)}...`);
-    if (values.port) process.env.ZHIHAND_PORT = values.port;
-    configureMCP(best.name, config.activeBackend);
-    saveBackendConfig({ activeBackend: best.name });
-
-    console.log(`\nStarting daemon...\n`);
-    const port = values.port ? parseInt(values.port, 10) : undefined;
-    await startDaemon({ port });
+    console.log("'zhihand setup' has been merged into 'zhihand pair'.");
+    console.log("Run: zhihand pair");
     break;
   }
 
   case "test": {
     const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
-    const { waitForCommandAck } = await import("../dist/core/sse.js");
+    const { waitForCommandAck } = await import("../dist/core/ws.js");
     const { fetchScreenshot, getSnapshotStaleThresholdMs } = await import("../dist/core/screenshot.js");
     const { fetchDeviceProfileOnce, extractStatic, computeCapabilities, formatDeviceStatus } = await import("../dist/core/device.js");
 

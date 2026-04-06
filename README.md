@@ -1,30 +1,42 @@
 # ZhiHand
 
-ZhiHand lets AI agents (like Claude Code, Gemini CLI, Codex CLI, and OpenClaw) see your phone and help operate it through the ZhiHand Device.
+ZhiHand lets AI agents (Claude Code, Gemini CLI, Codex CLI, OpenClaw) see and control your phone.
 
-Current core version: `0.16.0`
+Version: `0.32.0`
 
 ## Architecture
 
-ZhiHand is built on the **Model Context Protocol (MCP)**. The core is a **persistent daemon** that bundles the MCP Server (HTTP Streamable transport), a Relay (heartbeat, prompt listener, CLI dispatch), and a Config API for backend switching.
+ZhiHand is built on the **Model Context Protocol (MCP)**. The core is a persistent daemon (`@zhihand/mcp`) that bundles the MCP Server, a Relay (heartbeat, prompt listener, CLI dispatch), and a Config API for backend switching.
+
+Multi-user support: each user gets a dedicated WebSocket stream. Devices are grouped under users with separate controller tokens.
 
 ```text
-                    ┌──────────────────────────────────────┐
-                    │           @zhihand/mcp daemon         │
-                    │                                      │
-                    │  MCP Server (localhost:18686/mcp)     │
-                    │  Relay (heartbeat, prompt, dispatch)  │
-                    │  Config API (backend IPC)             │
-                    └──────────┬───────────────────────┬───┘
-                               │                       │
-                    ┌──────────▼──────┐     ┌──────────▼──────┐
-                    │  HTTP Streamable │     │  OpenClaw Plugin │
-                    │  (AI agents)     │     │  (Thin Wrapper)  │
-                    └──────────┬──────┘     └──────────┬──────┘
-                               │                       │
-              ┌────────────────┼───────────────────────┼──────┐
-              │                │                       │      │
-        Claude Code      Gemini CLI             OpenClaw    Codex CLI
+                    +--------------------------------------+
+                    |         @zhihand/mcp daemon           |
+                    |                                      |
+                    |  MCP Server (localhost:18686/mcp)     |
+                    |  Relay (heartbeat, prompt, dispatch)  |
+                    |  Config API (backend IPC)             |
+                    +----------+-----------------------+---+
+                               |                       |
+                    +----------v------+     +----------v------+
+                    | HTTP Streamable  |     | OpenClaw Plugin  |
+                    | (AI agents)      |     | (Thin Wrapper)   |
+                    +----------+------+     +----------+------+
+                               |                       |
+              +----------------+-----+-----------------+------+
+              |                |     |                 |      |
+        Claude Code      Gemini CLI  |           OpenClaw   Codex CLI
+                                     |
+                              +------v-------+
+                              | ZhiHand      |
+                              | Server (WS)  |
+                              +------+-------+
+                                     |
+                              +------v-------+
+                              | Mobile App   |
+                              | (iOS/Android)|
+                              +--------------+
 ```
 
 ## Quick Start
@@ -32,7 +44,7 @@ ZhiHand is built on the **Model Context Protocol (MCP)**. The core is a **persis
 ### Prerequisites
 
 - **Node.js >= 22**
-- A **ZhiHand mobile app** (Android or iOS) installed on your phone
+- **ZhiHand mobile app** (Android or iOS)
 
 ### 1. Install
 
@@ -40,177 +52,279 @@ ZhiHand is built on the **Model Context Protocol (MCP)**. The core is a **persis
 npm install -g @zhihand/mcp
 ```
 
-### 2. Setup and Pair
+### 2. Pair
 
 ```bash
-zhihand setup
+zhihand pair
 ```
 
-This interactive command will:
+This will:
 
-1. Register as a plugin with the ZhiHand server
+1. Create a new user on the ZhiHand server
 2. Display a QR code in your terminal
 3. Wait for you to scan it with the ZhiHand mobile app
-4. Save credentials locally to `~/.zhihand/credentials.json`
-5. Detect installed AI tools on your machine
-6. Auto-select the best tool and configure MCP automatically
-7. Start the daemon (MCP Server + Relay + Config API)
+4. Save credentials to `~/.zhihand/config.json`
+5. Detect installed AI tools and auto-configure MCP
 
-No manual MCP configuration needed. To switch backend later:
+To add a device to an existing user:
 
 ```bash
-zhihand claude             # Switch to Claude Code
-zhihand gemini             # Switch to Gemini CLI
-zhihand codex              # Switch to Codex CLI
+zhihand pair <user_id>
 ```
 
-### 3. Start Using
+### 3. Start the Daemon
 
-Once configured, your AI agent can control your phone directly:
+```bash
+zhihand start              # Foreground
+zhihand start -d           # Background (logs to ~/.zhihand/daemon.log)
+```
+
+### 4. Start Using
+
+Your AI agent can now control your phone:
 
 ```
 > Take a screenshot of my phone
-> Tap on the Settings icon at (0.5, 0.3)
-> Type "hello world" into the text field
-> Scroll down 5 steps
-> Swipe from bottom to top
+> Tap on the Settings icon
+> Type "hello world" into the search box
+> Scroll down to find the About section
 ```
 
-## Available Tools
+## CLI Commands
 
-The MCP Server provides three tools to AI agents:
+```
+zhihand pair [--label X]   Pair new user + first device + auto-configure MCP
+zhihand pair <user_id>     Add device to existing user
+zhihand list [<user_id>]   List users/devices with real-time online status
+zhihand unpair <id>        Remove user (usr_*) or device (credential)
+zhihand rename <cred> <n>  Rename a device (server-side + local)
+zhihand export <user_id>   Export user credentials as JSON to stdout
+zhihand import <file>      Import user credentials from JSON file
+zhihand rotate <user_id>   Rotate controller token
+
+zhihand start              Start daemon (MCP Server + Relay, foreground)
+zhihand start -d           Start daemon in background
+zhihand stop               Stop daemon
+zhihand status             Show status (pairing, backend, brain)
+
+zhihand claude             Switch backend to Claude Code
+zhihand gemini             Switch backend to Gemini CLI
+zhihand codex              Switch backend to Codex CLI
+
+zhihand test [cred] [ids]  Run device tests
+zhihand mcp                Start stdio MCP server (for AI host integration)
+zhihand detect             Detect available CLI tools
+```
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--label <label>` | Label for new device (pair) |
+| `--model, -m <name>` | Backend model alias (e.g. `flash`, `sonnet`, `opus`) |
+| `--port <port>` | Override daemon port (default: 18686) |
+| `-d, --detach` | Run daemon in background |
+| `--debug` | Enable verbose debug logging |
+| `--force` | Skip capability gates in test |
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `ZHIHAND_DEVICE` | Default credential_id |
+| `ZHIHAND_CLI` | Override CLI tool selection for mobile-initiated tasks |
+| `ZHIHAND_MODEL` | Override model for all backends |
+| `ZHIHAND_GEMINI_MODEL` | Override model for Gemini only |
+| `ZHIHAND_CLAUDE_MODEL` | Override model for Claude only |
+| `ZHIHAND_CODEX_MODEL` | Override model for Codex only |
+
+## MCP Tools
 
 ### `zhihand_control`
 
-Control the phone with these actions:
+The main phone control tool:
 
 | Action | Parameters | Description |
 |---|---|---|
-| `click` | `xRatio`, `yRatio` | Tap at position (normalized 0–1) |
+| `click` | `xRatio`, `yRatio` | Tap at normalized coordinates [0,1] |
 | `doubleclick` | `xRatio`, `yRatio` | Double-tap |
-| `rightclick` | `xRatio`, `yRatio` | Right-click / long press |
-| `middleclick` | `xRatio`, `yRatio` | Middle-click |
-| `type` | `text` | Type text into focused field |
-| `swipe` | `startXRatio`, `startYRatio`, `endXRatio`, `endYRatio` | Swipe gesture |
-| `scroll` | `xRatio`, `yRatio`, `direction`, `amount` | Scroll (up/down/left/right) |
+| `longclick` | `xRatio`, `yRatio`, `durationMs` | Long press (default 800ms) |
+| `type` | `text` | Type text into the focused field |
+| `swipe` | `startXRatio`, `startYRatio`, `endXRatio`, `endYRatio`, `durationMs` | Swipe gesture |
+| `scroll` | `xRatio`, `yRatio`, `direction`, `amount` | Scroll up/down/left/right |
 | `keycombo` | `keys` | Key combination (`"ctrl+c"`, `"alt+tab"`) |
+| `back` | -- | System Back button |
+| `home` | -- | System Home button |
+| `enter` | -- | Press Enter key |
+| `open_app` | `appPackage`, `bundleId`, `urlScheme`, `appName` | Open an application |
 | `clipboard` | `clipboardAction`, `text` | Get or set clipboard |
-| `wait` | `durationMs` | Wait locally (default 1000ms, max 10000ms) |
-| `screenshot` | — | Capture screen immediately |
+| `wait` | `durationMs` | Wait locally (no server round-trip) |
+| `screenshot` | -- | Capture screen immediately |
 
-All coordinates are **normalized ratios** from `0.0` (top-left) to `1.0` (bottom-right).
-
-Every action returns a text summary and a screenshot.
+All coordinates are **normalized ratios** from `0.0` (top-left) to `1.0` (bottom-right). Every action returns a text summary and a screenshot.
 
 ### `zhihand_screenshot`
 
 Capture the current screen without any action. No parameters.
 
+### `zhihand_system`
+
+System navigation and media controls: home, back, recents, notifications, quick settings, volume, brightness, rotation, DND, wifi, bluetooth, flashlight, airplane mode, split screen, pip, power menu, lock screen.
+
+### `zhihand_list_devices`
+
+List all paired devices with real-time status: online/offline, battery, platform, last active. In multi-user mode, labels are prefixed with `[userLabel]`.
+
 ### `zhihand_pair`
 
-Pair with a new phone. Set `forceNew: true` to re-pair.
-
-## CLI Commands
-
-```
-zhihand setup              Interactive setup: pair + detect tools + auto-select + configure MCP + start daemon
-zhihand start              Start daemon (MCP Server + Relay + Config API)
-zhihand start -d           Start daemon in background (detached)
-zhihand stop               Stop the running daemon
-zhihand status             Show daemon status, pairing info, device, and active backend
-
-zhihand pair               Pair with a phone device
-zhihand detect             Detect installed CLI tools
-zhihand serve              Start MCP Server (stdio mode, backward compatible)
-
-zhihand claude             Switch backend to Claude Code (sends IPC to daemon, auto-configures MCP)
-zhihand codex              Switch backend to Codex CLI (sends IPC to daemon, auto-configures MCP)
-zhihand gemini             Switch backend to Gemini CLI (sends IPC to daemon, auto-configures MCP)
-
-zhihand --help             Show help
-```
-
-| Option | Description |
-|---|---|
-| `--device <name>` | Use a specific paired device |
-| `ZHIHAND_DEVICE` | Environment variable, same as `--device` |
-| `ZHIHAND_CLI` | Override CLI tool detection |
-
-## Android & iOS Apps
-
-1. Download and install the ZhiHand app for **Android** or **iOS**.
-2. Tap **Scan** and scan the QR code from your AI agent.
-3. Connect your **ZhiHand Device**.
-4. Turn on **Eye** (screen sharing) when you want the agent to see your screen.
+Pair with a phone device. Returns a QR code and pairing URL.
 
 ## How It Works
 
 ```
-AI Agent ←HTTP Streamable→ Daemon (localhost:18686/mcp) ←HTTPS/SSE→ ZhiHand Server ←→ Mobile App
+AI Agent <--HTTP Streamable--> Daemon (localhost:18686/mcp) <--WebSocket--> ZhiHand Server <--> Mobile App
 ```
 
-**Agent-initiated flow** (AI agent calls tools):
+**Agent-initiated flow** (tool calls):
 
 1. AI agent calls a tool (e.g. `zhihand_control` with `action: "click"`)
-2. MCP Server translates to a device command and enqueues it via the ZhiHand API
-3. Mobile app picks up the command, executes it, and sends an ACK
-4. MCP Server receives the ACK via SSE (or polling fallback)
-5. MCP Server fetches a screenshot (raw JPEG) and returns it to the agent
+2. MCP Server enqueues a device command via the ZhiHand API
+3. Mobile app executes the command and sends an ACK
+4. MCP Server receives the ACK via WebSocket (or polling fallback)
+5. MCP Server fetches a screenshot and returns it to the agent
 
 **Phone-initiated flow** (user speaks/types on phone):
 
 1. Phone sends prompt to ZhiHand Server
-2. Daemon receives prompt via SSE
-3. Daemon spawns the active CLI tool (e.g. `claude`, `codex`, `gemini`) with the prompt
-4. CLI tool executes, result is sent back to the phone
+2. Daemon receives prompt via WebSocket
+3. Daemon spawns the active CLI tool (`claude`, `codex`, `gemini`) with the prompt
+4. Result is sent back to the phone
 
-The daemon sends a **brain heartbeat** every 30 seconds, keeping the phone Brain indicator green to show an AI backend is connected.
+The daemon sends a **brain heartbeat** every 30 seconds, keeping the phone Brain indicator green.
 
-## What This Repository Contains
+## Config Storage
 
-This repository is the public core for ZhiHand:
+```
+~/.zhihand/
+  config.json       User + device credentials (schema v3)
+  backend.json      Active backend + model selection
+  daemon.pid        Daemon PID file
+  daemon.log        Daemon log output (background mode)
+```
 
-- `packages/mcp/` — MCP Server and OpenClaw adapter ([README](./packages/mcp/README.md))
-- `packages/host-adapters/openclaw/` — Legacy OpenClaw host adapter
-- Public docs, protocol, and action model
-- Reference service boundaries
+Config schema v3 groups devices under users:
 
-It does not include private deployment secrets or private product infrastructure.
+```json
+{
+  "schema_version": 3,
+  "users": {
+    "usr_abc123": {
+      "user_id": "usr_abc123",
+      "controller_token": "tok_...",
+      "label": "Personal",
+      "devices": [
+        {
+          "credential_id": "crd_xyz",
+          "label": "My iPhone",
+          "platform": "ios",
+          "paired_at": "2026-04-01T00:00:00.000Z",
+          "last_seen_at": "2026-04-06T12:00:00.000Z"
+        }
+      ]
+    }
+  }
+}
+```
 
-## Where To Read Next
+## Repository Structure
 
-- [@zhihand/mcp README](./packages/mcp/README.md) — Detailed MCP Server documentation
-- [Distribution](./docs/DISTRIBUTION.md) — How users install and start using ZhiHand
-- [Configuration](./docs/CONFIGURATION.md) — What users need, and what advanced self-hosters can override
-- [Updates](./docs/UPDATES.md) — How app and device updates are detected and delivered
-- [Android app](https://github.com/handgpt/zhihand-android) — Mobile UI, permissions, pairing
-- [ZhiHand server](https://github.com/handgpt/zhihand-server) — Hosted control-plane
-- [README.zh-CN.md](./README.zh-CN.md) — 中文版
+```
+zhihand/
+  packages/
+    mcp/                  @zhihand/mcp — MCP Server, daemon, CLI
+      bin/zhihand         CLI entry point
+      src/
+        index.ts          MCP Server (stdio transport)
+        openclaw.adapter.ts  OpenClaw Plugin adapter
+        core/
+          config.ts       Config v3 management (~/.zhihand/)
+          ws.ts           WebSocket client (ReconnectingWebSocket, UserEventWebSocket)
+          registry.ts     Multi-user device registry with config hot-reload
+          device.ts       Device profile, capabilities
+          command.ts      Command creation, enqueue, ACK
+          screenshot.ts   Binary screenshot fetch (JPEG)
+          pair.ts         User creation + device pairing flow
+          logger.ts       Unified logger (stderr in MCP mode)
+        daemon/
+          index.ts        Daemon: HTTP server + MCP + Relay + Config API
+          heartbeat.ts    Brain heartbeat loop (30s)
+          prompt-listener.ts  WebSocket + polling prompt listener
+          dispatcher.ts   CLI dispatch (spawn + timeout + kill)
+        tools/
+          control.ts      zhihand_control handler
+          system.ts       zhihand_system handler
+          screenshot.ts   zhihand_screenshot handler
+          pair.ts         zhihand_pair handler
+          schemas.ts      Zod parameter schemas
+        cli/
+          detect.ts       CLI tool detection
+          spawn.ts        CLI process spawning
+          mcp-config.ts   MCP auto-configuration
+    host-adapters/
+      openclaw/           OpenClaw Plugin adapter (thin wrapper)
+  services/
+    zhihandd/             Reference control service (Go)
+  docs/                   Protocol, architecture, security, actions
+```
+
+## Switching Backends
+
+```bash
+zhihand gemini                # Switch to Gemini CLI (model: flash)
+zhihand claude                # Switch to Claude Code (model: sonnet)
+zhihand codex                 # Switch to Codex CLI (model: gpt-5.4-mini)
+zhihand gemini --model pro    # Use a custom model
+```
+
+When you switch:
+- IPC message is sent to the running daemon
+- MCP config is automatically added to the new backend
+- MCP config is automatically removed from the previous backend
+- Model selection is persisted to `~/.zhihand/backend.json`
+
+## Android & iOS Apps
+
+1. Download and install the ZhiHand app for **Android** or **iOS**
+2. Tap **Scan** and scan the QR code from your terminal
+3. Connect your **ZhiHand Device**
+4. Turn on **Eye** (screen sharing) when you want the agent to see your screen
 
 ## For Developers
 
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- [ACTIONS.md](./docs/ACTIONS.md)
 - [PROTOCOL.md](./docs/PROTOCOL.md)
-- [COMPATIBILITY.md](./docs/COMPATIBILITY.md)
+- [ACTIONS.md](./docs/ACTIONS.md)
 - [SECURITY.md](./docs/SECURITY.md)
+- [COMPATIBILITY.md](./docs/COMPATIBILITY.md)
+- [CONFIGURATION.md](./docs/CONFIGURATION.md)
+- [DISTRIBUTION.md](./docs/DISTRIBUTION.md)
 - [REPOSITORY.md](./docs/REPOSITORY.md)
 - [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
-- [ROADMAP.md](./ROADMAP.md)
 
-The public reference service in this repo currently ships:
+### Development
 
-- HTTP JSON + SSE
-- optional bearer-token auth
-- bounded in-memory event retention
-
-It does not yet ship a real gRPC listener.
+```bash
+cd packages/mcp
+npm install
+npm run build         # Compile TypeScript
+npm run dev           # Dev mode (--experimental-strip-types)
+npm test              # Run tests
+```
 
 ## Publishing Rule
 
-Public documentation in this repository must stay safe to publish:
+Public documentation must stay safe to publish: no real tokens, no private hostnames, no operator credentials, no deployment-only notes.
 
-- no real tokens
-- no private hostnames
-- no operator credentials
-- no deployment-only notes
+## License
+
+MIT
