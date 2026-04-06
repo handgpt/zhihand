@@ -1,5 +1,7 @@
 import type { ZhiHandRuntimeConfig } from "./config.ts";
-import { dbg } from "../daemon/logger.ts";
+import { log } from "./logger.ts";
+
+const dbg = (msg: string) => log.debug(msg);
 
 // Snapshot is considered stale if the server-reported age exceeds this
 // threshold. Configurable via env ZHIHAND_SNAPSHOT_MAX_AGE_MS.
@@ -42,7 +44,7 @@ export async function fetchScreenshot(config: ZhiHandRuntimeConfig): Promise<Scr
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "x-zhihand-controller-token": config.controllerToken,
+        "Authorization": `Bearer ${config.controllerToken}`,
         "Accept": "image/jpeg",
       },
       signal: controller.signal,

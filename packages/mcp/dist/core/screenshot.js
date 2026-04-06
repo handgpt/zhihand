@@ -1,4 +1,5 @@
-import { dbg } from "../daemon/logger.js";
+import { log } from "./logger.js";
+const dbg = (msg) => log.debug(msg);
 // Snapshot is considered stale if the server-reported age exceeds this
 // threshold. Configurable via env ZHIHAND_SNAPSHOT_MAX_AGE_MS.
 // Default 5s: typical HID command + capture + upload is well under 2s;
@@ -29,7 +30,7 @@ export async function fetchScreenshot(config) {
         const response = await fetch(url, {
             method: "GET",
             headers: {
-                "x-zhihand-controller-token": config.controllerToken,
+                "Authorization": `Bearer ${config.controllerToken}`,
                 "Accept": "image/jpeg",
             },
             signal: controller.signal,

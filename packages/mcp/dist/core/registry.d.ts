@@ -1,67 +1,60 @@
 /**
  * Device registry — the single source of truth for all paired devices,
- * their live state (profile, online flag, SSE connection), and multi-
- * device routing.
+ * their live state, and multi-user SSE streams.
  *
- * Holds a per-credential AbortController for SSE, a per-device heartbeat
- * timer, and a single debounced notifier for list_changed.
+ * Groups devices under users. Each user has one UserEventStream.
+ * Online detection is server-authoritative (no local heartbeat polling).
+ * Config hot-reload via fs.watchFile.
  */
-import { type DeviceRecord, type ZhiHandRuntimeConfig } from "./config.ts";
+import { type DeviceRecord, type DevicePlatform, type ZhiHandRuntimeConfig } from "./config.ts";
 import { type StaticContext, type Capabilities } from "./device.ts";
 export interface DeviceState {
     credentialId: string;
+    userId: string;
+    userLabel: string;
     label: string;
-    platform: "ios" | "android" | "unknown";
+    platform: DevicePlatform;
     online: boolean;
     lastSeenAtMs: number;
     profile: StaticContext | null;
     capabilities: Capabilities | null;
     profileReceivedAtMs: number;
     rawAttributes: Record<string, unknown>;
-    sseController: AbortController | null;
-    sseConnected: boolean;
-    heartbeatTimer: ReturnType<typeof setInterval> | null;
     record: DeviceRecord;
 }
 type ListChangedCb = () => void;
 declare class Registry {
-    private devices;
+    private userStates;
     private listChangedSubs;
     private debounceTimer;
     private lastOnlineSet;
     private initialized;
+    private configWatchActive;
+    private reconcileTimer;
     get(credentialId: string): DeviceState | null;
     list(): DeviceState[];
     listOnline(): DeviceState[];
     /**
-     * Priority:
-     *   1. If the user has explicitly set a default via `zhihand default <id>`
-     *      AND that device is online → return it. Honoring an explicit user
-     *      preference is the least-surprising UX.
-     *   2. Otherwise → most-recently-active online device (online[0] is sorted
-     *      desc by lastSeenAtMs).
-     *   3. No online devices → null.
+     * Most-recently-active online device across all users.
      */
     resolveDefault(): DeviceState | null;
+    isMultiUser(): boolean;
     toRuntimeConfig(state: DeviceState): ZhiHandRuntimeConfig;
     subscribe(cb: ListChangedCb): () => void;
+    init(): Promise<void>;
+    shutdown(): void;
     private computeOnlineSet;
     private setsEqual;
     private scheduleListChanged;
-    private updateOnlineFlag;
+    private createUserState;
+    private makeDeviceState;
+    private populateDevicesFromConfig;
+    private fetchAndPopulateDevices;
+    private startUserStream;
     private touchLastSeen;
-    private refreshProfile;
-    private startHeartbeat;
-    private stopHeartbeat;
-    private startSSE;
-    private stopSSE;
-    private makeState;
-    init(): Promise<void>;
-    addDevice(record: DeviceRecord): Promise<void>;
-    removeDevice(credentialId: string): void;
-    renameDevice(credentialId: string, label: string): void;
-    setDefault(credentialId: string): void;
-    shutdown(): void;
+    private startConfigWatch;
+    private stopConfigWatch;
+    private reconcileConfig;
 }
 export declare const registry: Registry;
 export {};

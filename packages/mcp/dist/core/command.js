@@ -1,4 +1,5 @@
-import { dbg } from "../daemon/logger.js";
+import { log } from "./logger.js";
+const dbg = (msg) => log.debug(msg);
 let messageCounter = 0;
 function nextMessageId() {
     messageCounter = (messageCounter + 1) % 1000;
@@ -157,7 +158,7 @@ export async function enqueueCommand(config, command) {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "x-zhihand-controller-token": config.controllerToken,
+            "Authorization": `Bearer ${config.controllerToken}`,
         },
         body: JSON.stringify(body),
     });
@@ -173,7 +174,7 @@ export async function getCommand(config, commandId) {
     const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;
     dbg(`[cmd] GET ${url}`);
     const response = await fetch(url, {
-        headers: { "x-zhihand-controller-token": config.controllerToken },
+        headers: { "Authorization": `Bearer ${config.controllerToken}` },
     });
     if (!response.ok) {
         dbg(`[cmd] Get failed: ${response.status}`);

@@ -1,21 +1,25 @@
 export type DevicePlatform = "ios" | "android" | "unknown";
 export interface DeviceRecord {
     credential_id: string;
-    controller_token: string;
-    endpoint: string;
     label: string;
     platform: DevicePlatform;
     paired_at: string;
     last_seen_at: string;
 }
-export interface ZhihandConfig {
-    schema_version: 2;
-    default_credential_id: string | null;
-    devices: Record<string, DeviceRecord>;
+export interface UserRecord {
+    user_id: string;
+    controller_token: string;
+    label: string;
+    created_at: string;
+    devices: DeviceRecord[];
+}
+export interface ZhihandConfigV3 {
+    schema_version: 3;
+    users: Record<string, UserRecord>;
 }
 /**
- * Legacy-shaped config passed to HTTP callers (command/sse/device endpoints).
- * Corresponds to what the old single-device code called ZhiHandConfig.
+ * Runtime config passed to HTTP callers (command/sse/device endpoints).
+ * Derived from a UserRecord + DeviceRecord pair.
  */
 export interface ZhiHandRuntimeConfig {
     controlPlaneEndpoint: string;
@@ -32,19 +36,30 @@ export interface BackendConfig {
 export declare const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string>;
 export declare function resolveZhiHandDir(): string;
 export declare function ensureZhiHandDir(): void;
-export declare function loadConfig(): ZhihandConfig;
-export declare function saveConfig(cfg: ZhihandConfig): void;
-export declare function addDevice(record: DeviceRecord, makeDefault?: boolean): void;
-export declare function removeDevice(credentialId: string): void;
-export declare function renameDevice(credentialId: string, label: string): void;
-export declare function setDefaultDevice(credentialId: string): void;
-export declare function updateLastSeen(credentialId: string, iso: string): void;
-export declare function getDeviceRecord(credentialId: string): DeviceRecord | null;
-export declare function listDeviceRecords(): DeviceRecord[];
-export declare function recordToRuntimeConfig(r: DeviceRecord): ZhiHandRuntimeConfig;
+export declare function getConfigPath(): string;
+export declare function loadConfig(): ZhihandConfigV3;
 /**
- * Resolve a runtime config for HTTP calls. If credentialId provided, look it up;
- * else use default_credential_id; else throw.
+ * Atomically write config: write to .tmp, then rename. Prevents corruption
+ * when the daemon and CLI write concurrently (Gemini code review v0.31).
+ */
+export declare function saveConfig(cfg: ZhihandConfigV3): void;
+export declare function addUser(user: UserRecord): void;
+export declare function removeUser(userId: string): void;
+export declare function addDeviceToUser(userId: string, device: DeviceRecord): void;
+export declare function removeDeviceFromUser(userId: string, credentialId: string): void;
+export declare function updateDeviceLabel(userId: string, credentialId: string, label: string): void;
+export declare function updateControllerToken(userId: string, newToken: string): void;
+export declare function updateDeviceLastSeen(userId: string, credentialId: string, iso: string): void;
+export declare function getUserRecord(userId: string): UserRecord | null;
+export declare function findDeviceOwner(credentialId: string): {
+    user: UserRecord;
+    device: DeviceRecord;
+} | null;
+export declare function listUsers(): UserRecord[];
+export declare function resolveDefaultEndpoint(): string;
+/**
+ * Resolve a runtime config for HTTP calls. Find which user owns the
+ * credential and use the user's controller_token.
  */
 export declare function resolveConfig(credentialId?: string): ZhiHandRuntimeConfig;
 export declare function loadState<T = unknown>(): T | null;

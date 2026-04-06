@@ -67,7 +67,7 @@ export declare function normalizeProfilePayload(raw: Record<string, unknown>): R
 export declare function pickAllowlistedRawAttributes(rawAttributes: Record<string, unknown>): Record<string, unknown>;
 export { DEFAULT_STATIC, DEFAULT_DYNAMIC };
 import type { DeviceState } from "./registry.ts";
-export declare function buildControlToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
-export declare function buildSystemToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
-export declare function buildScreenshotToolDescription(state: DeviceState | null, onlineStates?: DeviceState[]): string;
+export declare function buildControlToolDescription(state: DeviceState | null, onlineStates?: DeviceState[], multiUser?: boolean): string;
+export declare function buildSystemToolDescription(state: DeviceState | null, onlineStates?: DeviceState[], multiUser?: boolean): string;
+export declare function buildScreenshotToolDescription(state: DeviceState | null, onlineStates?: DeviceState[], multiUser?: boolean): string;
 export declare function formatDeviceStatus(state: DeviceState): Record<string, unknown>;

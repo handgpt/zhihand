@@ -19,10 +19,11 @@ import {
   buildSystemToolDescription,
   buildScreenshotToolDescription,
   formatDeviceStatus,
+  extractDynamic,
 } from "./core/device.ts";
 import { registry } from "./core/registry.ts";
 
-export const PACKAGE_VERSION = "0.30.0";
+export const PACKAGE_VERSION = "0.31.0";
 
 type TextContent = { type: "text"; text: string };
 type ToolResult = { content: TextContent[]; isError?: boolean };
@@ -37,9 +38,11 @@ export function createServer(): McpServer {
     version: PACKAGE_VERSION,
   });
 
+  const multiUser = registry.isMultiUser();
+
   const controlTool = server.tool(
     "zhihand_control",
-    buildControlToolDescription(null, registry.listOnline()),
+    buildControlToolDescription(null, registry.listOnline(), multiUser),
     controlSchema,
     async (params) => {
       const resolved = resolveTargetDevice(params.device_id);
@@ -53,7 +56,7 @@ export function createServer(): McpServer {
 
   const systemTool = server.tool(
     "zhihand_system",
-    buildSystemToolDescription(null, registry.listOnline()),
+    buildSystemToolDescription(null, registry.listOnline(), multiUser),
     systemSchema,
     async (params) => {
       const resolved = resolveTargetDevice(params.device_id);
@@ -67,7 +70,7 @@ export function createServer(): McpServer {
 
   const screenshotTool = server.tool(
     "zhihand_screenshot",
-    buildScreenshotToolDescription(null, registry.listOnline()),
+    buildScreenshotToolDescription(null, registry.listOnline(), multiUser),
     screenshotSchema,
     async (params) => {
       const resolved = resolveTargetDevice(params.device_id);
@@ -96,16 +99,19 @@ export function createServer(): McpServer {
 
   server.tool(
     "zhihand_list_devices",
-    "List ALL configured ZhiHand devices with their online status. Returns credential_id, label, platform, online, last_seen_ms_ago for each. Call this before zhihand_control/system/screenshot/status when multiple devices may be online.",
+    "List ALL configured ZhiHand devices with their online status. Returns device_id, label, platform, online, battery, is_default, last_active for each. Call this before zhihand_control/system/screenshot/status when multiple devices may be online.",
     listDevicesSchema,
     async () => {
-      const now = Date.now();
+      const mu = registry.isMultiUser();
+      const defaultDev = registry.resolveDefault();
       const devices = registry.list().map((d) => ({
-        credential_id: d.credentialId,
-        label: d.label,
+        device_id: d.credentialId,
+        label: mu ? `[${d.userLabel}] ${d.label}` : d.label,
         platform: d.platform,
         online: d.online,
-        last_seen_ms_ago: d.lastSeenAtMs > 0 ? now - d.lastSeenAtMs : -1,
+        battery: d.rawAttributes ? extractDynamic(d.rawAttributes).batteryLevel : null,
+        is_default: d === defaultDev,
+        last_active: d.lastSeenAtMs > 0 ? new Date(d.lastSeenAtMs).toISOString() : null,
       }));
       return {
         content: [{
@@ -126,14 +132,12 @@ export function createServer(): McpServer {
   );
 
   // Dynamic tool-description updates on online-set change.
-  // Each .update() call also triggers sendToolListChanged() internally, but we
-  // wrap each individually so one throwing does NOT block the others, and we
-  // still call sendToolListChanged() explicitly as a belt-and-braces signal.
   registry.subscribe(() => {
     const online = registry.listOnline();
-    try { controlTool.update({ description: buildControlToolDescription(null, online) }); } catch { /* best-effort */ }
-    try { systemTool.update({ description: buildSystemToolDescription(null, online) }); } catch { /* best-effort */ }
-    try { screenshotTool.update({ description: buildScreenshotToolDescription(null, online) }); } catch { /* best-effort */ }
+    const mu = registry.isMultiUser();
+    try { controlTool.update({ description: buildControlToolDescription(null, online, mu) }); } catch { /* best-effort */ }
+    try { systemTool.update({ description: buildSystemToolDescription(null, online, mu) }); } catch { /* best-effort */ }
+    try { screenshotTool.update({ description: buildScreenshotToolDescription(null, online, mu) }); } catch { /* best-effort */ }
     try { server.server.sendToolListChanged(); } catch { /* best-effort */ }
   });
 

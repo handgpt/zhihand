@@ -880,7 +880,7 @@ export async function postReply(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-zhihand-controller-token": config.controllerToken,
+        "Authorization": `Bearer ${config.controllerToken}`,
       },
       body: JSON.stringify({ role: "assistant", text }),
       signal: AbortSignal.timeout(30_000),

@@ -1,7 +1,7 @@
 import type { ZhiHandRuntimeConfig } from "./config.ts";
 import type { QueuedCommandRecord, WaitForCommandAckResult } from "./command.ts";
 import { getCommand } from "./command.ts";
-import { dbg } from "../daemon/logger.ts";
+import { log } from "./logger.ts";
 
 export interface SSEEvent {
   id: string;
@@ -10,6 +10,7 @@ export interface SSEEvent {
   credential_id: string;
   command?: QueuedCommandRecord;
   device_profile?: Record<string, unknown>;
+  credential?: Record<string, unknown>;  // credential.added / credential.removed events
   sequence: number;
 }
 
@@ -17,11 +18,11 @@ export interface SSEEvent {
 const ackCallbacks = new Map<string, (command: QueuedCommandRecord) => void>();
 
 export function handleSSEEvent(event: SSEEvent): void {
-  dbg(`[sse-cmd] Event: kind=${event.kind}, command=${event.command?.id ?? "-"}`);
+  log.debug(`[sse-cmd] Event: kind=${event.kind}, command=${event.command?.id ?? "-"}`);
   if (event.kind === "command.acked" && event.command) {
     const callback = ackCallbacks.get(event.command.id);
     if (callback) {
-      dbg(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}, ack_result=${JSON.stringify(event.command.ack_result ?? null)}`);
+      log.debug(`[sse-cmd] ACK callback for ${event.command.id}, ack_status=${event.command.ack_status}, ack_result=${JSON.stringify(event.command.ack_result ?? null)}`);
       callback(event.command);
       ackCallbacks.delete(event.command.id);
     }
@@ -36,34 +37,58 @@ export function subscribeToCommandAck(
   return () => { ackCallbacks.delete(commandId); };
 }
 
-export interface SSEHandlers {
-  onEvent: (e: SSEEvent) => void;
+// ── UserEventStream — per-user SSE connection ──────────────
+
+export interface UserEventStreamHandlers {
+  onDeviceOnline: (credentialId: string) => void;
+  onDeviceOffline: (credentialId: string) => void;
+  onDeviceProfileUpdated: (credentialId: string, profile: Record<string, unknown>) => void;
+  onCommandAcked: (event: SSEEvent) => void;
+  onCredentialAdded: (credential: Record<string, unknown>) => void;
+  onCredentialRemoved: (credentialId: string) => void;
   onConnected: () => void;
   onDisconnected: () => void;
 }
 
-/**
- * Open a per-credential SSE connection. Caller owns the returned AbortController.
- * The loop auto-reconnects with exponential backoff until aborted.
- */
-export function connectSSEForCredential(
-  config: ZhiHandRuntimeConfig,
-  handlers: SSEHandlers,
-): AbortController {
-  const controller = new AbortController();
-  const { signal } = controller;
-  const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/events/stream`;
+export class UserEventStream {
+  private abortController: AbortController | null = null;
+  private _connected = false;
 
-  let backoffMs = 1000;
-  const BACKOFF_MAX = 30_000;
+  constructor(
+    private userId: string,
+    private controllerToken: string,
+    private endpoint: string,
+    private handlers: UserEventStreamHandlers,
+  ) {}
 
-  (async () => {
+  get connected(): boolean {
+    return this._connected;
+  }
+
+  start(): void {
+    if (this.abortController) return;
+    this.abortController = new AbortController();
+    this.runLoop(this.abortController.signal);
+  }
+
+  stop(): void {
+    this.abortController?.abort();
+    this.abortController = null;
+    this._connected = false;
+  }
+
+  private async runLoop(signal: AbortSignal): Promise<void> {
+    let backoffMs = 1000;
+    const BACKOFF_MAX = 30_000;
+    const topics = "commands,device_profile,device.online,device.offline,credential.added,credential.removed";
+    const url = `${this.endpoint}/v1/users/${encodeURIComponent(this.userId)}/events/stream?topic=${topics}`;
+
     while (!signal.aborted) {
       try {
         const response = await fetch(url, {
           headers: {
             "Accept": "text/event-stream",
-            "x-zhihand-controller-token": config.controllerToken,
+            "Authorization": `Bearer ${this.controllerToken}`,
           },
           signal,
         });
@@ -71,7 +96,8 @@ export function connectSSEForCredential(
           throw new Error(`SSE connect failed: ${response.status}`);
         }
 
-        handlers.onConnected();
+        this._connected = true;
+        this.handlers.onConnected();
         backoffMs = 1000;
 
         const reader = response.body?.getReader();
@@ -93,7 +119,7 @@ export function connectSSEForCredential(
             } else if (line === "" && eventData) {
               try {
                 const ev = JSON.parse(eventData) as SSEEvent;
-                handlers.onEvent(ev);
+                this.dispatchEvent(ev);
               } catch {
                 // malformed, skip
               }
@@ -103,15 +129,80 @@ export function connectSSEForCredential(
         }
       } catch (err) {
         if (signal.aborted) break;
-        handlers.onDisconnected();
+        this._connected = false;
+        this.handlers.onDisconnected();
         await new Promise((r) => setTimeout(r, backoffMs));
         backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX);
       }
     }
-    handlers.onDisconnected();
-  })();
+    this._connected = false;
+    this.handlers.onDisconnected();
+  }
 
-  return controller;
+  private dispatchEvent(ev: SSEEvent): void {
+    // Always dispatch command ACKs globally
+    handleSSEEvent(ev);
+
+    switch (ev.kind) {
+      case "device.online":
+        this.handlers.onDeviceOnline(ev.credential_id);
+        break;
+      case "device.offline":
+        this.handlers.onDeviceOffline(ev.credential_id);
+        break;
+      case "device_profile.updated":
+        if (ev.device_profile) {
+          this.handlers.onDeviceProfileUpdated(ev.credential_id, ev.device_profile);
+        }
+        break;
+      case "command.acked":
+        this.handlers.onCommandAcked(ev);
+        break;
+      case "credential.added":
+        // The credential.added event carries the new credential metadata
+        // in ev.credential (with credential_id, label, platform, etc.).
+        // Fall back to the root event if ev.credential is absent, since
+        // credential_id is always on the root SSEEvent.
+        this.handlers.onCredentialAdded(ev.credential ?? { credential_id: ev.credential_id });
+        break;
+      case "credential.removed":
+        this.handlers.onCredentialRemoved(ev.credential_id);
+        break;
+    }
+  }
+}
+
+// ── Fetch user credentials (for reconciliation on reconnect) ──
+
+export interface CredentialResponse {
+  credential_id: string;
+  label?: string;
+  platform?: string;
+  online?: boolean;
+  paired_at?: string;
+  last_seen_at?: string;
+  device_profile?: Record<string, unknown>;
+}
+
+export async function fetchUserCredentials(
+  endpoint: string,
+  userId: string,
+  controllerToken: string,
+  onlineFilter?: boolean,
+): Promise<CredentialResponse[]> {
+  let url = `${endpoint}/v1/users/${encodeURIComponent(userId)}/credentials`;
+  if (onlineFilter !== undefined) {
+    url += `?online=${onlineFilter}`;
+  }
+  const response = await fetch(url, {
+    headers: { "Authorization": `Bearer ${controllerToken}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Fetch credentials failed: ${response.status}`);
+  }
+  const data = (await response.json()) as { items?: CredentialResponse[] };
+  return data.items ?? [];
 }
 
 /**
@@ -123,7 +214,7 @@ export async function waitForCommandAck(
   options: { commandId: string; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<WaitForCommandAckResult> {
   const timeoutMs = options.timeoutMs ?? 15_000;
-  dbg(`[sse-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
+  log.debug(`[sse-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
 
   return new Promise<WaitForCommandAckResult>((resolve, reject) => {
     let resolved = false;

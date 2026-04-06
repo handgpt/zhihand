@@ -14,7 +14,7 @@ import { setDebugEnabled, dbg } from "./logger.js";
 import { registry } from "../core/registry.js";
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
-// ── State ──────────────────────────────────────────────────
+// ── State ────────���─────────────────────────────────────────
 let activeBackend = null;
 let activeModel = null; // user-selected model alias, null = use default
 let isProcessing = false;
@@ -153,7 +153,7 @@ function readPid() {
 export function isAlreadyRunning() {
     return readPid();
 }
-// ── Main Daemon Entry ──────────────────────────────────────
+// ── Main Daemon Entry ──────���───────────────────────────────
 export async function startDaemon(options) {
     if (options?.debug)
         setDebugEnabled(true);
@@ -190,7 +190,7 @@ export async function startDaemon(options) {
     else {
         log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
     }
-    // Init the multi-device registry (single-device in daemon context) and log profile.
+    // Init the multi-device registry and log profile.
     await registry.init();
     const defaultState = registry.resolveDefault();
     if (defaultState?.profile) {

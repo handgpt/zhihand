@@ -76,7 +76,7 @@ export class PromptListener {
         const response = await fetch(url, {
           headers: {
             "Accept": "text/event-stream",
-            "x-zhihand-controller-token": this.config.controllerToken,
+            "Authorization": `Bearer ${this.config.controllerToken}`,
           },
           signal: this.sseAbort.signal,
         });
@@ -192,7 +192,7 @@ export class PromptListener {
       const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/prompts?limit=5`;
       dbg(`[poll] GET ${url}`);
       const response = await fetch(url, {
-        headers: { "x-zhihand-controller-token": this.config.controllerToken },
+        headers: { "Authorization": `Bearer ${this.config.controllerToken}` },
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) {

@@ -6,9 +6,9 @@ import { executeSystem } from "./tools/system.js";
 import { handleScreenshot } from "./tools/screenshot.js";
 import { handlePair } from "./tools/pair.js";
 import { resolveTargetDevice } from "./tools/resolve.js";
-import { buildControlToolDescription, buildSystemToolDescription, buildScreenshotToolDescription, formatDeviceStatus, } from "./core/device.js";
+import { buildControlToolDescription, buildSystemToolDescription, buildScreenshotToolDescription, formatDeviceStatus, extractDynamic, } from "./core/device.js";
 import { registry } from "./core/registry.js";
-export const PACKAGE_VERSION = "0.30.0";
+export const PACKAGE_VERSION = "0.31.0";
 function errorResult(message) {
     return { content: [{ type: "text", text: message }], isError: true };
 }
@@ -17,7 +17,8 @@ export function createServer() {
         name: "zhihand",
         version: PACKAGE_VERSION,
     });
-    const controlTool = server.tool("zhihand_control", buildControlToolDescription(null, registry.listOnline()), controlSchema, async (params) => {
+    const multiUser = registry.isMultiUser();
+    const controlTool = server.tool("zhihand_control", buildControlToolDescription(null, registry.listOnline(), multiUser), controlSchema, async (params) => {
         const resolved = resolveTargetDevice(params.device_id);
         if ("error" in resolved)
             return errorResult(resolved.error);
@@ -26,7 +27,7 @@ export function createServer() {
         const platform = state.profile?.platform ?? "unknown";
         return await executeControl(cfg, params, platform, state.capabilities);
     });
-    const systemTool = server.tool("zhihand_system", buildSystemToolDescription(null, registry.listOnline()), systemSchema, async (params) => {
+    const systemTool = server.tool("zhihand_system", buildSystemToolDescription(null, registry.listOnline(), multiUser), systemSchema, async (params) => {
         const resolved = resolveTargetDevice(params.device_id);
         if ("error" in resolved)
             return errorResult(resolved.error);
@@ -35,7 +36,7 @@ export function createServer() {
         const platform = state.profile?.platform ?? "unknown";
         return await executeSystem(cfg, params, platform);
     });
-    const screenshotTool = server.tool("zhihand_screenshot", buildScreenshotToolDescription(null, registry.listOnline()), screenshotSchema, async (params) => {
+    const screenshotTool = server.tool("zhihand_screenshot", buildScreenshotToolDescription(null, registry.listOnline(), multiUser), screenshotSchema, async (params) => {
         const resolved = resolveTargetDevice(params.device_id);
         if ("error" in resolved)
             return errorResult(resolved.error);
@@ -54,14 +55,17 @@ export function createServer() {
                 }],
         };
     });
-    server.tool("zhihand_list_devices", "List ALL configured ZhiHand devices with their online status. Returns credential_id, label, platform, online, last_seen_ms_ago for each. Call this before zhihand_control/system/screenshot/status when multiple devices may be online.", listDevicesSchema, async () => {
-        const now = Date.now();
+    server.tool("zhihand_list_devices", "List ALL configured ZhiHand devices with their online status. Returns device_id, label, platform, online, battery, is_default, last_active for each. Call this before zhihand_control/system/screenshot/status when multiple devices may be online.", listDevicesSchema, async () => {
+        const mu = registry.isMultiUser();
+        const defaultDev = registry.resolveDefault();
         const devices = registry.list().map((d) => ({
-            credential_id: d.credentialId,
-            label: d.label,
+            device_id: d.credentialId,
+            label: mu ? `[${d.userLabel}] ${d.label}` : d.label,
             platform: d.platform,
             online: d.online,
-            last_seen_ms_ago: d.lastSeenAtMs > 0 ? now - d.lastSeenAtMs : -1,
+            battery: d.rawAttributes ? extractDynamic(d.rawAttributes).batteryLevel : null,
+            is_default: d === defaultDev,
+            last_active: d.lastSeenAtMs > 0 ? new Date(d.lastSeenAtMs).toISOString() : null,
         }));
         return {
             content: [{
@@ -74,21 +78,19 @@ export function createServer() {
         return await handlePair(params);
     });
     // Dynamic tool-description updates on online-set change.
-    // Each .update() call also triggers sendToolListChanged() internally, but we
-    // wrap each individually so one throwing does NOT block the others, and we
-    // still call sendToolListChanged() explicitly as a belt-and-braces signal.
     registry.subscribe(() => {
         const online = registry.listOnline();
+        const mu = registry.isMultiUser();
         try {
-            controlTool.update({ description: buildControlToolDescription(null, online) });
+            controlTool.update({ description: buildControlToolDescription(null, online, mu) });
         }
         catch { /* best-effort */ }
         try {
-            systemTool.update({ description: buildSystemToolDescription(null, online) });
+            systemTool.update({ description: buildSystemToolDescription(null, online, mu) });
         }
         catch { /* best-effort */ }
         try {
-            screenshotTool.update({ description: buildScreenshotToolDescription(null, online) });
+            screenshotTool.update({ description: buildScreenshotToolDescription(null, online, mu) });
         }
         catch { /* best-effort */ }
         try {

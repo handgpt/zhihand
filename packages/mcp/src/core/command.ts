@@ -1,5 +1,7 @@
 import type { ZhiHandRuntimeConfig } from "./config.ts";
-import { dbg } from "../daemon/logger.ts";
+import { log } from "./logger.ts";
+
+const dbg = (msg: string) => log.debug(msg);
 
 export type ScrollDirection = "up" | "down" | "left" | "right";
 export interface ControlParams {
@@ -208,7 +210,7 @@ export async function enqueueCommand(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-zhihand-controller-token": config.controllerToken,
+        "Authorization": `Bearer ${config.controllerToken}`,
       },
       body: JSON.stringify(body),
     }
@@ -229,7 +231,7 @@ export async function getCommand(
   const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;
   dbg(`[cmd] GET ${url}`);
   const response = await fetch(url, {
-      headers: { "x-zhihand-controller-token": config.controllerToken },
+      headers: { "Authorization": `Bearer ${config.controllerToken}` },
     }
   );
   if (!response.ok) {

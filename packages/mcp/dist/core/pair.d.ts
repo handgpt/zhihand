@@ -1,45 +1,53 @@
-import type { DeviceRecord } from "./config.ts";
-export interface PluginRecord {
-    id: string;
-    edge_id: string;
-    adapter_kind: string;
-    display_name?: string;
-    stable_identity?: string;
-    status: string;
-    created_at: string;
-}
+import type { DeviceRecord, UserRecord } from "./config.ts";
 export interface PairingSession {
-    id: string;
+    session_id: string;
     pair_url: string;
     qr_payload: string;
-    controller_token?: string;
-    edge_id: string;
-    status: "pending" | "claimed" | "expired" | string;
-    credential_id?: string;
     expires_at: string;
-    requested_scopes?: string[];
 }
-export interface CreatePairingOptions {
-    edgeId: string;
-    ttlSeconds?: number;
-    requestedScopes?: string[];
+export interface CreateUserResponse {
+    user_id: string;
+    controller_token: string;
+    label: string;
+    created_at: string;
 }
+/**
+ * Create a new user on the server.
+ * POST /v1/users { label } → { user_id, controller_token, label, created_at }
+ */
+export declare function createUser(endpoint: string, label: string): Promise<CreateUserResponse>;
+/**
+ * Create a pairing session for a user.
+ * POST /v1/users/{id}/pairing/sessions { edge_id, ttl_seconds } → PairingSession
+ */
+export declare function createPairingSession(endpoint: string, userId: string, controllerToken: string, edgeId: string, ttlSeconds?: number): Promise<PairingSession>;
+/**
+ * Register a plugin (edge). Kept for backward compat with edge registration.
+ */
 export declare function registerPlugin(endpoint: string, options: {
     stableIdentity: string;
     displayName?: string;
     adapterKind?: string;
-}): Promise<PluginRecord>;
-export declare function createPairingSession(endpoint: string, options: CreatePairingOptions): Promise<PairingSession>;
-export declare function getPairingSession(endpoint: string, sessionId: string): Promise<PairingSession>;
-export declare function waitForPairingClaim(endpoint: string, sessionId: string, timeoutMs?: number): Promise<PairingSession>;
+}): Promise<{
+    edge_id: string;
+}>;
+/**
+ * Poll pairing session until claimed or expired.
+ */
+export declare function waitForPairingClaim(endpoint: string, userId: string, controllerToken: string, sessionId: string, timeoutMs?: number): Promise<void>;
 export declare function renderPairingQRCode(url: string): Promise<string>;
 /**
- * Drive the full interactive pairing flow. Saves a new device record into the
- * v2 config on success. Label defaults to the device model (fetched post-claim)
- * and falls back to the supplied preferredLabel or timestamp.
+ * New user pairing: create user → create pairing session → wait → fetch credentials → save config.
  */
-export declare function executePairing(endpoint: string, edgeId: string, preferredLabel?: string): Promise<{
-    session: PairingSession;
-    record: DeviceRecord;
+export declare function executePairingNewUser(preferredLabel?: string): Promise<{
+    userRecord: UserRecord;
+    deviceRecord: DeviceRecord;
 }>;
-export declare function formatPairingStatus(record: DeviceRecord | null): string;
+/**
+ * Add device to existing user: create pairing session → wait → fetch new credential → save.
+ */
+export declare function executePairingAddDevice(userId: string, preferredLabel?: string): Promise<DeviceRecord>;
+/**
+ * Legacy: format pairing status (kept for backward compat).
+ */
+export declare function formatPairingStatus(userId: string | null): string;

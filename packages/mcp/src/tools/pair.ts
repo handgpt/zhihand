@@ -1,43 +1,43 @@
-import { loadConfig } from "../core/config.ts";
+import { listUsers } from "../core/config.ts";
 import {
   createPairingSession,
   registerPlugin,
   renderPairingQRCode,
+  createUser,
 } from "../core/pair.ts";
-
-const DEFAULT_ENDPOINT = "https://api.zhihand.com";
-const DEFAULT_EDGE_ID_PREFIX = "mcp-";
-
-function generateEdgeId(): string {
-  return `${DEFAULT_EDGE_ID_PREFIX}${Date.now().toString(36)}`;
-}
+import { resolveDefaultEndpoint } from "../core/config.ts";
 
 export async function handlePair(
   params: { forceNew?: boolean },
-  endpoint?: string,
 ) {
-  const resolvedEndpoint = endpoint ?? DEFAULT_ENDPOINT;
+  const endpoint = resolveDefaultEndpoint();
+  const users = listUsers();
 
-  if (!params.forceNew) {
-    const cfg = loadConfig();
-    const records = Object.values(cfg.devices);
-    if (records.length > 0) {
-      const lines = [
-        "Already paired with:",
-        "",
-        ...records.map(
-          (r) => `  - ${r.credential_id} (${r.label}, ${r.platform}) via ${r.endpoint}`,
-        ),
-        "",
-        "Pass forceNew=true to pair another device.",
-      ];
-      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
-    }
+  if (!params.forceNew && users.length > 0) {
+    const lines = [
+      "Already paired with:",
+      "",
+      ...users.map(
+        (u) => `  User: ${u.label} (${u.user_id})\n` +
+          u.devices.map(
+            (d) => `    - ${d.credential_id} (${d.label}, ${d.platform})`,
+          ).join("\n"),
+      ),
+      "",
+      "Pass forceNew=true to pair another device.",
+    ];
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
   }
 
-  const stableIdentity = generateEdgeId();
-  const plugin = await registerPlugin(resolvedEndpoint, { stableIdentity });
-  const session = await createPairingSession(resolvedEndpoint, { edgeId: plugin.edge_id });
+  // Create a new user for MCP-tool pairing
+  const label = `MCP-${Date.now().toString(36)}`;
+  const userResp = await createUser(endpoint, label);
+
+  const stableIdentity = `mcp-${Date.now().toString(36)}`;
+  const plugin = await registerPlugin(endpoint, { stableIdentity });
+  const session = await createPairingSession(
+    endpoint, userResp.user_id, userResp.controller_token, plugin.edge_id, 300,
+  );
   const qr = await renderPairingQRCode(session.pair_url);
 
   return {

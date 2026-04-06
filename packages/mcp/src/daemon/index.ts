@@ -30,7 +30,7 @@ type ZhiHandConfig = ZhiHandRuntimeConfig;
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
 
-// ── State ──────────────────────────────────────────────────
+// ── State ────────���─────────────────────────────────────────
 
 let activeBackend: Exclude<BackendName, "openclaw"> | null = null;
 let activeModel: string | null = null;  // user-selected model alias, null = use default
@@ -178,7 +178,7 @@ export function isAlreadyRunning(): number | null {
   return readPid();
 }
 
-// ── Main Daemon Entry ──────────────────────────────────────
+// ── Main Daemon Entry ──────���───────────────────────────────
 
 export async function startDaemon(options?: {
   port?: number;
@@ -221,7 +221,7 @@ export async function startDaemon(options?: {
     log(`[config] No backend configured. Use: zhihand gemini / zhihand claude / zhihand codex`);
   }
 
-  // Init the multi-device registry (single-device in daemon context) and log profile.
+  // Init the multi-device registry and log profile.
   await registry.init();
   const defaultState = registry.resolveDefault();
   if (defaultState?.profile) {

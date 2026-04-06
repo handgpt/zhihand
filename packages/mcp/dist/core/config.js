@@ -9,7 +9,6 @@ export const DEFAULT_MODELS = {
 // ── Paths ──────────────────────────────────────────────────
 const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
 const CONFIG_PATH = path.join(ZHIHAND_DIR, "config.json");
-const LEGACY_CREDENTIALS_PATH = path.join(ZHIHAND_DIR, "credentials.json");
 const STATE_PATH = path.join(ZHIHAND_DIR, "state.json");
 const BACKEND_PATH = path.join(ZHIHAND_DIR, "backend.json");
 export function resolveZhiHandDir() {
@@ -18,27 +17,36 @@ export function resolveZhiHandDir() {
 export function ensureZhiHandDir() {
     fs.mkdirSync(ZHIHAND_DIR, { recursive: true, mode: 0o700 });
 }
-// ── v2 config I/O ──────────────────────────────────────────
+export function getConfigPath() {
+    return CONFIG_PATH;
+}
+// ── v3 config I/O ──────────────────────────────────────────
 let legacyWarningPrinted = false;
 function emptyConfig() {
-    return { schema_version: 2, default_credential_id: null, devices: {} };
+    return { schema_version: 3, users: {} };
 }
 export function loadConfig() {
     if (!fs.existsSync(CONFIG_PATH)) {
-        if (!legacyWarningPrinted && fs.existsSync(LEGACY_CREDENTIALS_PATH)) {
+        // Check for v2 or legacy credentials
+        const legacyCredentials = path.join(ZHIHAND_DIR, "credentials.json");
+        if (!legacyWarningPrinted && (fs.existsSync(legacyCredentials) || checkForV2Config())) {
             legacyWarningPrinted = true;
-            process.stderr.write("[zhihand] legacy credentials.json detected — run 'zhihand pair' to re-pair on v0.30 schema\n");
+            process.stderr.write("[zhihand] old config detected (v2 or legacy) — run 'zhihand pair' to re-pair on v0.31 schema\n");
         }
         return emptyConfig();
     }
     try {
         const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-        if (raw && raw.schema_version === 2) {
+        if (raw && raw.schema_version === 3) {
             return {
-                schema_version: 2,
-                default_credential_id: raw.default_credential_id ?? null,
-                devices: raw.devices ?? {},
+                schema_version: 3,
+                users: raw.users ?? {},
             };
+        }
+        // Old schema version detected
+        if (!legacyWarningPrinted) {
+            legacyWarningPrinted = true;
+            process.stderr.write("[zhihand] old config detected (schema v" + (raw.schema_version ?? "?") + ") — run 'zhihand pair' to re-pair on v0.31 schema\n");
         }
     }
     catch {
@@ -46,84 +54,150 @@ export function loadConfig() {
     }
     return emptyConfig();
 }
-export function saveConfig(cfg) {
-    ensureZhiHandDir();
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 });
-}
-export function addDevice(record, makeDefault) {
-    const cfg = loadConfig();
-    cfg.devices[record.credential_id] = record;
-    if (makeDefault || cfg.default_credential_id === null) {
-        cfg.default_credential_id = record.credential_id;
+function checkForV2Config() {
+    if (!fs.existsSync(CONFIG_PATH))
+        return false;
+    try {
+        const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+        return raw && raw.schema_version === 2;
     }
-    saveConfig(cfg);
-}
-export function removeDevice(credentialId) {
-    const cfg = loadConfig();
-    delete cfg.devices[credentialId];
-    if (cfg.default_credential_id === credentialId) {
-        const remaining = Object.keys(cfg.devices);
-        cfg.default_credential_id = remaining[0] ?? null;
+    catch {
+        return false;
     }
-    saveConfig(cfg);
-}
-export function renameDevice(credentialId, label) {
-    const cfg = loadConfig();
-    const r = cfg.devices[credentialId];
-    if (!r)
-        throw new Error(`Device '${credentialId}' not found`);
-    r.label = label;
-    saveConfig(cfg);
-}
-export function setDefaultDevice(credentialId) {
-    const cfg = loadConfig();
-    if (!cfg.devices[credentialId]) {
-        throw new Error(`Device '${credentialId}' not found`);
-    }
-    cfg.default_credential_id = credentialId;
-    saveConfig(cfg);
-}
-export function updateLastSeen(credentialId, iso) {
-    const cfg = loadConfig();
-    const r = cfg.devices[credentialId];
-    if (!r)
-        return;
-    r.last_seen_at = iso;
-    saveConfig(cfg);
-}
-export function getDeviceRecord(credentialId) {
-    const cfg = loadConfig();
-    return cfg.devices[credentialId] ?? null;
-}
-export function listDeviceRecords() {
-    const cfg = loadConfig();
-    return Object.values(cfg.devices);
-}
-// ── Runtime config resolution ─────────────────────────────
-export function recordToRuntimeConfig(r) {
-    return {
-        controlPlaneEndpoint: r.endpoint,
-        credentialId: r.credential_id,
-        controllerToken: r.controller_token,
-        timeoutMs: 10_000,
-    };
 }
 /**
- * Resolve a runtime config for HTTP calls. If credentialId provided, look it up;
- * else use default_credential_id; else throw.
+ * Atomically write config: write to .tmp, then rename. Prevents corruption
+ * when the daemon and CLI write concurrently (Gemini code review v0.31).
+ */
+export function saveConfig(cfg) {
+    ensureZhiHandDir();
+    const tmpPath = CONFIG_PATH + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    fs.renameSync(tmpPath, CONFIG_PATH);
+}
+// ── User helpers ──────────────────────────────────────────
+export function addUser(user) {
+    const cfg = loadConfig();
+    cfg.users[user.user_id] = user;
+    saveConfig(cfg);
+}
+export function removeUser(userId) {
+    const cfg = loadConfig();
+    delete cfg.users[userId];
+    saveConfig(cfg);
+}
+export function addDeviceToUser(userId, device) {
+    const cfg = loadConfig();
+    const user = cfg.users[userId];
+    if (!user)
+        throw new Error(`User '${userId}' not found in config`);
+    // Replace if exists, else append
+    const idx = user.devices.findIndex((d) => d.credential_id === device.credential_id);
+    if (idx >= 0) {
+        user.devices[idx] = device;
+    }
+    else {
+        user.devices.push(device);
+    }
+    saveConfig(cfg);
+}
+export function removeDeviceFromUser(userId, credentialId) {
+    const cfg = loadConfig();
+    const user = cfg.users[userId];
+    if (!user)
+        return;
+    user.devices = user.devices.filter((d) => d.credential_id !== credentialId);
+    saveConfig(cfg);
+}
+export function updateDeviceLabel(userId, credentialId, label) {
+    const cfg = loadConfig();
+    const user = cfg.users[userId];
+    if (!user)
+        throw new Error(`User '${userId}' not found`);
+    const dev = user.devices.find((d) => d.credential_id === credentialId);
+    if (!dev)
+        throw new Error(`Device '${credentialId}' not found under user '${userId}'`);
+    dev.label = label;
+    saveConfig(cfg);
+}
+export function updateControllerToken(userId, newToken) {
+    const cfg = loadConfig();
+    const user = cfg.users[userId];
+    if (!user)
+        throw new Error(`User '${userId}' not found`);
+    user.controller_token = newToken;
+    saveConfig(cfg);
+}
+export function updateDeviceLastSeen(userId, credentialId, iso) {
+    const cfg = loadConfig();
+    const user = cfg.users[userId];
+    if (!user)
+        return;
+    const dev = user.devices.find((d) => d.credential_id === credentialId);
+    if (!dev)
+        return;
+    dev.last_seen_at = iso;
+    saveConfig(cfg);
+}
+export function getUserRecord(userId) {
+    const cfg = loadConfig();
+    return cfg.users[userId] ?? null;
+}
+export function findDeviceOwner(credentialId) {
+    const cfg = loadConfig();
+    for (const user of Object.values(cfg.users)) {
+        const device = user.devices.find((d) => d.credential_id === credentialId);
+        if (device)
+            return { user, device };
+    }
+    return null;
+}
+export function listUsers() {
+    const cfg = loadConfig();
+    return Object.values(cfg.users);
+}
+// ── Runtime config resolution ─────────────────────────────
+export function resolveDefaultEndpoint() {
+    return process.env.ZHIHAND_ENDPOINT ?? "https://api.zhihand.com";
+}
+/**
+ * Resolve a runtime config for HTTP calls. Find which user owns the
+ * credential and use the user's controller_token.
  */
 export function resolveConfig(credentialId) {
     const cfg = loadConfig();
-    const id = credentialId ?? cfg.default_credential_id;
-    if (!id) {
-        throw new Error("No default device — run zhihand pair");
+    const endpoint = resolveDefaultEndpoint();
+    if (credentialId) {
+        const owner = findDeviceOwner(credentialId);
+        if (!owner) {
+            const known = Object.values(cfg.users)
+                .flatMap((u) => u.devices.map((d) => d.credential_id))
+                .join(", ") || "(none)";
+            throw new Error(`Device '${credentialId}' not found. Known: ${known}`);
+        }
+        return {
+            controlPlaneEndpoint: endpoint,
+            credentialId,
+            controllerToken: owner.user.controller_token,
+            timeoutMs: 10_000,
+        };
     }
-    const r = cfg.devices[id];
-    if (!r) {
-        const known = Object.keys(cfg.devices).join(", ") || "(none)";
-        throw new Error(`Device '${id}' not found. Known: ${known}`);
+    // No explicit credential — pick first device of first user
+    const users = Object.values(cfg.users);
+    if (users.length === 0) {
+        throw new Error("No users configured — run zhihand pair");
     }
-    return recordToRuntimeConfig(r);
+    for (const user of users) {
+        if (user.devices.length > 0) {
+            return {
+                controlPlaneEndpoint: endpoint,
+                credentialId: user.devices[0].credential_id,
+                controllerToken: user.controller_token,
+                timeoutMs: 10_000,
+            };
+        }
+    }
+    throw new Error("No devices configured — run zhihand pair");
 }
 // ── State / backend ───────────────────────────────────────
 export function loadState() {

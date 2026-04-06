@@ -36,7 +36,7 @@ async function sendHeartbeat(config: ZhiHandRuntimeConfig, online: boolean): Pro
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-zhihand-controller-token": config.controllerToken,
+        "Authorization": `Bearer ${config.controllerToken}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),

@@ -8,7 +8,7 @@
  */
 
 import type { ZhiHandRuntimeConfig } from "./config.ts";
-import { dbg } from "../daemon/logger.ts";
+import { log } from "./logger.ts";
 
 // ── Interfaces ────────────────────────────────────────────
 
@@ -207,14 +207,14 @@ export async function fetchDeviceProfileOnce(
   config: ZhiHandRuntimeConfig,
 ): Promise<{ rawAttrs: Record<string, unknown>; receivedAtMs: number } | null> {
   const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/device-profile`;
-  dbg(`[device] Fetching profile: GET ${url}`);
+  log.debug(`[device] Fetching profile: GET ${url}`);
   try {
     const response = await fetch(url, {
-      headers: { "x-zhihand-controller-token": config.controllerToken },
+      headers: { "Authorization": `Bearer ${config.controllerToken}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
-      dbg(`[device] Profile fetch failed: ${response.status} ${response.statusText}`);
+      log.debug(`[device] Profile fetch failed: ${response.status} ${response.statusText}`);
       return null;
     }
     const data = (await response.json()) as Record<string, unknown>;
@@ -227,7 +227,7 @@ export async function fetchDeviceProfileOnce(
     const rawAttrs = { ...attrs, platform: wrapper.platform ?? attrs.platform };
     return { rawAttrs, receivedAtMs: Date.now() };
   } catch (err) {
-    dbg(`[device] Profile fetch error: ${(err as Error).message}`);
+    log.debug(`[device] Profile fetch error: ${(err as Error).message}`);
     return null;
   }
 }
@@ -278,9 +278,13 @@ export function pickAllowlistedRawAttributes(
 // ── Default static/dynamic export for empty-state rendering ──
 export { DEFAULT_STATIC, DEFAULT_DYNAMIC };
 
-// ── Tool descriptions (multi-device-aware) ────────────────
+// ── Tool descriptions (multi-device + multi-user aware) ──────
 
 import type { DeviceState } from "./registry.ts";
+
+function formatDeviceLabel(d: DeviceState, multiUser: boolean): string {
+  return multiUser ? `[${d.userLabel}] ${d.label}` : d.label;
+}
 
 function singleDeviceOpenAppGuidance(platform: string): string {
   if (platform === "android") {
@@ -295,6 +299,7 @@ function singleDeviceOpenAppGuidance(platform: string): string {
 export function buildControlToolDescription(
   state: DeviceState | null,
   onlineStates?: DeviceState[],
+  multiUser?: boolean,
 ): string {
   const baseGeneric =
     "Control the connected mobile device. Supports click, swipe, type, scroll, open_app, back, home, and more. All coordinates use normalized ratios [0,1]. Call zhihand_list_devices to see online devices, then pass device_id.";
@@ -305,8 +310,9 @@ export function buildControlToolDescription(
     if (onlineStates.length === 1) {
       const s = onlineStates[0]!;
       const ctx = s.profile;
+      const label = formatDeviceLabel(s, multiUser ?? false);
       if (!ctx || ctx.platform === "unknown") {
-        return `Control the connected mobile device (${s.label}). device_id is optional (single device online). All coordinates use normalized ratios [0,1].`;
+        return `Control the connected mobile device (${label}). device_id is optional (single device online). All coordinates use normalized ratios [0,1].`;
       }
       const parts = [
         `Control a ${ctx.platform} device`,
@@ -320,7 +326,7 @@ export function buildControlToolDescription(
       return desc;
     }
     // 2+ devices
-    const ids = onlineStates.map((d) => `${d.credentialId} (${d.label}, ${d.platform})`).join("; ");
+    const ids = onlineStates.map((d) => `${d.credentialId} (${formatDeviceLabel(d, multiUser ?? false)}, ${d.platform})`).join("; ");
     return `Control a mobile device. device_id is REQUIRED (multiple online). Online devices: ${ids}. Call zhihand_list_devices first. All coordinates use normalized ratios [0,1].`;
   }
   // No explicit onlineStates: describe single state or generic
@@ -343,6 +349,7 @@ export function buildControlToolDescription(
 export function buildSystemToolDescription(
   state: DeviceState | null,
   onlineStates?: DeviceState[],
+  multiUser?: boolean,
 ): string {
   const genericBase =
     "System navigation and media controls. Actions: notification, recent, search, switch_input, siri (iOS), control_center (iOS), open_browser (Android), shortcut_help (Android), volume_up/down, mute, play_pause, stop, next/prev_track, fast_forward, rewind, brightness_up/down, power.";
@@ -354,8 +361,9 @@ export function buildSystemToolDescription(
     if (onlineStates.length === 1) {
       const s = onlineStates[0]!;
       const platform = s.profile?.platform ?? s.platform;
+      const label = formatDeviceLabel(s, multiUser ?? false);
       const parts: string[] = [
-        `System navigation and media controls for ${platform} device (${s.profile?.model ?? s.label}). device_id is optional (single device online).`,
+        `System navigation and media controls for ${platform} device (${s.profile?.model ?? label}). device_id is optional (single device online).`,
       ];
       parts.push("Navigation: notification, recent, search (optional text query), switch_input.");
       if (platform === "ios") parts.push("iOS: siri, control_center.");
@@ -364,7 +372,7 @@ export function buildSystemToolDescription(
       parts.push("Hardware: brightness_up, brightness_down, power.");
       return parts.join(" ");
     }
-    const ids = onlineStates.map((d) => `${d.credentialId} (${d.label}, ${d.platform})`).join("; ");
+    const ids = onlineStates.map((d) => `${d.credentialId} (${formatDeviceLabel(d, multiUser ?? false)}, ${d.platform})`).join("; ");
     return `System navigation and media controls for mobile device. device_id is REQUIRED (multiple online). Online: ${ids}. ` + genericBase;
   }
 
@@ -386,6 +394,7 @@ export function buildSystemToolDescription(
 export function buildScreenshotToolDescription(
   state: DeviceState | null,
   onlineStates?: DeviceState[],
+  multiUser?: boolean,
 ): string {
   if (onlineStates) {
     if (onlineStates.length === 0) {
@@ -394,12 +403,13 @@ export function buildScreenshotToolDescription(
     if (onlineStates.length === 1) {
       const s = onlineStates[0]!;
       const ctx = s.profile;
+      const label = formatDeviceLabel(s, multiUser ?? false);
       if (!ctx || ctx.platform === "unknown") {
-        return `Take a screenshot of the phone screen (${s.label}). device_id is optional (single device online).`;
+        return `Take a screenshot of the phone screen (${label}). device_id is optional (single device online).`;
       }
       return `Take a screenshot of the ${ctx.platform} device (${ctx.model}, ${ctx.screenWidthPx}x${ctx.screenHeightPx}). device_id is optional (single device online).`;
     }
-    const ids = onlineStates.map((d) => `${d.credentialId} (${d.label})`).join("; ");
+    const ids = onlineStates.map((d) => `${d.credentialId} (${formatDeviceLabel(d, multiUser ?? false)})`).join("; ");
     return `Take a screenshot of a mobile device. device_id is REQUIRED (multiple online). Online: ${ids}.`;
   }
   if (!state || !state.profile || state.profile.platform === "unknown") {
@@ -420,6 +430,8 @@ export function formatDeviceStatus(state: DeviceState): Record<string, unknown> 
   return {
     credential_id: state.credentialId,
     label: state.label,
+    user_id: state.userId,
+    user_label: state.userLabel,
     online: state.online,
     platform: staticCtx.platform,
     model: staticCtx.model,
