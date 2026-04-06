@@ -1,127 +1,130 @@
 # Configuration
 
-This page explains how to configure ZhiHand, focusing on the **Model Context Protocol (MCP)** for AI agents and legacy OpenClaw setups.
+This page explains how to configure ZhiHand for AI agents and OpenClaw.
 
 ## AI Agents (MCP)
 
-Most users should use the unified MCP Server. This allows AI agents like **Claude Code**, **Gemini CLI**, and others to directly control your phone.
-
-### 1. Installation
-
-Install the `@zhihand/mcp` package globally:
+### 1. Install
 
 ```bash
 npm install -g @zhihand/mcp
 ```
 
-This installs the `zhihand` command-line tool.
-
-### 2. Interactive Setup
-
-Run the setup command to configure your credentials and pair with your Android or iOS device:
+### 2. Pair
 
 ```bash
-zhihand setup
+zhihand pair
 ```
 
-Follow the prompts to scan the QR code and authorize the connection.
+Follow the prompts: scan the QR code with the ZhiHand mobile app. Credentials are saved to `~/.zhihand/config.json`.
 
-### 3. Agent Configuration
+To add a device to an existing user:
 
-Once paired, you can add ZhiHand to your favorite AI agent.
+```bash
+zhihand pair <user_id>
+```
+
+### 3. Start the Daemon
+
+```bash
+zhihand start              # Foreground
+zhihand start -d           # Background (logs to ~/.zhihand/daemon.log)
+```
+
+The daemon runs the MCP Server on `localhost:18686/mcp`, maintains a brain heartbeat, and listens for phone-initiated prompts via WebSocket.
+
+### 4. Agent Configuration
+
+`zhihand pair` auto-configures MCP for the detected AI tool. Manual configuration:
 
 #### Claude Code
 
-Claude Code can automatically detect the MCP server if you add it to your configuration. Or run it directly:
-
-```bash
-# Example manual start if needed
-claude --mcp "zhihand serve"
-```
-
-#### Gemini CLI
-
-Add the following to your Gemini CLI configuration (usually in your `~/.geminirc` or similar):
+Add to `~/.claude/settings.json`:
 
 ```json
 {
-  "mcp": {
+  "mcpServers": {
     "zhihand": {
       "command": "zhihand",
-      "args": ["serve"]
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-### 4. CLI Subcommands and Modes
+#### Gemini CLI
 
-The `zhihand` command provides several utilities to manage the MCP server and its lifecycle.
+Add to `~/.gemini/settings.json`:
 
-#### `zhihand serve` (Primary Entry Point)
+```json
+{
+  "mcpServers": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
-This is the command that AI agents call to start the ZhiHand logic.
+#### Codex CLI
 
-- **stdio mode** (Default):
-  ```bash
-  zhihand serve
-  ```
-  This mode is used when the AI agent (e.g., Claude Code, Gemini CLI) spawns ZhiHand as a sub-process. It communicates over standard input/output.
-- **HTTP/SSE mode**:
-  ```bash
-  zhihand serve --http
-  ```
-  This starts a standalone web server that can be used by remote agents or web-based tools. It remains running until manually stopped.
+Add to `~/.codex/config.json`:
 
-#### `zhihand service` (Background Management)
+```json
+{
+  "mcpServers": {
+    "zhihand": {
+      "command": "zhihand",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
-If you want ZhiHand to run as a persistent background daemon (e.g., automatically starting on boot), use the service commands:
+### 5. Backend Switching
 
-- `zhihand service install`: Registers ZhiHand as a system service (e.g., using systemd on Linux or launchd on macOS).
-- `zhihand service uninstall`: Removes the background service.
-- `zhihand service status`: Checks if the background daemon is currently running.
-- `zhihand service logs`: Views real-time logs from the background process.
+```bash
+zhihand claude             # Switch to Claude Code (model: sonnet)
+zhihand gemini             # Switch to Gemini CLI (model: flash)
+zhihand codex              # Switch to Codex CLI (model: gpt-5.4-mini)
+zhihand gemini --model pro # Custom model
+```
 
-#### Additional Utilities
+Switching sends IPC to the daemon, auto-adds MCP config to the new backend, and removes it from the old one. Model is persisted to `~/.zhihand/backend.json`.
 
-- `zhihand pair`: Only executes device pairing (useful if you don't need the full setup).
-- `zhihand status`: Shows current pairing state, device info, and service health.
-- `zhihand update`: Interactive update manager for the `@zhihand/mcp` package.
+### 6. Device Management
+
+```bash
+zhihand list [<user_id>]   # List users/devices with online status
+zhihand unpair <id>        # Remove user (usr_*) or device (crd_*)
+zhihand rename <cred> <n>  # Rename device (server-side + local)
+zhihand export <user_id>   # Export credentials as JSON
+zhihand import <file>      # Import credentials from JSON
+zhihand rotate <user_id>   # Rotate controller token
+```
 
 ## OpenClaw Users
 
-OpenClaw users can use the dedicated plugin, which acts as a wrapper for the MCP logic.
-
-### 1. Installation
+### 1. Install
 
 ```bash
 openclaw plugins install @zhihand/openclaw
 ```
 
-### 2. Trust and Configuration
-
-Enable the plugin and its tools:
+### 2. Trust and Configure
 
 ```bash
 openclaw config set plugins.allow '["openclaw"]' --strict-json
 openclaw config set tools.allow '["openclaw"]' --strict-json
 ```
 
-### 3. Gateway Token (Local Relay)
-
-ZhiHand needs to talk back to OpenClaw. Set the gateway token:
+### 3. Gateway Token
 
 ```bash
 openclaw doctor --generate-gateway-token
-export ZHIHAND_GATEWAY_TOKEN="$(python3 - <<'PY'
-import json
-from pathlib import Path
-config = json.loads((Path.home() / '.openclaw' / 'openclaw.json').read_text())
-print(config['gateway']['auth']['token'])
-PY
-)"
 openclaw config set gateway.http.endpoints.responses.enabled true --strict-json
-openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND_GATEWAY_TOKEN\"" --strict-json
+openclaw config set plugins.entries.openclaw.config.gatewayAuthToken '"your-token"' --strict-json
 ```
 
 ### 4. Pair
@@ -130,15 +133,31 @@ openclaw config set plugins.entries.openclaw.config.gatewayAuthToken "\"$ZHIHAND
 /zhihand pair
 ```
 
-## Mobile Apps (Android & iOS)
+## Mobile Apps
 
-The apps for **Android** and **iOS** require minimal configuration beyond the initial pairing:
+1. **Scan**: Pair with host agent via QR code
+2. **Connect**: Connect to ZhiHand Device (BLE)
+3. **Eye**: Enable screen sharing
 
-1.  **Scan**: Pair with your host agent.
-2.  **Connect**: Connect to the **ZhiHand Device** (Hardware/BLE).
-3.  **Eye**: Enable screen sharing.
+Advanced: override control plane endpoint in app settings (default: `https://api.zhihand.com`).
 
-### Advanced Settings
+## Config Files
 
-- **Control Plane**: Default is `https://api.zhihand.com`. Override in the app's settings if using a custom server.
-- **BLE Lease**: The apps automatically manage BLE leases for the ZhiHand Device.
+```
+~/.zhihand/
+  config.json       User + device credentials (schema v3)
+  backend.json      Active backend + model selection
+  daemon.pid        Daemon PID file
+  daemon.log        Daemon log (background mode)
+```
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `ZHIHAND_DEVICE` | Default credential_id |
+| `ZHIHAND_CLI` | Override CLI tool for mobile prompts |
+| `ZHIHAND_MODEL` | Override model for all backends |
+| `ZHIHAND_GEMINI_MODEL` | Override model for Gemini |
+| `ZHIHAND_CLAUDE_MODEL` | Override model for Claude |
+| `ZHIHAND_CODEX_MODEL` | Override model for Codex |

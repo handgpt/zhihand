@@ -301,15 +301,11 @@ When you switch:
 
 ## For Developers
 
-- [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- [PROTOCOL.md](./docs/PROTOCOL.md)
-- [ACTIONS.md](./docs/ACTIONS.md)
-- [SECURITY.md](./docs/SECURITY.md)
-- [COMPATIBILITY.md](./docs/COMPATIBILITY.md)
-- [CONFIGURATION.md](./docs/CONFIGURATION.md)
-- [DISTRIBUTION.md](./docs/DISTRIBUTION.md)
-- [REPOSITORY.md](./docs/REPOSITORY.md)
-- [CLIENT_REPOS.md](./docs/CLIENT_REPOS.md)
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System architecture, components, transport
+- [CONFIGURATION.md](./docs/CONFIGURATION.md) — Setup guide for AI agents and OpenClaw
+- [PROTOCOL.md](./docs/PROTOCOL.md) — Protocol design, WebSocket/REST endpoints
+- [SECURITY.md](./docs/SECURITY.md) — Auth, transport security, current gaps
+- [ACTIONS.md](./docs/ACTIONS.md) — Shared action model across runtimes
 
 ### Development
 

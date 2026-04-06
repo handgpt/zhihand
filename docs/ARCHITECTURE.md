@@ -2,76 +2,68 @@
 
 ## Overview
 
-ZhiHand is a public shared layer built around a protocol-first control model, now primarily delivered via the **Model Context Protocol (MCP)**.
-
-The core of ZhiHand is the unified MCP Server (`@zhihand/mcp`), which centralizes business logic, tool definitions, and state management. This allows ZhiHand to be seamlessly integrated into any MCP-compatible AI agent or host environment.
+ZhiHand is built around the **Model Context Protocol (MCP)**. The core is a unified MCP Server (`@zhihand/mcp`) that centralizes business logic, tool definitions, and state management.
 
 ## Core Components
 
 ### 1. Unified MCP Server (`@zhihand/mcp`)
 
-The MCP Server is the primary implementation layer. It handles:
-- **Tools**: Defines `zhihand_control`, `zhihand_screenshot`, `zhihand_pair`, etc.
-- **Transports**: Supports both `stdio` (for local CLI tools) and `SSE/HTTP` (for remote or web-based tools).
-- **State Management**: Manages pairing credentials, device profiles, and command queues.
-- **CLI Interface**: Provides the `zhihand` command-line tool for setup, pairing, and service management.
+The MCP Server is the primary implementation layer:
 
-### 2. Shared Protocol
+- **Tools**: `zhihand_control`, `zhihand_screenshot`, `zhihand_system`, `zhihand_list_devices`, `zhihand_pair`
+- **Transports**: `stdio` (for AI CLI tools) and HTTP Streamable (daemon mode on `localhost:18686/mcp`)
+- **State Management**: Multi-user config (schema v3), device registry with config hot-reload
+- **Real-time Events**: Per-user WebSocket streams for device online/offline, profile updates, credential lifecycle, command ACKs
+- **CLI Interface**: `zhihand` command for pairing, device management, backend switching
 
-`proto/zhihand/control/v1/control.proto` defines the versioned public control interface. It remains the source of truth for message shapes and service methods, consumed by the MCP Server and mobile apps.
+### 2. Multi-User Model
 
-### 3. `zhihandd` (Reference Service)
+Devices are grouped under users. Each user has:
+- A `usr_*` ID and `controller_token` (Bearer auth)
+- One WebSocket stream for all device events
+- Multiple devices (`crd_*` credentials)
 
-`zhihandd` continues to serve as the reference control-plane service, coordinating communication between the MCP Server (acting as a client to `zhihandd`) and the mobile apps.
+Config schema v3 stores this in `~/.zhihand/config.json`.
+
+### 3. Daemon
+
+A persistent process bundles three subsystems:
+
+| Subsystem | Purpose |
+|---|---|
+| MCP Server | HTTP Streamable transport — serves tool calls to AI agents |
+| Relay | Brain heartbeat (30s), WebSocket prompt listener, CLI dispatch |
+| Config API | IPC endpoint for `zhihand claude/gemini/codex` backend switching |
 
 ### 4. Host Adapters (Thin Wrappers)
 
-Host adapters are now thin wrappers around the MCP Server.
-- **OpenClaw**: A plugin that calls the MCP Server.
-- **Claude Code / Gemini CLI**: Direct integration via the MCP `stdio` transport.
+- **OpenClaw**: Plugin that calls MCP core logic via the adapter
+- **Claude Code / Gemini CLI / Codex CLI**: Direct integration via MCP stdio transport
 
 ## Interaction Model
 
-The MCP-centric interaction model looks like this:
-
 ```text
-      AI Agents (Claude Code, Gemini CLI, etc.)
+      AI Agents (Claude Code, Gemini CLI, Codex CLI)
                          |
                          v (MCP stdio/HTTP)
-                @zhihand/mcp (Server)
+                @zhihand/mcp (Server + Daemon)
                          |
-                         v (ZhiHand Protocol)
-                      zhihandd (Control Plane)
+                         v (WebSocket + REST)
+                   ZhiHand Server (Control Plane)
                          |
-                         v (ZhiHand Protocol)
-                    Mobile App (Eye/Hand)
+                         v
+                    Mobile App (iOS/Android)
 ```
+
+## Transport
+
+- **WebSocket** (`ws` package): Per-user streams with Bearer auth via HTTP upgrade headers, protocol-level ping/pong, exponential backoff with jitter, 35s watchdog
+- **HTTP REST**: Command enqueue, screenshot fetch, credential management, pairing
+- **Polling fallback**: PromptListener falls back to HTTP polling when WebSocket disconnects
 
 ## Design Principles
 
-### MCP-First Integration
-
-Integration should prioritize the Model Context Protocol to ensure compatibility with the broadest range of AI tools.
-
-### Centralized Logic
-
-Business logic resides in the MCP Server to keep host-specific adapters as thin as possible.
-
-### Protocol-First
-
-Shared behavior starts in the protocol (`control.proto`), ensuring consistency across all components.
-
-## Implementation Status
-
-### Implemented in this repository
-
-- `control.proto`: Public protocol definition.
-- `zhihandd`: Reference HTTP/SSE control surface.
-- `@zhihand/mcp`: Unified MCP Server (Core logic, tools, CLI).
-- OpenClaw: MCP-based host adapter.
-
-### Planned, not yet shipped
-
-- Native gRPC support in `zhihandd`.
-- Enhanced automated update and rollback via `zhihand update`.
-- Robust system service integration for persistent background MCP servers.
+- **MCP-First**: Integration prioritizes the Model Context Protocol
+- **Centralized Logic**: Business logic in MCP Server, host adapters stay thin
+- **Server-Authoritative**: Online detection via server events, no client-side heartbeat polling
+- **Atomic Config**: Config writes use tmp+rename pattern to prevent corruption

@@ -1,40 +1,49 @@
 # ZhiHand Security Notes
 
-This document describes the current public-repo security boundary. It is not a substitute for a full product security review.
+This document describes the current security boundary. It is not a substitute for a full product security review.
 
-## Public Core
+## Authentication
 
-### `zhihandd`
+### Bearer Token Auth
 
-- the reference service now supports optional bearer-token protection through `ZHIHAND_AUTH_TOKEN`
-- `healthz` stays unauthenticated
-- all `/v1/*` routes should be treated as protected when the token is configured
+All API and WebSocket connections use `Authorization: Bearer <controller_token>`:
+- HTTP REST endpoints: Bearer header on every request
+- WebSocket: Bearer header in HTTP upgrade handshake
+- Per-user tokens: each user has an independent `controller_token`
 
-### OpenClaw adapter
+### Token Storage
 
-- persists local pairing state on disk
-- uses controller tokens to call control-plane endpoints
-- should be deployed on hosts with local filesystem protection
+Credentials are stored at `~/.zhihand/config.json` with file mode `0600`. Config writes use atomic tmp+rename to prevent corruption from concurrent access.
+
+### Token Rotation
+
+`zhihand rotate <user_id>` rotates the controller token for a user. The old token is immediately invalidated server-side.
+
+## Transport Security
+
+- All connections to the control plane use HTTPS/WSS
+- Local daemon listens on `localhost:18686` only (not exposed to network)
+- WebSocket connections include a 35s watchdog; stale connections are dropped
+- HTTP upgrade rejections (401/403) stop retry after 10 consecutive failures
+
+## Config Schema v3
+
+Multi-user config groups devices under users. Each user's `controller_token` is independent, limiting blast radius if a single token is compromised.
 
 ## Device Runtime
 
 ### ZhiHand Device firmware
 
-- currently uses BLE bonding with `ESP_LE_AUTH_BOND`
-- still uses `ESP_IO_CAP_NONE`, which means Just Works pairing rather than strong MITM protection
-- protects command execution and OTA behind the lease mechanism
+- BLE bonding with `ESP_LE_AUTH_BOND`
+- Currently uses `ESP_IO_CAP_NONE` (Just Works pairing, no MITM protection)
+- Command execution and OTA protected behind lease mechanism
 
 ## Current Gaps
 
-- the public reference service is not the same as the private hosted production control plane
-- the firmware pairing model is still weaker than a high-assurance control device would ideally use
-- the overall product still needs an end-to-end security review across mobile runtime, hosted control plane, and device firmware
+- Firmware pairing model is weaker than ideal for a high-assurance control device
+- End-to-end security review across mobile, control plane, and firmware is still pending
+- No certificate pinning on client-side HTTPS connections
 
 ## Publishing Rule
 
-Public documentation and example configs must never include:
-
-- real tokens
-- real operator credentials
-- private deployment hostnames
-- production certificates or private keys
+Public documentation and configs must never include real tokens, operator credentials, private hostnames, or production certificates.
