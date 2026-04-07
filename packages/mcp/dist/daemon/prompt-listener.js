@@ -51,9 +51,13 @@ export class PromptListener {
                 "Authorization": `Bearer ${this.config.controllerToken}`,
             },
             onOpen: () => {
-                this.wsConnected = true;
-                this.stopPolling();
-                this.log("[ws] Connected to prompt stream.");
+                // Send auth message as first frame (required by server).
+                this.rws.send(JSON.stringify({
+                    type: "auth",
+                    controller_token: this.config.controllerToken,
+                    topics: ["prompts"],
+                }));
+                // onConnected deferred until auth_ok is received (see handleWSMessage)
             },
             onClose: (_code, _reason) => {
                 if (this.wsConnected) {
@@ -73,6 +77,21 @@ export class PromptListener {
     }
     handleWSMessage(data) {
         const msg = data;
+        // Auth responses
+        if (msg.type === "auth_ok") {
+            this.wsConnected = true;
+            this.stopPolling();
+            this.log("[ws] Connected to prompt stream.");
+            return;
+        }
+        if (msg.type === "auth_error") {
+            this.log(`[ws] Auth failed: ${msg.error}`);
+            this.rws?.stop();
+            this.rws = null;
+            this.wsConnected = false;
+            this.startPolling();
+            return;
+        }
         // Application-level ping (if server sends these alongside protocol pings)
         if (msg.type === "ping") {
             this.rws?.send(JSON.stringify({ type: "pong" }));
