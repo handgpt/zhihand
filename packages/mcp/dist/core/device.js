@@ -176,6 +176,7 @@ const RAW_ATTRIBUTE_ALLOWLIST = [
     "brand", "manufacturer", "model", "rom_family", "rom_version",
     "system_release", "api_level", "app_version", "app_build",
     "display_width_px", "display_height_px", "density", "density_dpi",
+    "display_width_pixels", "display_height_pixels", "display_scale",
     "screen_width_dp", "screen_height_dp", "smallest_width_dp",
     "form_factor", "orientation", "touchscreen", "navigation_mode",
     "locale", "language", "timezone", "rtl", "dark_mode", "font_scale",

@@ -163,18 +163,26 @@ export function subscribeToCommandAck(commandId, callback) {
     return () => { ackCallbacks.delete(commandId); };
 }
 export class UserEventWebSocket {
+    controllerToken;
     handlers;
     rws;
     lastProcessedSeq = new Map();
     constructor(userId, controllerToken, endpoint, handlers) {
+        this.controllerToken = controllerToken;
         this.handlers = handlers;
-        const topics = "commands,device_profile,device.online,device.offline,credential.added,credential.removed";
-        const wsUrl = `${endpoint.replace(/^http/, "ws")}/v1/users/${encodeURIComponent(userId)}/ws?topic=${topics}`;
+        const topics = ["commands", "device_profile", "device.online", "device.offline", "credential.added", "credential.removed"];
+        const wsUrl = `${endpoint.replace(/^http/, "ws")}/v1/users/${encodeURIComponent(userId)}/ws`;
         this.rws = new ReconnectingWebSocket({
             url: wsUrl,
             headers: { "Authorization": `Bearer ${controllerToken}` },
             onOpen: () => {
-                this.handlers.onConnected();
+                // Send auth message as the server requires it as the first frame.
+                this.rws.send(JSON.stringify({
+                    type: "auth",
+                    bearer: this.controllerToken,
+                    topics,
+                }));
+                // onConnected is called after auth_ok is received (see handleMessage)
             },
             onClose: (_code, _reason) => {
                 this.handlers.onDisconnected();
@@ -203,9 +211,11 @@ export class UserEventWebSocket {
             this.rws.send(JSON.stringify({ type: "pong" }));
             return;
         }
-        // Auth responses (if server uses message-based auth instead of/in addition to header auth)
-        if (msg.type === "auth_ok")
+        // Auth responses
+        if (msg.type === "auth_ok") {
+            this.handlers.onConnected();
             return;
+        }
         if (msg.type === "auth_error") {
             log.error(`[ws] Auth failed: ${msg.error}`);
             this.rws.stop(); // Don't retry with invalid credentials
@@ -244,7 +254,7 @@ export class UserEventWebSocket {
                 this.handlers.onCommandAcked(ev);
                 break;
             case "credential.added":
-                this.handlers.onCredentialAdded(ev.credential ?? { credential_id: ev.credential_id });
+                this.handlers.onCredentialAdded(ev.credential ?? ev.payload ?? { credential_id: ev.credential_id });
                 break;
             case "credential.removed":
                 this.handlers.onCredentialRemoved(ev.credential_id);

@@ -46,6 +46,7 @@ export interface WSEvent {
     command?: QueuedCommandRecord;
     device_profile?: Record<string, unknown>;
     credential?: Record<string, unknown>;
+    payload?: Record<string, unknown>;
     sequence: number;
 }
 export declare function handleWSEvent(event: WSEvent): void;
@@ -61,6 +62,7 @@ export interface UserEventStreamHandlers {
     onDisconnected: () => void;
 }
 export declare class UserEventWebSocket {
+    private controllerToken;
     private handlers;
     private rws;
     private lastProcessedSeq;

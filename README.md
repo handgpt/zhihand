@@ -2,7 +2,7 @@
 
 ZhiHand lets AI agents (Claude Code, Gemini CLI, Codex CLI, OpenClaw) see and control your phone.
 
-Version: `0.32.1`
+Version: `0.32.3`
 
 ## Architecture
 

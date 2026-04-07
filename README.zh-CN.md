@@ -2,7 +2,7 @@
 
 说明：智手是 ZhiHand 的中文名称。文档中的域名、包名、命令与代码标识保持英文。
 
-版本：`0.32.1`
+版本：`0.32.3`
 
 智手让 AI 智能体（Claude Code, Gemini CLI, Codex CLI, OpenClaw）能看到你的手机屏幕，并帮你操作手机。
 
