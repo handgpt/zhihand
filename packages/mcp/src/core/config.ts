@@ -81,12 +81,12 @@ function emptyConfig(): ZhihandConfigV3 {
 
 export function loadConfig(): ZhihandConfigV3 {
   if (!fs.existsSync(CONFIG_PATH)) {
-    // Check for v2 or legacy credentials
+    // Check for legacy credentials.json (pre-v3)
     const legacyCredentials = path.join(ZHIHAND_DIR, "credentials.json");
-    if (!legacyWarningPrinted && (fs.existsSync(legacyCredentials) || checkForV2Config())) {
+    if (!legacyWarningPrinted && fs.existsSync(legacyCredentials)) {
       legacyWarningPrinted = true;
       process.stderr.write(
-        "[zhihand] old config detected (v2 or legacy) — run 'zhihand pair' to re-pair on v0.31 schema\n",
+        "[zhihand] old config detected (legacy credentials) — run 'zhihand pair' to re-pair on v0.31 schema\n",
       );
     }
     return emptyConfig();
@@ -99,7 +99,7 @@ export function loadConfig(): ZhihandConfigV3 {
         users: raw.users ?? {},
       };
     }
-    // Old schema version detected
+    // Old schema version (v2 or unknown) in config.json
     if (!legacyWarningPrinted) {
       legacyWarningPrinted = true;
       process.stderr.write(
@@ -112,16 +112,6 @@ export function loadConfig(): ZhihandConfigV3 {
   return emptyConfig();
 }
 
-function checkForV2Config(): boolean {
-  if (!fs.existsSync(CONFIG_PATH)) return false;
-  try {
-    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-    return raw && raw.schema_version === 2;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Atomically write config: write to .tmp, then rename. Prevents corruption
  * when the daemon and CLI write concurrently (Gemini code review v0.31).
@@ -131,6 +121,27 @@ export function saveConfig(cfg: ZhihandConfigV3): void {
   const tmpPath = CONFIG_PATH + ".tmp";
   fs.writeFileSync(tmpPath, JSON.stringify(cfg, null, 2), { mode: 0o600 });
   fs.renameSync(tmpPath, CONFIG_PATH);
+}
+
+/**
+ * Clean up legacy config files (v2 schema, credentials.json) before re-pairing.
+ * Replaces old config with empty v3 so loadConfig() won't warn.
+ */
+export function cleanupLegacyConfig(): void {
+  const legacyCredentials = path.join(ZHIHAND_DIR, "credentials.json");
+  if (fs.existsSync(legacyCredentials)) {
+    fs.unlinkSync(legacyCredentials);
+  }
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+      if (!raw || raw.schema_version !== 3) {
+        saveConfig(emptyConfig());
+      }
+    } catch {
+      saveConfig(emptyConfig());
+    }
+  }
 }
 
 // ── User helpers ──────────────────────────────────────────

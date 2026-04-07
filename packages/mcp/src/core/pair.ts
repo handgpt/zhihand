@@ -7,6 +7,7 @@ import {
   saveState,
   resolveDefaultEndpoint,
   getUserRecord,
+  cleanupLegacyConfig,
 } from "./config.ts";
 import { fetchDeviceProfileOnce, extractStatic } from "./device.ts";
 import { fetchUserCredentials, type CredentialResponse } from "./ws.ts";
@@ -151,6 +152,9 @@ export async function executePairingNewUser(
 
   // 1. Create user
   const userResp = await createUser(endpoint, label);
+
+  // Clean up v2/legacy config after network call succeeds (avoids data loss on failure)
+  cleanupLegacyConfig();
   const userId = userResp.user_id;
   const controllerToken = userResp.controller_token;
 

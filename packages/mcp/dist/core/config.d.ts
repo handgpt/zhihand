@@ -43,6 +43,11 @@ export declare function loadConfig(): ZhihandConfigV3;
  * when the daemon and CLI write concurrently (Gemini code review v0.31).
  */
 export declare function saveConfig(cfg: ZhihandConfigV3): void;
+/**
+ * Clean up legacy config files (v2 schema, credentials.json) before re-pairing.
+ * Replaces old config with empty v3 so loadConfig() won't warn.
+ */
+export declare function cleanupLegacyConfig(): void;
 export declare function addUser(user: UserRecord): void;
 export declare function removeUser(userId: string): void;
 export declare function addDeviceToUser(userId: string, device: DeviceRecord): void;

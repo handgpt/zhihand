@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { addUser, addDeviceToUser, ensureZhiHandDir, saveState, resolveDefaultEndpoint, getUserRecord, } from "./config.js";
+import { addUser, addDeviceToUser, ensureZhiHandDir, saveState, resolveDefaultEndpoint, getUserRecord, cleanupLegacyConfig, } from "./config.js";
 import { fetchDeviceProfileOnce, extractStatic } from "./device.js";
 import { fetchUserCredentials } from "./ws.js";
 // ── Server API helpers ─────────────────────────────────────
@@ -93,6 +93,8 @@ export async function executePairingNewUser(preferredLabel) {
     const label = preferredLabel ?? `User-${Date.now().toString(36)}`;
     // 1. Create user
     const userResp = await createUser(endpoint, label);
+    // Clean up v2/legacy config after network call succeeds (avoids data loss on failure)
+    cleanupLegacyConfig();
     const userId = userResp.user_id;
     const controllerToken = userResp.controller_token;
     // 2. Register plugin (get edge_id)

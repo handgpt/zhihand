@@ -59,10 +59,11 @@ export function configureMCP(backend, previousBackend) {
     }
     else {
         const cmds = MCP_COMMANDS[backend];
-        const addCmd = cmds.add();
         console.log(`  Configuring MCP for ${DISPLAY_NAMES[backend]} (HTTP transport)...`);
+        // Remove existing entry first to avoid "already exists" error on re-pair
+        tryRun(cmds.remove());
         try {
-            execSync(addCmd, { stdio: "inherit", timeout: 10_000 });
+            execSync(cmds.add(), { stdio: "inherit", timeout: 10_000 });
             configured = true;
         }
         catch (err) {

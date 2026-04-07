@@ -30,7 +30,7 @@ import { fetchUserCredentials } from "../dist/core/ws.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
-const VERSION = "0.32.3";
+const VERSION = "0.32.4";
 
 const CLI_TOOL_MAP = {
   claude: "claudecode",
