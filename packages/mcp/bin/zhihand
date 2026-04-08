@@ -30,7 +30,7 @@ import { fetchUserCredentials } from "../dist/core/ws.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
-const VERSION = "0.32.5";
+const VERSION = "0.33.0";
 
 const CLI_TOOL_MAP = {
   claude: "claudecode",
@@ -555,8 +555,7 @@ switch (command) {
   }
 
   case "test": {
-    const { createControlCommand, createSystemCommand, enqueueCommand } = await import("../dist/core/command.js");
-    const { waitForCommandAck } = await import("../dist/core/ws.js");
+    const { createControlCommand, createSystemCommand } = await import("../dist/core/command.js");
     const { fetchScreenshot, getSnapshotStaleThresholdMs } = await import("../dist/core/screenshot.js");
     const { fetchDeviceProfileOnce, extractStatic, computeCapabilities, formatDeviceStatus } = await import("../dist/core/device.js");
 
@@ -628,6 +627,34 @@ switch (command) {
       console.error(`Error: ${err.message}`);
       console.error("Run 'zhihand pair' to add a device first.");
       process.exit(1);
+    }
+
+    // Require daemon to be running (provides WS connections for command ACK)
+    const DAEMON_PORT = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
+    const DAEMON_BASE = `http://127.0.0.1:${DAEMON_PORT}`;
+    let daemonOk = false;
+    try {
+      const resp = await fetch(`${DAEMON_BASE}/internal/status`, { signal: AbortSignal.timeout(2000) });
+      daemonOk = resp.ok;
+    } catch { /* daemon not reachable */ }
+    if (!daemonOk) {
+      console.error("❌ Daemon is not running. Start it first: zhihand start");
+      process.exit(1);
+    }
+
+    // Execute command via daemon's /internal/exec endpoint
+    async function execViaDaemon(command, timeoutMs = 10_000) {
+      const resp = await fetch(`${DAEMON_BASE}/internal/exec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command, credentialId: testConfig.credentialId, timeoutMs }),
+        signal: AbortSignal.timeout(timeoutMs + 5000),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`Daemon exec failed: ${resp.status} ${body}`);
+      }
+      return resp.json();
     }
 
     const forceRun = values.force === true;
@@ -712,12 +739,11 @@ switch (command) {
       process.stdout.write(`   ${String(t.id).padStart(2)}. ${t.label}... `);
       const t0 = Date.now();
       try {
-        const queued = await enqueueCommand(testConfig, command);
-        const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
+        const result = await execViaDaemon(command);
         const ms = Date.now() - t0;
-        if (ack.acked) {
-          const ackStatus = ack.command?.ack_status ?? "ok";
-          const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
+        if (result.acked) {
+          const ackStatus = result.command?.ack_status ?? "ok";
+          const resultInfo = result.command?.ack_result ? ` ${JSON.stringify(result.command.ack_result)}` : "";
           if (ackStatus === "ok") {
             console.log(`✅ (${ms}ms)${resultInfo}`);
             passed++;
@@ -821,9 +847,8 @@ switch (command) {
           const t0 = Date.now();
           try {
             const cmd = createControlCommand({ action: "screenshot" });
-            const queued = await enqueueCommand(testConfig, cmd);
-            const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
-            if (!ack.acked) {
+            const result = await execViaDaemon(cmd);
+            if (!result.acked) {
               console.log(`⏱️  timeout (${Date.now() - t0}ms)`);
               failed++;
               break;

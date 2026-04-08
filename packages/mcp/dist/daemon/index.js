@@ -12,6 +12,8 @@ import { PromptListener } from "./prompt-listener.js";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.js";
 import { setDebugEnabled, dbg } from "./logger.js";
 import { registry } from "../core/registry.js";
+import { enqueueCommand } from "../core/command.js";
+import { waitForCommandAck } from "../core/ws.js";
 const DEFAULT_PORT = 18686;
 const PID_FILE = "daemon.pid";
 // ── State ────────���─────────────────────────────────────────
@@ -98,6 +100,39 @@ function handleInternalAPI(req, res) {
             catch {
                 res.writeHead(400, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: "Invalid JSON" }));
+            }
+        });
+        return true;
+    }
+    // Execute command via daemon's WS (used by zhihand test)
+    if (url === "/internal/exec" && req.method === "POST") {
+        dbg(`[api] POST /internal/exec`);
+        let body = "";
+        const MAX_BODY = 10 * 1024;
+        req.on("data", (chunk) => {
+            body += chunk.toString();
+            if (body.length > MAX_BODY) {
+                res.writeHead(413, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Payload too large" }));
+                req.destroy();
+            }
+        });
+        req.on("end", async () => {
+            try {
+                const { command, credentialId, timeoutMs } = JSON.parse(body);
+                const cfg = resolveConfig(credentialId);
+                const effectiveTimeout = timeoutMs ?? 10_000;
+                const queued = await enqueueCommand(cfg, command);
+                const ack = await waitForCommandAck(cfg, {
+                    commandId: queued.id,
+                    timeoutMs: effectiveTimeout,
+                });
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ id: queued.id, ...ack }));
+            }
+            catch (err) {
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: err.message }));
             }
         });
         return true;

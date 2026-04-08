@@ -12,7 +12,6 @@
 import WebSocket from "ws";
 import type { ZhiHandRuntimeConfig } from "./config.ts";
 import type { QueuedCommandRecord, WaitForCommandAckResult } from "./command.ts";
-import { getCommand } from "./command.ts";
 import { log } from "./logger.ts";
 
 // ── Shared reconnecting base ─────────────────────────────
@@ -368,52 +367,25 @@ export async function fetchUserCredentials(
 
 /**
  * Wait for command ACK via WS push (which should already be connected by the
- * registry). Falls back to polling.
+ * registry). WS-only — no polling fallback.
  */
 export async function waitForCommandAck(
-  config: ZhiHandRuntimeConfig,
+  _config: ZhiHandRuntimeConfig,
   options: { commandId: string; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<WaitForCommandAckResult> {
   const timeoutMs = options.timeoutMs ?? 15_000;
   log.debug(`[ws-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
 
   return new Promise<WaitForCommandAckResult>((resolve, reject) => {
-    let resolved = false;
-    let pollInterval: ReturnType<typeof setInterval> | undefined;
-
     const timeout = setTimeout(() => {
       cleanup();
       resolve({ acked: false });
     }, timeoutMs);
 
     const unsubscribe = subscribeToCommandAck(options.commandId, (ackedCommand) => {
-      if (resolved) return;
-      resolved = true;
       cleanup();
       resolve({ acked: true, command: ackedCommand });
     });
-
-    // Delay polling startup by 2s so WS push ACK normally wins in the
-    // registry-connected path. CLI (zhihand test) still resolves via polling
-    // after the initial delay.
-    const POLL_START_DELAY_MS = 2000;
-    const POLL_INTERVAL_MS = 500;
-    const startPolling = setTimeout(() => {
-      if (resolved) return;
-      pollInterval = setInterval(async () => {
-        if (resolved) return;
-        try {
-          const cmd = await getCommand(config, options.commandId);
-          if (cmd.acked_at) {
-            resolved = true;
-            cleanup();
-            resolve({ acked: true, command: cmd });
-          }
-        } catch {
-          // non-fatal
-        }
-      }, POLL_INTERVAL_MS);
-    }, POLL_START_DELAY_MS);
 
     options.signal?.addEventListener("abort", () => {
       cleanup();
@@ -422,9 +394,7 @@ export async function waitForCommandAck(
 
     function cleanup() {
       clearTimeout(timeout);
-      clearTimeout(startPolling);
       unsubscribe();
-      if (pollInterval) clearInterval(pollInterval);
     }
   });
 }

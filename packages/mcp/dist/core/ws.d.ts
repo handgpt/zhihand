@@ -85,9 +85,9 @@ export interface CredentialResponse {
 export declare function fetchUserCredentials(endpoint: string, userId: string, controllerToken: string, onlineFilter?: boolean): Promise<CredentialResponse[]>;
 /**
  * Wait for command ACK via WS push (which should already be connected by the
- * registry). Falls back to polling.
+ * registry). WS-only — no polling fallback.
  */
-export declare function waitForCommandAck(config: ZhiHandRuntimeConfig, options: {
+export declare function waitForCommandAck(_config: ZhiHandRuntimeConfig, options: {
     commandId: string;
     timeoutMs?: number;
     signal?: AbortSignal;

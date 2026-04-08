@@ -1,14 +1,11 @@
 import { ReconnectingWebSocket } from "../core/ws.js";
 import { dbg } from "./logger.js";
-const POLL_INTERVAL = 2_000;
 export class PromptListener {
     config;
     handler;
     log;
     processedIds = new Set();
     rws = null;
-    pollTimer = null;
-    wsConnected = false;
     stopped = false;
     constructor(config, handler, log) {
         this.config = config;
@@ -23,8 +20,6 @@ export class PromptListener {
         this.stopped = true;
         this.rws?.stop();
         this.rws = null;
-        this.wsConnected = false;
-        this.stopPolling();
     }
     dispatchPrompt(prompt) {
         if (this.processedIds.has(prompt.id)) {
@@ -60,11 +55,7 @@ export class PromptListener {
                 // onConnected deferred until auth_ok is received (see handleWSMessage)
             },
             onClose: (_code, _reason) => {
-                if (this.wsConnected) {
-                    this.wsConnected = false;
-                    this.log("[ws] Disconnected. Falling back to polling.");
-                    this.startPolling();
-                }
+                dbg("[ws] Disconnected. ReconnectingWebSocket will retry.");
             },
             onMessage: (data) => {
                 this.handleWSMessage(data);
@@ -79,8 +70,6 @@ export class PromptListener {
         const msg = data;
         // Auth responses
         if (msg.type === "auth_ok") {
-            this.wsConnected = true;
-            this.stopPolling();
             this.log("[ws] Connected to prompt stream.");
             return;
         }
@@ -88,8 +77,6 @@ export class PromptListener {
             this.log(`[ws] Auth failed: ${msg.error}`);
             this.rws?.stop();
             this.rws = null;
-            this.wsConnected = false;
-            this.startPolling();
             return;
         }
         // Application-level ping (if server sends these alongside protocol pings)
@@ -117,52 +104,6 @@ export class PromptListener {
         }
         else if (kind === "device_profile.updated") {
             this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
-        }
-    }
-    startPolling() {
-        if (this.pollTimer || this.stopped)
-            return;
-        this.schedulePoll();
-    }
-    schedulePoll() {
-        if (this.pollTimer)
-            return;
-        this.pollTimer = setTimeout(async () => {
-            this.pollTimer = null;
-            await this.poll();
-            if (!this.wsConnected && !this.stopped) {
-                this.schedulePoll();
-            }
-        }, POLL_INTERVAL);
-    }
-    stopPolling() {
-        if (this.pollTimer) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
-        }
-    }
-    async poll() {
-        try {
-            const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/prompts?limit=5`;
-            dbg(`[poll] GET ${url}`);
-            const response = await fetch(url, {
-                headers: { "Authorization": `Bearer ${this.config.controllerToken}` },
-                signal: AbortSignal.timeout(10_000),
-            });
-            if (!response.ok) {
-                dbg(`[poll] Response: ${response.status}`);
-                return;
-            }
-            const data = (await response.json());
-            dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
-            if (this.stopped)
-                return; // Guard against late responses after stop()
-            for (const prompt of data.items ?? []) {
-                this.dispatchPrompt(prompt);
-            }
-        }
-        catch (err) {
-            dbg(`[poll] Error: ${err.message}`);
         }
     }
 }

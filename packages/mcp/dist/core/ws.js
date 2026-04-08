@@ -9,7 +9,6 @@
  *   - fetchUserCredentials: HTTP REST helper (unchanged from sse.ts).
  */
 import WebSocket from "ws";
-import { getCommand } from "./command.js";
 import { log } from "./logger.js";
 // ── Shared reconnecting base ─────────────────────────────
 const BACKOFF_INITIAL_MS = 1000;
@@ -279,59 +278,27 @@ export async function fetchUserCredentials(endpoint, userId, controllerToken, on
 }
 /**
  * Wait for command ACK via WS push (which should already be connected by the
- * registry). Falls back to polling.
+ * registry). WS-only — no polling fallback.
  */
-export async function waitForCommandAck(config, options) {
+export async function waitForCommandAck(_config, options) {
     const timeoutMs = options.timeoutMs ?? 15_000;
     log.debug(`[ws-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
     return new Promise((resolve, reject) => {
-        let resolved = false;
-        let pollInterval;
         const timeout = setTimeout(() => {
             cleanup();
             resolve({ acked: false });
         }, timeoutMs);
         const unsubscribe = subscribeToCommandAck(options.commandId, (ackedCommand) => {
-            if (resolved)
-                return;
-            resolved = true;
             cleanup();
             resolve({ acked: true, command: ackedCommand });
         });
-        // Delay polling startup by 2s so WS push ACK normally wins in the
-        // registry-connected path. CLI (zhihand test) still resolves via polling
-        // after the initial delay.
-        const POLL_START_DELAY_MS = 2000;
-        const POLL_INTERVAL_MS = 500;
-        const startPolling = setTimeout(() => {
-            if (resolved)
-                return;
-            pollInterval = setInterval(async () => {
-                if (resolved)
-                    return;
-                try {
-                    const cmd = await getCommand(config, options.commandId);
-                    if (cmd.acked_at) {
-                        resolved = true;
-                        cleanup();
-                        resolve({ acked: true, command: cmd });
-                    }
-                }
-                catch {
-                    // non-fatal
-                }
-            }, POLL_INTERVAL_MS);
-        }, POLL_START_DELAY_MS);
         options.signal?.addEventListener("abort", () => {
             cleanup();
             reject(new Error("The operation was aborted"));
         }, { once: true });
         function cleanup() {
             clearTimeout(timeout);
-            clearTimeout(startPolling);
             unsubscribe();
-            if (pollInterval)
-                clearInterval(pollInterval);
         }
     });
 }

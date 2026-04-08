@@ -17,8 +17,6 @@ export declare class PromptListener {
     private log;
     private processedIds;
     private rws;
-    private pollTimer;
-    private wsConnected;
     private stopped;
     constructor(config: ZhiHandConfig, handler: PromptHandler, log: (msg: string) => void);
     start(): void;
@@ -27,9 +25,5 @@ export declare class PromptListener {
     private connectWS;
     private handleWSMessage;
     private handleEvent;
-    private startPolling;
-    private schedulePoll;
-    private stopPolling;
-    private poll;
 }
 export {};

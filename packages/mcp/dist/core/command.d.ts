@@ -43,5 +43,4 @@ export interface SystemParams {
 }
 export declare function createSystemCommand(params: SystemParams, platform?: string): QueuedControlCommand;
 export declare function enqueueCommand(config: ZhiHandRuntimeConfig, command: QueuedControlCommand): Promise<QueuedCommandRecord>;
-export declare function getCommand(config: ZhiHandRuntimeConfig, commandId: string): Promise<QueuedCommandRecord>;
 export declare function formatAckSummary(action: string, result: WaitForCommandAckResult): string;

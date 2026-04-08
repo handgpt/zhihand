@@ -170,21 +170,6 @@ export async function enqueueCommand(config, command) {
     dbg(`[cmd] Enqueued: id=${payload.command.id}, status=${payload.command.status}`);
     return payload.command;
 }
-export async function getCommand(config, commandId) {
-    const url = `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/commands/${encodeURIComponent(commandId)}`;
-    dbg(`[cmd] GET ${url}`);
-    const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${config.controllerToken}` },
-    });
-    if (!response.ok) {
-        dbg(`[cmd] Get failed: ${response.status}`);
-        throw new Error(`Get command failed: ${response.status}`);
-    }
-    const payload = (await response.json());
-    const cmd = payload.command;
-    dbg(`[cmd] Got: id=${cmd.id}, status=${cmd.status}, acked=${!!cmd.acked_at}, ack_status=${cmd.ack_status ?? "-"}, ack_result=${JSON.stringify(cmd.ack_result ?? null)}`);
-    return payload.command;
-}
 export function formatAckSummary(action, result) {
     if (!result.acked) {
         return `Sent ${action}, waiting for ACK (timed out).`;

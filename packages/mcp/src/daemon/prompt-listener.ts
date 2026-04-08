@@ -17,16 +17,12 @@ export interface MobilePrompt {
 
 export type PromptHandler = (prompt: MobilePrompt) => void;
 
-const POLL_INTERVAL = 2_000;
-
 export class PromptListener {
   private config: ZhiHandConfig;
   private handler: PromptHandler;
   private log: (msg: string) => void;
   private processedIds = new Set<string>();
   private rws: ReconnectingWebSocket | null = null;
-  private pollTimer: ReturnType<typeof setTimeout> | null = null;
-  private wsConnected = false;
   private stopped = false;
 
   constructor(config: ZhiHandConfig, handler: PromptHandler, log: (msg: string) => void) {
@@ -44,8 +40,6 @@ export class PromptListener {
     this.stopped = true;
     this.rws?.stop();
     this.rws = null;
-    this.wsConnected = false;
-    this.stopPolling();
   }
 
   private dispatchPrompt(prompt: MobilePrompt): void {
@@ -85,11 +79,7 @@ export class PromptListener {
         // onConnected deferred until auth_ok is received (see handleWSMessage)
       },
       onClose: (_code, _reason) => {
-        if (this.wsConnected) {
-          this.wsConnected = false;
-          this.log("[ws] Disconnected. Falling back to polling.");
-          this.startPolling();
-        }
+        dbg("[ws] Disconnected. ReconnectingWebSocket will retry.");
       },
       onMessage: (data) => {
         this.handleWSMessage(data);
@@ -106,8 +96,6 @@ export class PromptListener {
 
     // Auth responses
     if (msg.type === "auth_ok") {
-      this.wsConnected = true;
-      this.stopPolling();
       this.log("[ws] Connected to prompt stream.");
       return;
     }
@@ -115,8 +103,6 @@ export class PromptListener {
       this.log(`[ws] Auth failed: ${msg.error}`);
       this.rws?.stop();
       this.rws = null;
-      this.wsConnected = false;
-      this.startPolling();
       return;
     }
 
@@ -146,52 +132,6 @@ export class PromptListener {
       }
     } else if (kind === "device_profile.updated") {
       this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
-    }
-  }
-
-  private startPolling(): void {
-    if (this.pollTimer || this.stopped) return;
-    this.schedulePoll();
-  }
-
-  private schedulePoll(): void {
-    if (this.pollTimer) return;
-    this.pollTimer = setTimeout(async () => {
-      this.pollTimer = null;
-      await this.poll();
-      if (!this.wsConnected && !this.stopped) {
-        this.schedulePoll();
-      }
-    }, POLL_INTERVAL);
-  }
-
-  private stopPolling(): void {
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer);
-      this.pollTimer = null;
-    }
-  }
-
-  private async poll(): Promise<void> {
-    try {
-      const url = `${this.config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/prompts?limit=5`;
-      dbg(`[poll] GET ${url}`);
-      const response = await fetch(url, {
-        headers: { "Authorization": `Bearer ${this.config.controllerToken}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) {
-        dbg(`[poll] Response: ${response.status}`);
-        return;
-      }
-      const data = (await response.json()) as { items?: MobilePrompt[] };
-      dbg(`[poll] Got ${data.items?.length ?? 0} prompt(s)`);
-      if (this.stopped) return; // Guard against late responses after stop()
-      for (const prompt of data.items ?? []) {
-        this.dispatchPrompt(prompt);
-      }
-    } catch (err) {
-      dbg(`[poll] Error: ${(err as Error).message}`);
     }
   }
 }
