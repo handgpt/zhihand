@@ -30,7 +30,7 @@ import { fetchUserCredentials } from "../dist/core/ws.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
-const VERSION = "0.33.0";
+const VERSION = "0.33.1";
 
 const CLI_TOOL_MAP = {
   claude: "claudecode",
@@ -558,6 +558,9 @@ switch (command) {
     const { createControlCommand, createSystemCommand } = await import("../dist/core/command.js");
     const { fetchScreenshot, getSnapshotStaleThresholdMs } = await import("../dist/core/screenshot.js");
     const { fetchDeviceProfileOnce, extractStatic, computeCapabilities, formatDeviceStatus } = await import("../dist/core/device.js");
+    const { setDebugEnabled: setCoreDebug, setTimestampEnabled, log: coreLog } = await import("../dist/core/logger.js");
+    if (values.debug) setCoreDebug(true);
+    setTimestampEnabled(true);
 
     const KIND_CAPABILITY = {
       profile: "none", status: "none", screenshot: "screen", hid: "hid", system: "none",
@@ -633,17 +636,26 @@ switch (command) {
     const DAEMON_PORT = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
     const DAEMON_BASE = `http://127.0.0.1:${DAEMON_PORT}`;
     let daemonOk = false;
+    let daemonStatus = null;
     try {
       const resp = await fetch(`${DAEMON_BASE}/internal/status`, { signal: AbortSignal.timeout(2000) });
       daemonOk = resp.ok;
+      if (resp.ok) daemonStatus = await resp.json();
     } catch { /* daemon not reachable */ }
     if (!daemonOk) {
       console.error("❌ Daemon is not running. Start it first: zhihand start");
       process.exit(1);
     }
 
+    const testDbg = values.debug
+      ? (msg) => coreLog.debug(`[test] ${msg}`)
+      : () => {};
+
     // Execute command via daemon's /internal/exec endpoint
     async function execViaDaemon(command, timeoutMs = 10_000) {
+      const action = command?.payload?.action ?? command?.type ?? "?";
+      testDbg(`exec action=${action} timeout=${timeoutMs}ms`);
+      const t0 = Date.now();
       const resp = await fetch(`${DAEMON_BASE}/internal/exec`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -652,9 +664,12 @@ switch (command) {
       });
       if (!resp.ok) {
         const body = await resp.text();
+        testDbg(`exec FAILED ${resp.status} ${Date.now() - t0}ms`);
         throw new Error(`Daemon exec failed: ${resp.status} ${body}`);
       }
-      return resp.json();
+      const result = await resp.json();
+      testDbg(`exec done action=${action} acked=${result.acked} id=${result.id ?? "-"} ${Date.now() - t0}ms`);
+      return result;
     }
 
     const forceRun = values.force === true;
@@ -681,7 +696,11 @@ switch (command) {
 
     console.log("🔧 ZhiHand Device Test");
     console.log(`   Device: ${testConfig.credentialId}`);
-    console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
+    console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}`);
+    if (daemonStatus) {
+      console.log(`   Daemon: v${daemonStatus.version} pid=${daemonStatus.pid} backend=${daemonStatus.backend ?? "none"}`);
+    }
+    console.log("");
 
     // Pre-fetch device profile
     let currentRawAttrs = {};

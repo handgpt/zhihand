@@ -23,7 +23,7 @@ import {
 } from "./core/device.ts";
 import { registry } from "./core/registry.ts";
 
-export const PACKAGE_VERSION = "0.33.0";
+export const PACKAGE_VERSION = "0.33.1";
 
 type TextContent = { type: "text"; text: string };
 type ToolResult = { content: TextContent[]; isError?: boolean };

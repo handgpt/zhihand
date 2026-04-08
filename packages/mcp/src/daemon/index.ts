@@ -39,9 +39,10 @@ let activeModel: string | null = null;  // user-selected model alias, null = use
 let isProcessing = false;
 const promptQueue: MobilePrompt[] = [];
 
+import { log as coreLog, setTimestampEnabled } from "../core/logger.ts";
+
 function log(msg: string): void {
-  const ts = new Date().toLocaleTimeString();
-  process.stdout.write(`[${ts}] ${msg}\n`);
+  coreLog.info(msg);
 }
 
 // ── Prompt Processing ──────────────────────────────────────
@@ -134,7 +135,6 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
 
   // Execute command via daemon's WS (used by zhihand test)
   if (url === "/internal/exec" && req.method === "POST") {
-    dbg(`[api] POST /internal/exec`);
     let body = "";
     const MAX_BODY = 10 * 1024;
     req.on("data", (chunk: Buffer) => {
@@ -146,22 +146,31 @@ function handleInternalAPI(req: IncomingMessage, res: ServerResponse): boolean {
       }
     });
     req.on("end", async () => {
+      const t0 = Date.now();
       try {
         const { command, credentialId, timeoutMs } = JSON.parse(body) as {
           command: Record<string, unknown>;
           credentialId: string;
           timeoutMs?: number;
         };
+        const cmdType = (command as any).type ?? "unknown";
+        const cmdAction = (command as any).payload?.action ?? "-";
+        dbg(`[api] POST /internal/exec cred=${credentialId} type=${cmdType} action=${cmdAction} timeout=${timeoutMs ?? 10_000}ms`);
         const cfg = resolveConfig(credentialId);
         const effectiveTimeout = timeoutMs ?? 10_000;
         const queued = await enqueueCommand(cfg, command as any);
+        dbg(`[api] /internal/exec enqueued id=${queued.id}`);
         const ack = await waitForCommandAck(cfg, {
           commandId: queued.id,
           timeoutMs: effectiveTimeout,
         });
+        const ms = Date.now() - t0;
+        const ackStatus = ack.acked ? (ack.command?.ack_status ?? "ok") : "timeout";
+        dbg(`[api] /internal/exec done id=${queued.id} acked=${ack.acked} status=${ackStatus} ${ms}ms`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ id: queued.id, ...ack }));
       } catch (err: any) {
+        dbg(`[api] /internal/exec error: ${err.message} ${Date.now() - t0}ms`);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -224,6 +233,7 @@ export async function startDaemon(options?: {
   deviceName?: string;
   debug?: boolean;
 }): Promise<void> {
+  setTimestampEnabled(true);
   if (options?.debug) setDebugEnabled(true);
   const port = options?.port ?? (parseInt(process.env.ZHIHAND_PORT ?? "", 10) || DEFAULT_PORT);
 

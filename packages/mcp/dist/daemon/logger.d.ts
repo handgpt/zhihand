@@ -1,10 +1,12 @@
 /**
  * Debug logger for ZhiHand daemon.
  *
- * Enable with `zhihand start --debug` to see detailed request/response,
- * CLI spawn args, stdin/stdout data, SSE events, and timing information.
+ * Delegates to core/logger.ts for the debug flag, redaction, and output.
+ * All output goes to stderr to keep stdout clean for MCP JSON-RPC.
+ *
+ * Enable with `zhihand start --debug`.
  */
 export declare function setDebugEnabled(enabled: boolean): void;
 export declare function isDebugEnabled(): boolean;
-/** Debug log — only outputs when --debug is active. */
+/** Debug log — only outputs when --debug is active. Writes to stderr with redaction. */
 export declare function dbg(msg: string): void;

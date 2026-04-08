@@ -21,9 +21,9 @@ let activeBackend = null;
 let activeModel = null; // user-selected model alias, null = use default
 let isProcessing = false;
 const promptQueue = [];
+import { log as coreLog, setTimestampEnabled } from "../core/logger.js";
 function log(msg) {
-    const ts = new Date().toLocaleTimeString();
-    process.stdout.write(`[${ts}] ${msg}\n`);
+    coreLog.info(msg);
 }
 // ── Prompt Processing ──────────────────────────────────────
 async function processPrompt(config, prompt) {
@@ -106,7 +106,6 @@ function handleInternalAPI(req, res) {
     }
     // Execute command via daemon's WS (used by zhihand test)
     if (url === "/internal/exec" && req.method === "POST") {
-        dbg(`[api] POST /internal/exec`);
         let body = "";
         const MAX_BODY = 10 * 1024;
         req.on("data", (chunk) => {
@@ -118,19 +117,28 @@ function handleInternalAPI(req, res) {
             }
         });
         req.on("end", async () => {
+            const t0 = Date.now();
             try {
                 const { command, credentialId, timeoutMs } = JSON.parse(body);
+                const cmdType = command.type ?? "unknown";
+                const cmdAction = command.payload?.action ?? "-";
+                dbg(`[api] POST /internal/exec cred=${credentialId} type=${cmdType} action=${cmdAction} timeout=${timeoutMs ?? 10_000}ms`);
                 const cfg = resolveConfig(credentialId);
                 const effectiveTimeout = timeoutMs ?? 10_000;
                 const queued = await enqueueCommand(cfg, command);
+                dbg(`[api] /internal/exec enqueued id=${queued.id}`);
                 const ack = await waitForCommandAck(cfg, {
                     commandId: queued.id,
                     timeoutMs: effectiveTimeout,
                 });
+                const ms = Date.now() - t0;
+                const ackStatus = ack.acked ? (ack.command?.ack_status ?? "ok") : "timeout";
+                dbg(`[api] /internal/exec done id=${queued.id} acked=${ack.acked} status=${ackStatus} ${ms}ms`);
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ id: queued.id, ...ack }));
             }
             catch (err) {
+                dbg(`[api] /internal/exec error: ${err.message} ${Date.now() - t0}ms`);
                 res.writeHead(500, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: err.message }));
             }
@@ -190,6 +198,7 @@ export function isAlreadyRunning() {
 }
 // ── Main Daemon Entry ──────���───────────────────────────────
 export async function startDaemon(options) {
+    setTimestampEnabled(true);
     if (options?.debug)
         setDebugEnabled(true);
     const port = options?.port ?? (parseInt(process.env.ZHIHAND_PORT ?? "", 10) || DEFAULT_PORT);

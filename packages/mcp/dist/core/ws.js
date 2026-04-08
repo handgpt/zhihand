@@ -283,12 +283,15 @@ export async function fetchUserCredentials(endpoint, userId, controllerToken, on
 export async function waitForCommandAck(_config, options) {
     const timeoutMs = options.timeoutMs ?? 15_000;
     log.debug(`[ws-cmd] Waiting for ACK: commandId=${options.commandId}, timeout=${timeoutMs}ms`);
+    const t0 = Date.now();
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
+            log.debug(`[ws-cmd] ACK timeout: commandId=${options.commandId} after ${Date.now() - t0}ms`);
             cleanup();
             resolve({ acked: false });
         }, timeoutMs);
         const unsubscribe = subscribeToCommandAck(options.commandId, (ackedCommand) => {
+            log.debug(`[ws-cmd] ACK received: commandId=${options.commandId} status=${ackedCommand.ack_status ?? "ok"} ${Date.now() - t0}ms`);
             cleanup();
             resolve({ acked: true, command: ackedCommand });
         });
