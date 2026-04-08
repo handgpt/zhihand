@@ -30,7 +30,7 @@ import { fetchUserCredentials } from "../dist/core/ws.js";
 import { configureMCP, displayName } from "../dist/cli/mcp-config.js";
 
 const DEFAULT_ENDPOINT = "https://api.zhihand.com";
-const VERSION = "0.32.4";
+const VERSION = "0.32.5";
 
 const CLI_TOOL_MAP = {
   claude: "claudecode",
@@ -652,7 +652,7 @@ switch (command) {
       }
     }
 
-    console.log("ZhiHand Device Test");
+    console.log("🔧 ZhiHand Device Test");
     console.log(`   Device: ${testConfig.credentialId}`);
     console.log(`   Endpoint: ${testConfig.controlPlaneEndpoint}\n`);
 
@@ -672,18 +672,18 @@ switch (command) {
     } catch { /* non-fatal */ }
     const getDevicePlatform = () => currentProfile?.platform ?? "unknown";
 
-    console.log("   -- Capability readiness --");
+    console.log("   ── Capability readiness ──");
     if (!currentCaps) {
-      console.log("   [!] Device profile not loaded — all capability gates will allow tests through.");
+      console.log("   ⚠️  Device profile not loaded — all capability gates will allow tests through.");
     } else {
-      const fmt = (name, cap) => `   ${cap.ready ? "[ok]" : "[!]"} ${name.padEnd(14)} ${cap.ready ? "ready" : "NOT ready"}  — ${cap.reason}`;
+      const fmt = (name, cap) => `   ${cap.ready ? "✅" : "⚠️"} ${name.padEnd(16)} ${cap.ready ? "ready" : "NOT ready"}  — ${cap.reason}`;
       console.log(fmt("screen_sharing", currentCaps.screen_sharing));
       console.log(fmt("hid", currentCaps.hid));
       console.log(fmt("live_session", currentCaps.live_session));
       const ageStr = currentCaps.profile.age_ms >= 0 ? `${(currentCaps.profile.age_ms / 1000).toFixed(1)}s` : "unknown";
-      console.log(`   ${currentCaps.profile.stale ? "[!]" : "[ok]"} profile        age=${ageStr}${currentCaps.profile.stale ? " (STALE)" : ""}`);
+      console.log(`   ${currentCaps.profile.stale ? "⚠️" : "✅"} profile          age=${ageStr}${currentCaps.profile.stale ? " (STALE)" : ""}`);
       if (forceRun) {
-        console.log("   --force passed: capability gates disabled.");
+        console.log("   ⚡ --force passed: capability gates disabled.");
       }
     }
     console.log("");
@@ -719,18 +719,18 @@ switch (command) {
           const ackStatus = ack.command?.ack_status ?? "ok";
           const resultInfo = ack.command?.ack_result ? ` ${JSON.stringify(ack.command.ack_result)}` : "";
           if (ackStatus === "ok") {
-            console.log(`[PASS] (${ms}ms)${resultInfo}`);
+            console.log(`✅ (${ms}ms)${resultInfo}`);
             passed++;
           } else {
-            console.log(`[FAIL] [${ackStatus}] (${ms}ms)${resultInfo}`);
+            console.log(`❌ [${ackStatus}] (${ms}ms)${resultInfo}`);
             failed++;
           }
         } else {
-          console.log(`[TIMEOUT] (${ms}ms)`);
+          console.log(`⏱️  timeout (${ms}ms)`);
           failed++;
         }
       } catch (err) {
-        console.log(`[FAIL] ${err.message} (${Date.now() - t0}ms)`);
+        console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
         failed++;
       }
     }
@@ -739,7 +739,7 @@ switch (command) {
       const currentPlatform = getDevicePlatform();
       if (t.platform && t.platform !== currentPlatform) {
         totalSteps++; skipped++;
-        console.log(`   ${String(t.id).padStart(2)}. ${t.label}... [SKIP] (${t.platform}-only, device is ${currentPlatform})`);
+        console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  (${t.platform}-only, device is ${currentPlatform})`);
         return;
       }
       if (!forceRun && currentCaps) {
@@ -748,7 +748,7 @@ switch (command) {
           const gate = requiredCap === "screen" ? currentCaps.screen_sharing : currentCaps.hid;
           if (!gate.ready) {
             totalSteps++; skipped++;
-            console.log(`   ${String(t.id).padStart(2)}. ${t.label}... [SKIP] (${requiredCap} not ready: ${gate.reason})`);
+            console.log(`   ${String(t.id).padStart(2)}. ${t.label}... ⏭️  (${requiredCap} not ready: ${gate.reason})`);
             return;
           }
         }
@@ -768,14 +768,14 @@ switch (command) {
               currentProfile = extractStatic(currentRawAttrs);
               currentCaps = computeCapabilities(currentRawAttrs, profileReceivedAtMs);
               const s = currentProfile;
-              console.log(`[PASS] ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
+              console.log(`✅ ${s.platform} ${s.model}, ${s.osVersion}, ${s.screenWidthPx}x${s.screenHeightPx} (${ms}ms)`);
               passed++;
             } else {
-              console.log(`[!] Loaded but empty (${ms}ms)`);
+              console.log(`⚠️  loaded but empty (${ms}ms)`);
               failed++;
             }
           } catch (err) {
-            console.log(`[FAIL] ${err.message} (${Date.now() - t0}ms)`);
+            console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
             failed++;
           }
           break;
@@ -805,12 +805,12 @@ switch (command) {
             const capReadySummary = ["screen_sharing", "hid", "live_session"]
               .map((k) => `${k}=${caps[k]?.ready ? "ready" : "not-ready"}`)
               .join(", ");
-            console.log(`[PASS] ${topLevel.length} curated + ${rawKeys.length} raw attributes; ${capReadySummary}`);
+            console.log(`✅ ${topLevel.length} curated + ${rawKeys.length} raw attributes; ${capReadySummary}`);
             console.log(`      curated: ${topLevel.join(", ")}`);
             console.log(`      raw:     ${rawKeys.join(", ")}`);
             passed++;
           } catch (err) {
-            console.log(`[FAIL] ${err.message}`);
+            console.log(`❌ ${err.message}`);
             failed++;
           }
           break;
@@ -824,7 +824,7 @@ switch (command) {
             const queued = await enqueueCommand(testConfig, cmd);
             const ack = await waitForCommandAck(testConfig, { commandId: queued.id, timeoutMs: 10_000 });
             if (!ack.acked) {
-              console.log(`[TIMEOUT] (${Date.now() - t0}ms)`);
+              console.log(`⏱️  timeout (${Date.now() - t0}ms)`);
               failed++;
               break;
             }
@@ -833,14 +833,14 @@ switch (command) {
             const ms = Date.now() - t0;
             if (shot.stale) {
               const threshold = getSnapshotStaleThresholdMs();
-              console.log(`[FAIL] Stale (${kb}KB, age=${(shot.ageMs / 1000).toFixed(1)}s > ${(threshold / 1000).toFixed(1)}s) ${shot.width}x${shot.height} seq=${shot.sequence} — phone may not be screen-sharing (${ms}ms)`);
+              console.log(`❌ stale (${kb}KB, age=${(shot.ageMs / 1000).toFixed(1)}s > ${(threshold / 1000).toFixed(1)}s) ${shot.width}x${shot.height} seq=${shot.sequence} — phone may not be screen-sharing (${ms}ms)`);
               failed++;
             } else {
-              console.log(`[PASS] ${kb}KB, ${shot.width}x${shot.height}, age=${shot.ageMs >= 0 ? `${shot.ageMs}ms` : "?"}, seq=${shot.sequence} (${ms}ms)`);
+              console.log(`✅ ${kb}KB, ${shot.width}x${shot.height}, age=${shot.ageMs >= 0 ? `${shot.ageMs}ms` : "?"}, seq=${shot.sequence} (${ms}ms)`);
               passed++;
             }
           } catch (err) {
-            console.log(`[FAIL] ${err.message} (${Date.now() - t0}ms)`);
+            console.log(`❌ ${err.message} (${Date.now() - t0}ms)`);
             failed++;
           }
           break;
@@ -873,23 +873,24 @@ switch (command) {
     if (selectedIds) {
       const foundIds = new Set(toRun.map((t) => t.id));
       const missing = [...selectedIds].filter((id) => !foundIds.has(id));
-      if (missing.length) console.warn(`[!] Unknown test IDs: ${missing.join(", ")}`);
+      if (missing.length) console.warn(`   ⚠️  Unknown test IDs: ${missing.join(", ")}`);
     }
 
     let currentPhase = "";
     for (let i = 0; i < toRun.length; i++) {
       const t = toRun[i];
       if (t.phase !== currentPhase) {
-        console.log(`   -- ${t.phase} --`);
+        console.log(`\n   ── ${t.phase} ──`);
         currentPhase = t.phase;
       }
       await runSingleTest(t);
       if (i < toRun.length - 1) await pause();
     }
 
-    console.log(`\n   Result: ${passed}/${totalSteps} passed, ${failed} failed, ${skipped} skipped`);
-    if (failed === 0) console.log("   All tests passed! Device is fully responsive.");
-    else console.log(`   ${failed} test(s) failed. Check phone connectivity.`);
+    console.log(`\n   ── Result ──`);
+    console.log(`   ${passed}/${totalSteps} passed, ${failed} failed, ${skipped} skipped`);
+    if (failed === 0) console.log("   🎉 All tests passed! Device is fully responsive.");
+    else console.log(`   ⚠️  ${failed} test(s) failed. Check phone connectivity.`);
     process.exit(failed > 0 ? 1 : 0);
   }
 

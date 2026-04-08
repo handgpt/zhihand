@@ -1,4 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-export declare const PACKAGE_VERSION = "0.32.4";
+export declare const PACKAGE_VERSION = "0.32.5";
 export declare function createServer(): McpServer;
 export declare function startStdioServer(): Promise<void>;

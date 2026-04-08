@@ -8,7 +8,7 @@ import { handlePair } from "./tools/pair.js";
 import { resolveTargetDevice } from "./tools/resolve.js";
 import { buildControlToolDescription, buildSystemToolDescription, buildScreenshotToolDescription, formatDeviceStatus, extractDynamic, } from "./core/device.js";
 import { registry } from "./core/registry.js";
-export const PACKAGE_VERSION = "0.32.4";
+export const PACKAGE_VERSION = "0.32.5";
 function errorResult(message) {
     return { content: [{ type: "text", text: message }], isError: true };
 }
