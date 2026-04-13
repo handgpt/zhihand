@@ -21,6 +21,8 @@ import {
   DEFAULT_MODELS,
   resolveConfig,
   resolveDefaultEndpoint,
+  loadPluginIdentity,
+  clearPluginIdentity,
 } from "../dist/core/config.js";
 import {
   executePairingNewUser,
@@ -204,6 +206,24 @@ switch (command) {
   case "stop": {
     const stopped = stopDaemon();
     console.log(stopped ? "Daemon stopped." : "No daemon is running.");
+    break;
+  }
+
+  case "identity": {
+    const subCmd = positionals[1];
+    if (subCmd === "reset") {
+      clearPluginIdentity();
+      console.log("Plugin identity cleared. Next 'zhihand pair' will register a new identity.");
+    } else {
+      const id = loadPluginIdentity();
+      if (id) {
+        console.log(`Edge ID:          ${id.edge_id}`);
+        console.log(`Stable Identity:  ${id.stable_identity}`);
+        console.log(`Plugin Secret:    ${id.plugin_secret.slice(0, 6)}...(redacted)`);
+      } else {
+        console.log("No plugin identity found. Run 'zhihand pair' to create one.");
+      }
+    }
     break;
   }
 

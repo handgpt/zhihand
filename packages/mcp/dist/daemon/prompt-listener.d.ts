@@ -1,5 +1,3 @@
-import type { ZhiHandRuntimeConfig } from "../core/config.ts";
-type ZhiHandConfig = ZhiHandRuntimeConfig;
 export interface MobilePrompt {
     id: string;
     credential_id: string;
@@ -11,14 +9,21 @@ export interface MobilePrompt {
     attachments?: unknown[];
 }
 export type PromptHandler = (prompt: MobilePrompt) => void;
+/** Edge-level prompt listener config. Uses pluginSecret instead of per-user controllerToken. */
+export interface PromptListenerConfig {
+    controlPlaneEndpoint: string;
+    edgeId: string;
+    pluginSecret: string;
+}
 export declare class PromptListener {
     private config;
     private handler;
     private log;
+    private onFatalError?;
     private processedIds;
     private rws;
     private stopped;
-    constructor(config: ZhiHandConfig, handler: PromptHandler, log: (msg: string) => void);
+    constructor(config: PromptListenerConfig, handler: PromptHandler, log: (msg: string) => void, onFatalError?: (reason: string) => void);
     start(): void;
     stop(): void;
     private dispatchPrompt;
@@ -26,4 +31,3 @@ export declare class PromptListener {
     private handleWSMessage;
     private handleEvent;
 }
-export {};

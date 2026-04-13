@@ -11,6 +11,7 @@ const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
 const CONFIG_PATH = path.join(ZHIHAND_DIR, "config.json");
 const STATE_PATH = path.join(ZHIHAND_DIR, "state.json");
 const BACKEND_PATH = path.join(ZHIHAND_DIR, "backend.json");
+const IDENTITY_PATH = path.join(ZHIHAND_DIR, "identity.json");
 export function resolveZhiHandDir() {
     return ZHIHAND_DIR;
 }
@@ -19,6 +20,36 @@ export function ensureZhiHandDir() {
 }
 export function getConfigPath() {
     return CONFIG_PATH;
+}
+// ── Plugin identity I/O ──────────────────────────────────
+/** Read persisted Plugin identity. Returns null if missing or malformed. */
+export function loadPluginIdentity() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(IDENTITY_PATH, "utf-8"));
+        if (raw.stable_identity && raw.edge_id && raw.plugin_secret) {
+            return raw;
+        }
+        return null;
+    }
+    catch {
+        return null;
+    }
+}
+/** Atomically persist Plugin identity (write-to-tmp + rename, mode 0o600). */
+export function savePluginIdentity(identity) {
+    ensureZhiHandDir();
+    const tmp = IDENTITY_PATH + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(identity, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, IDENTITY_PATH);
+}
+/** Delete identity.json (used by `zhihand identity reset`). */
+export function clearPluginIdentity() {
+    try {
+        fs.unlinkSync(IDENTITY_PATH);
+    }
+    catch {
+        // already gone
+    }
 }
 // ── v3 config I/O ──────────────────────────────────────────
 let legacyWarningPrinted = false;

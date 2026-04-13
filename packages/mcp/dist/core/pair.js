@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
-import { addUser, addDeviceToUser, ensureZhiHandDir, saveState, resolveDefaultEndpoint, getUserRecord, cleanupLegacyConfig, } from "./config.js";
+import os from "node:os";
+import { addUser, addDeviceToUser, ensureZhiHandDir, saveState, resolveDefaultEndpoint, getUserRecord, cleanupLegacyConfig, loadPluginIdentity, savePluginIdentity, } from "./config.js";
 import { fetchDeviceProfileOnce, extractStatic } from "./device.js";
 import { fetchUserCredentials } from "./ws.js";
 // ── Server API helpers ─────────────────────────────────────
@@ -58,7 +59,24 @@ export async function registerPlugin(endpoint, options) {
         throw new Error(`Register plugin failed: ${response.status} ${await response.text()}`);
     }
     const payload = (await response.json());
-    return { edge_id: payload.plugin.edge_id };
+    return { edge_id: payload.plugin.edge_id, plugin_secret: payload.plugin.plugin_secret };
+}
+/**
+ * Ensure a persistent Plugin identity exists. Reuses existing identity
+ * if present; otherwise registers a new plugin and persists the result.
+ * All pair operations share the same identity → same EdgeID.
+ */
+export async function ensurePluginIdentity(endpoint) {
+    const existing = loadPluginIdentity();
+    const stableId = existing?.stable_identity ?? `mcp-${os.hostname()}-${Date.now().toString(36)}`;
+    const plugin = await registerPlugin(endpoint, { stableIdentity: stableId });
+    const identity = {
+        stable_identity: stableId,
+        edge_id: plugin.edge_id,
+        plugin_secret: plugin.plugin_secret,
+    };
+    savePluginIdentity(identity);
+    return identity;
 }
 /**
  * Poll pairing session until claimed or expired.
@@ -97,10 +115,9 @@ export async function executePairingNewUser(preferredLabel) {
     cleanupLegacyConfig();
     const userId = userResp.user_id;
     const controllerToken = userResp.controller_token;
-    // 2. Register plugin (get edge_id)
-    const stableIdentity = `mcp-${Date.now().toString(36)}`;
-    const plugin = await registerPlugin(endpoint, { stableIdentity });
-    const edgeId = plugin.edge_id;
+    // 2. Ensure persistent plugin identity (same EdgeID across all pairs)
+    const identity = await ensurePluginIdentity(endpoint);
+    const edgeId = identity.edge_id;
     // 3. Create pairing session
     const session = await createPairingSession(endpoint, userId, controllerToken, edgeId, 300);
     saveState({
@@ -186,10 +203,9 @@ export async function executePairingAddDevice(userId, preferredLabel) {
     if (!user)
         throw new Error(`User '${userId}' not found in config`);
     const controllerToken = user.controller_token;
-    // Register plugin (get edge_id)
-    const stableIdentity = `mcp-${Date.now().toString(36)}`;
-    const plugin = await registerPlugin(endpoint, { stableIdentity });
-    const edgeId = plugin.edge_id;
+    // Ensure persistent plugin identity (same EdgeID across all pairs)
+    const identity = await ensurePluginIdentity(endpoint);
+    const edgeId = identity.edge_id;
     // Get existing credential IDs before pairing
     const existingCreds = await fetchUserCredentials(endpoint, userId, controllerToken);
     const existingIds = new Set(existingCreds.map((c) => c.credential_id));

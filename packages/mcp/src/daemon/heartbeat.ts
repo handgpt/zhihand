@@ -1,4 +1,3 @@
-import type { ZhiHandRuntimeConfig } from "../core/config.ts";
 import { dbg } from "./logger.ts";
 
 const HEARTBEAT_INTERVAL = 30_000; // 30s
@@ -14,6 +13,13 @@ export interface BrainMeta {
   model?: string | null;    // "flash" | "sonnet" | "gpt-5.4-mini" | ...
 }
 
+/** Plugin-level heartbeat target. Uses edgeId + pluginSecret instead of per-credential auth. */
+export interface HeartbeatTarget {
+  controlPlaneEndpoint: string;
+  edgeId: string;
+  pluginSecret: string;
+}
+
 let currentMeta: BrainMeta = {};
 
 /** Update the backend/model metadata that will be sent with the next heartbeat. */
@@ -21,22 +27,22 @@ export function setBrainMeta(meta: BrainMeta): void {
   currentMeta = meta;
 }
 
-function buildUrl(config: ZhiHandRuntimeConfig): string {
-  return `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/brain-status`;
+function buildUrl(target: HeartbeatTarget): string {
+  return `${target.controlPlaneEndpoint}/v1/plugins/${encodeURIComponent(target.edgeId)}/brain-status`;
 }
 
-async function sendHeartbeat(config: ZhiHandRuntimeConfig, online: boolean): Promise<boolean> {
+async function sendHeartbeat(target: HeartbeatTarget, online: boolean): Promise<boolean> {
   try {
     const body: Record<string, unknown> = { plugin_online: online };
     if (currentMeta.backend) body.backend = currentMeta.backend;
     if (currentMeta.model) body.model = currentMeta.model;
-    const url = buildUrl(config);
+    const url = buildUrl(target);
     dbg(`[heartbeat] POST ${url} body=${JSON.stringify(body)}`);
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.controllerToken}`,
+        "Authorization": `Bearer ${target.pluginSecret}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
@@ -49,15 +55,15 @@ async function sendHeartbeat(config: ZhiHandRuntimeConfig, online: boolean): Pro
   }
 }
 
-export async function sendBrainOnline(config: ZhiHandRuntimeConfig): Promise<boolean> {
-  return sendHeartbeat(config, true);
+export async function sendBrainOnline(target: HeartbeatTarget): Promise<boolean> {
+  return sendHeartbeat(target, true);
 }
 
-export async function sendBrainOffline(config: ZhiHandRuntimeConfig): Promise<boolean> {
-  return sendHeartbeat(config, false);
+export async function sendBrainOffline(target: HeartbeatTarget): Promise<boolean> {
+  return sendHeartbeat(target, false);
 }
 
-export function startHeartbeatLoop(config: ZhiHandRuntimeConfig, log: (msg: string) => void): void {
+export function startHeartbeatLoop(target: HeartbeatTarget, log: (msg: string) => void): void {
   let retrying = false;
   stopped = false;
 
@@ -65,7 +71,7 @@ export function startHeartbeatLoop(config: ZhiHandRuntimeConfig, log: (msg: stri
     // Skip main-timer beats while retry loop is active (avoids overlap & flapping)
     if (retrying || stopped) return;
 
-    const ok = await sendBrainOnline(config);
+    const ok = await sendBrainOnline(target);
     if (stopped) return; // check after await — stopHeartbeatLoop() may have been called
     if (ok) {
       scheduleNextBeat();
@@ -83,7 +89,7 @@ export function startHeartbeatLoop(config: ZhiHandRuntimeConfig, log: (msg: stri
     if (stopped) return;
     retryTimer = setTimeout(async () => {
       if (!retrying || stopped) return;
-      const recovered = await sendBrainOnline(config);
+      const recovered = await sendBrainOnline(target);
       if (stopped) return; // check after await
       if (recovered) {
         retrying = false;

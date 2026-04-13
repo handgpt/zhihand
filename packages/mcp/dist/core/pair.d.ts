@@ -1,4 +1,4 @@
-import type { DeviceRecord, UserRecord } from "./config.ts";
+import type { DeviceRecord, UserRecord, PluginIdentity } from "./config.ts";
 export interface PairingSession {
     session_id: string;
     pair_url: string;
@@ -30,7 +30,14 @@ export declare function registerPlugin(endpoint: string, options: {
     adapterKind?: string;
 }): Promise<{
     edge_id: string;
+    plugin_secret: string;
 }>;
+/**
+ * Ensure a persistent Plugin identity exists. Reuses existing identity
+ * if present; otherwise registers a new plugin and persists the result.
+ * All pair operations share the same identity → same EdgeID.
+ */
+export declare function ensurePluginIdentity(endpoint: string): Promise<PluginIdentity>;
 /**
  * Poll pairing session until claimed or expired.
  */

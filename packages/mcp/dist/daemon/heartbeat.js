@@ -9,23 +9,23 @@ let currentMeta = {};
 export function setBrainMeta(meta) {
     currentMeta = meta;
 }
-function buildUrl(config) {
-    return `${config.controlPlaneEndpoint}/v1/credentials/${encodeURIComponent(config.credentialId)}/brain-status`;
+function buildUrl(target) {
+    return `${target.controlPlaneEndpoint}/v1/plugins/${encodeURIComponent(target.edgeId)}/brain-status`;
 }
-async function sendHeartbeat(config, online) {
+async function sendHeartbeat(target, online) {
     try {
         const body = { plugin_online: online };
         if (currentMeta.backend)
             body.backend = currentMeta.backend;
         if (currentMeta.model)
             body.model = currentMeta.model;
-        const url = buildUrl(config);
+        const url = buildUrl(target);
         dbg(`[heartbeat] POST ${url} body=${JSON.stringify(body)}`);
         const response = await fetch(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${config.controllerToken}`,
+                "Authorization": `Bearer ${target.pluginSecret}`,
             },
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(10_000),
@@ -38,20 +38,20 @@ async function sendHeartbeat(config, online) {
         return false;
     }
 }
-export async function sendBrainOnline(config) {
-    return sendHeartbeat(config, true);
+export async function sendBrainOnline(target) {
+    return sendHeartbeat(target, true);
 }
-export async function sendBrainOffline(config) {
-    return sendHeartbeat(config, false);
+export async function sendBrainOffline(target) {
+    return sendHeartbeat(target, false);
 }
-export function startHeartbeatLoop(config, log) {
+export function startHeartbeatLoop(target, log) {
     let retrying = false;
     stopped = false;
     async function beat() {
         // Skip main-timer beats while retry loop is active (avoids overlap & flapping)
         if (retrying || stopped)
             return;
-        const ok = await sendBrainOnline(config);
+        const ok = await sendBrainOnline(target);
         if (stopped)
             return; // check after await — stopHeartbeatLoop() may have been called
         if (ok) {
@@ -70,7 +70,7 @@ export function startHeartbeatLoop(config, log) {
         retryTimer = setTimeout(async () => {
             if (!retrying || stopped)
                 return;
-            const recovered = await sendBrainOnline(config);
+            const recovered = await sendBrainOnline(target);
             if (stopped)
                 return; // check after await
             if (recovered) {

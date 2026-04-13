@@ -13,13 +13,15 @@ import {
   loadBackendConfig,
   saveBackendConfig,
   resolveZhiHandDir,
+  resolveDefaultEndpoint,
   ensureZhiHandDir,
+  loadPluginIdentity,
   DEFAULT_MODELS,
   type BackendName,
   type ZhiHandRuntimeConfig,
 } from "../core/config.ts";
 import { PACKAGE_VERSION } from "../index.ts";
-import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta } from "./heartbeat.ts";
+import { startHeartbeatLoop, stopHeartbeatLoop, sendBrainOffline, setBrainMeta, type HeartbeatTarget } from "./heartbeat.ts";
 import { PromptListener, type MobilePrompt } from "./prompt-listener.ts";
 import { dispatchToCLI, postReply, killActiveChild } from "./dispatcher.ts";
 import { setDebugEnabled, dbg } from "./logger.ts";
@@ -399,14 +401,36 @@ export async function startDaemon(options?: {
 
   writePid();
 
-  // Start heartbeat
-  startHeartbeatLoop(config, log);
+  // Load Plugin identity for edge-level heartbeat + prompt WS
+  const identity = loadPluginIdentity();
+  if (!identity) {
+    log("[identity] No plugin identity found. Run 'zhihand pair' first.");
+    process.exit(1);
+  }
+  log(`[identity] Loaded: edge_id=${identity.edge_id}, stable_identity=${identity.stable_identity}`);
 
-  // Start prompt listener
+  const heartbeatTarget: HeartbeatTarget = {
+    controlPlaneEndpoint: resolveDefaultEndpoint(),
+    edgeId: identity.edge_id,
+    pluginSecret: identity.plugin_secret,
+  };
+
+  // Start heartbeat (edge-level, pluginSecret auth)
+  startHeartbeatLoop(heartbeatTarget, log);
+
+  // Start prompt listener (edge-level single WS)
   const promptListener = new PromptListener(
-    config,
+    {
+      controlPlaneEndpoint: resolveDefaultEndpoint(),
+      edgeId: identity.edge_id,
+      pluginSecret: identity.plugin_secret,
+    },
     (prompt) => onPromptReceived(config, prompt),
     log,
+    (reason) => {
+      log(`[fatal] ${reason}`);
+      process.exit(1);
+    },
   );
   promptListener.start();
 
@@ -414,6 +438,7 @@ export async function startDaemon(options?: {
   log(`  PID: ${process.pid}`);
   log(`  MCP: http://127.0.0.1:${port}/mcp`);
   log(`  Backend: ${activeBackend ?? "(none)"}`);
+  log(`  Edge: ${identity.edge_id}`);
   log(`  Device: ${config.credentialId}`);
   log(`Listening for prompts...`);
 
@@ -424,7 +449,7 @@ export async function startDaemon(options?: {
     stopHeartbeatLoop();
     clearInterval(sessionCleanupTimer);
     await killActiveChild();
-    await sendBrainOffline(config);
+    await sendBrainOffline(heartbeatTarget);
     // Close all MCP sessions
     for (const session of mcpSessions.values()) {
       try { await session.transport.close(); } catch { /* ignore */ }

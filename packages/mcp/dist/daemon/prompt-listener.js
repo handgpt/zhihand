@@ -4,13 +4,15 @@ export class PromptListener {
     config;
     handler;
     log;
+    onFatalError;
     processedIds = new Set();
     rws = null;
     stopped = false;
-    constructor(config, handler, log) {
+    constructor(config, handler, log, onFatalError) {
         this.config = config;
         this.handler = handler;
         this.log = log;
+        this.onFatalError = onFatalError;
     }
     start() {
         this.stopped = false;
@@ -27,7 +29,7 @@ export class PromptListener {
             return;
         }
         this.processedIds.add(prompt.id);
-        dbg(`[prompt] Dispatching prompt: id=${prompt.id}, status=${prompt.status}, text="${prompt.text.slice(0, 100)}${prompt.text.length > 100 ? "..." : ""}"`);
+        dbg(`[prompt] Dispatching prompt: id=${prompt.id}, cred=${prompt.credential_id}, status=${prompt.status}, text="${prompt.text.slice(0, 100)}${prompt.text.length > 100 ? "..." : ""}"`);
         // Prevent unbounded growth
         if (this.processedIds.size > 500) {
             const arr = [...this.processedIds];
@@ -38,21 +40,18 @@ export class PromptListener {
     connectWS() {
         if (this.stopped)
             return;
-        const wsUrl = `${this.config.controlPlaneEndpoint.replace(/^http/, "ws")}/v1/credentials/${encodeURIComponent(this.config.credentialId)}/ws?topic=prompts`;
+        // Edge-level WS: single connection for all credentials under this edge
+        const wsUrl = `${this.config.controlPlaneEndpoint.replace(/^http/, "ws")}/v1/plugins/${encodeURIComponent(this.config.edgeId)}/ws?topic=prompts`;
         dbg(`[ws] Connecting to ${wsUrl}`);
         this.rws = new ReconnectingWebSocket({
             url: wsUrl,
-            headers: {
-                "Authorization": `Bearer ${this.config.controllerToken}`,
-            },
+            headers: {},
             onOpen: () => {
-                // Send auth message as first frame (required by server).
+                // Send auth frame with pluginSecret (server verifies before streaming)
                 this.rws.send(JSON.stringify({
                     type: "auth",
-                    controller_token: this.config.controllerToken,
-                    topics: ["prompts"],
+                    plugin_secret: this.config.pluginSecret,
                 }));
-                // onConnected deferred until auth_ok is received (see handleWSMessage)
             },
             onClose: (_code, _reason) => {
                 dbg("[ws] Disconnected. ReconnectingWebSocket will retry.");
@@ -68,42 +67,38 @@ export class PromptListener {
     }
     handleWSMessage(data) {
         const msg = data;
-        // Auth responses
         if (msg.type === "auth_ok") {
-            this.log("[ws] Connected to prompt stream.");
+            this.log("[ws] Connected to Edge prompt stream.");
             return;
         }
         if (msg.type === "auth_error") {
-            this.log(`[ws] Auth failed: ${msg.error}`);
+            const reason = `Plugin auth failed: ${msg.error}. Run 'zhihand pair' to re-register.`;
+            this.log(`[ws] ${reason}`);
             this.rws?.stop();
             this.rws = null;
+            this.onFatalError?.(reason);
             return;
         }
-        // Application-level ping (if server sends these alongside protocol pings)
         if (msg.type === "ping") {
             this.rws?.send(JSON.stringify({ type: "pong" }));
             return;
         }
-        // Event dispatch
         if (msg.type === "event" || msg.kind) {
             this.handleEvent(msg);
         }
     }
     handleEvent(event) {
         const kind = event.kind;
-        dbg(`[ws] Event: kind=${kind}, prompt=${event.prompt?.id ?? "-"}, prompts=${event.prompts?.length ?? 0}`);
+        dbg(`[ws] Event: kind=${kind}, prompt=${event.prompt?.id ?? "-"}`);
         if (kind === "prompt.queued" && event.prompt) {
             this.dispatchPrompt(event.prompt);
         }
-        else if (kind === "prompt.snapshot" && event.prompts) {
-            for (const p of event.prompts) {
-                if (p.status === "pending" || p.status === "processing") {
-                    this.dispatchPrompt(p);
-                }
+        else if (kind === "prompt.snapshot" && event.prompt) {
+            // Edge WS sends individual snapshot events (one per pending prompt)
+            const p = event.prompt;
+            if (p.status === "pending" || p.status === "processing") {
+                this.dispatchPrompt(p);
             }
-        }
-        else if (kind === "device_profile.updated") {
-            this.log("[device] device_profile.updated event received on prompts stream (ignored; registry handles it)");
         }
     }
 }

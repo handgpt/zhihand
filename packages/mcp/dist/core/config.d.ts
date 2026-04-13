@@ -34,9 +34,20 @@ export interface BackendConfig {
     model?: string | null;
 }
 export declare const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string>;
+export interface PluginIdentity {
+    stable_identity: string;
+    edge_id: string;
+    plugin_secret: string;
+}
 export declare function resolveZhiHandDir(): string;
 export declare function ensureZhiHandDir(): void;
 export declare function getConfigPath(): string;
+/** Read persisted Plugin identity. Returns null if missing or malformed. */
+export declare function loadPluginIdentity(): PluginIdentity | null;
+/** Atomically persist Plugin identity (write-to-tmp + rename, mode 0o600). */
+export declare function savePluginIdentity(identity: PluginIdentity): void;
+/** Delete identity.json (used by `zhihand identity reset`). */
+export declare function clearPluginIdentity(): void;
 export declare function loadConfig(): ZhihandConfigV3;
 /**
  * Atomically write config: write to .tmp, then rename. Prevents corruption

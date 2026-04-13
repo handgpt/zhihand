@@ -52,12 +52,21 @@ export const DEFAULT_MODELS: Record<Exclude<BackendName, "openclaw">, string> = 
   codex: "gpt-5.4-mini",
 };
 
+// ── Plugin identity ──────────────────────────────────────
+
+export interface PluginIdentity {
+  stable_identity: string;
+  edge_id: string;
+  plugin_secret: string;
+}
+
 // ── Paths ──────────────────────────────────────────────────
 
 const ZHIHAND_DIR = path.join(os.homedir(), ".zhihand");
 const CONFIG_PATH = path.join(ZHIHAND_DIR, "config.json");
 const STATE_PATH = path.join(ZHIHAND_DIR, "state.json");
 const BACKEND_PATH = path.join(ZHIHAND_DIR, "backend.json");
+const IDENTITY_PATH = path.join(ZHIHAND_DIR, "identity.json");
 
 export function resolveZhiHandDir(): string {
   return ZHIHAND_DIR;
@@ -69,6 +78,38 @@ export function ensureZhiHandDir(): void {
 
 export function getConfigPath(): string {
   return CONFIG_PATH;
+}
+
+// ── Plugin identity I/O ──────────────────────────────────
+
+/** Read persisted Plugin identity. Returns null if missing or malformed. */
+export function loadPluginIdentity(): PluginIdentity | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(IDENTITY_PATH, "utf-8"));
+    if (raw.stable_identity && raw.edge_id && raw.plugin_secret) {
+      return raw as PluginIdentity;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Atomically persist Plugin identity (write-to-tmp + rename, mode 0o600). */
+export function savePluginIdentity(identity: PluginIdentity): void {
+  ensureZhiHandDir();
+  const tmp = IDENTITY_PATH + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(identity, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, IDENTITY_PATH);
+}
+
+/** Delete identity.json (used by `zhihand identity reset`). */
+export function clearPluginIdentity(): void {
+  try {
+    fs.unlinkSync(IDENTITY_PATH);
+  } catch {
+    // already gone
+  }
 }
 
 // ── v3 config I/O ──────────────────────────────────────────
