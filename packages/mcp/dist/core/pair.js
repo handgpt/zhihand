@@ -76,7 +76,19 @@ export async function ensurePluginIdentity(endpoint) {
         plugin_secret: plugin.plugin_secret,
     };
     savePluginIdentity(identity);
+    // Notify running daemon to hot-reload identity (best-effort, daemon may not be running)
+    notifyDaemonReload();
     return identity;
+}
+/** Best-effort POST to daemon's reload-identity endpoint. */
+function notifyDaemonReload() {
+    const port = parseInt(process.env.ZHIHAND_PORT ?? "", 10) || 18686;
+    fetch(`http://127.0.0.1:${port}/internal/reload-identity`, {
+        method: "POST",
+        signal: AbortSignal.timeout(3_000),
+    }).catch(() => {
+        // Daemon not running — that's fine, next start will pick up identity
+    });
 }
 /**
  * Poll pairing session until claimed or expired.

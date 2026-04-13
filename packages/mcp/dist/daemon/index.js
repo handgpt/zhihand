@@ -64,6 +64,8 @@ function onPromptReceived(config, prompt) {
     }
 }
 // ── Internal API ───────────────────────────────────────────
+/** Set by startDaemon to allow identity hot-reload via /internal/reload-identity */
+let reloadIdentityHandler = null;
 function handleInternalAPI(req, res) {
     const url = req.url ?? "";
     if (url === "/internal/backend" && req.method === "POST") {
@@ -143,6 +145,18 @@ function handleInternalAPI(req, res) {
                 res.end(JSON.stringify({ error: err.message }));
             }
         });
+        return true;
+    }
+    if (url === "/internal/reload-identity" && req.method === "POST") {
+        dbg(`[api] POST /internal/reload-identity`);
+        if (!reloadIdentityHandler) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Daemon not ready" }));
+            return true;
+        }
+        const result = reloadIdentityHandler();
+        res.writeHead(result.ok ? 200 : 500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
         return true;
     }
     if (url === "/internal/status" && req.method === "GET") {
@@ -359,45 +373,67 @@ export async function startDaemon(options) {
         httpServer.listen(port, "127.0.0.1", () => resolve());
     });
     writePid();
-    // Load Plugin identity for edge-level heartbeat + prompt WS
-    const identity = loadPluginIdentity();
-    if (!identity) {
-        log("[identity] No plugin identity found. Run 'zhihand pair' first.");
-        process.exit(1);
+    // ── Identity hot-reload support ──────────────────────────
+    let currentHeartbeatTarget = null;
+    let promptListener = null;
+    /** (Re)start heartbeat + prompt listener with current identity. Stops previous if running. */
+    function activateIdentity(identity) {
+        // Stop previous if running
+        if (promptListener)
+            promptListener.stop();
+        stopHeartbeatLoop();
+        currentHeartbeatTarget = {
+            controlPlaneEndpoint: resolveDefaultEndpoint(),
+            edgeId: identity.edge_id,
+            pluginSecret: identity.plugin_secret,
+        };
+        startHeartbeatLoop(currentHeartbeatTarget, log);
+        promptListener = new PromptListener({
+            controlPlaneEndpoint: resolveDefaultEndpoint(),
+            edgeId: identity.edge_id,
+            pluginSecret: identity.plugin_secret,
+        }, (prompt) => onPromptReceived(config, prompt), log, (reason) => {
+            log(`[fatal] ${reason}`);
+            process.exit(1);
+        });
+        promptListener.start();
+        log(`[identity] Active: edge_id=${identity.edge_id}, stable_identity=${identity.stable_identity}`);
     }
-    log(`[identity] Loaded: edge_id=${identity.edge_id}, stable_identity=${identity.stable_identity}`);
-    const heartbeatTarget = {
-        controlPlaneEndpoint: resolveDefaultEndpoint(),
-        edgeId: identity.edge_id,
-        pluginSecret: identity.plugin_secret,
+    // Wire up the reload-identity API handler
+    reloadIdentityHandler = () => {
+        const identity = loadPluginIdentity();
+        if (!identity) {
+            return { ok: false, error: "No identity.json found" };
+        }
+        activateIdentity(identity);
+        return { ok: true, edge_id: identity.edge_id };
     };
-    // Start heartbeat (edge-level, pluginSecret auth)
-    startHeartbeatLoop(heartbeatTarget, log);
-    // Start prompt listener (edge-level single WS)
-    const promptListener = new PromptListener({
-        controlPlaneEndpoint: resolveDefaultEndpoint(),
-        edgeId: identity.edge_id,
-        pluginSecret: identity.plugin_secret,
-    }, (prompt) => onPromptReceived(config, prompt), log, (reason) => {
-        log(`[fatal] ${reason}`);
-        process.exit(1);
-    });
-    promptListener.start();
+    // Try loading identity at startup (non-fatal if missing)
+    const initialIdentity = loadPluginIdentity();
+    if (initialIdentity) {
+        activateIdentity(initialIdentity);
+    }
+    else {
+        log("[identity] No plugin identity found. Waiting for 'zhihand pair'...");
+    }
     log(`ZhiHand daemon started.`);
     log(`  PID: ${process.pid}`);
     log(`  MCP: http://127.0.0.1:${port}/mcp`);
     log(`  Backend: ${activeBackend ?? "(none)"}`);
-    log(`  Edge: ${identity.edge_id}`);
+    if (initialIdentity)
+        log(`  Edge: ${initialIdentity.edge_id}`);
     log(`  Device: ${config.credentialId}`);
     log(`Listening for prompts...`);
     // Graceful shutdown
     const shutdown = async () => {
         log("\nShutting down...");
-        promptListener.stop();
+        if (promptListener)
+            promptListener.stop();
         stopHeartbeatLoop();
         clearInterval(sessionCleanupTimer);
         await killActiveChild();
-        await sendBrainOffline(heartbeatTarget);
+        if (currentHeartbeatTarget)
+            await sendBrainOffline(currentHeartbeatTarget);
         // Close all MCP sessions
         for (const session of mcpSessions.values()) {
             try {

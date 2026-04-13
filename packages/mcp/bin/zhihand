@@ -605,7 +605,7 @@ switch (command) {
       { id: 17, phase: "Text+Keys", label: "Key combo (select all)", kind: "hid", platformAware: "select_all" },
       { id: 18, phase: "Navigation", label: "Press Home", kind: "hid", params: { action: "home" } },
       { id: 19, phase: "Navigation", label: "Press Back", kind: "hid", params: { action: "back" } },
-      { id: 20, phase: "Navigation", label: "Open WeChat", kind: "hid", platformAware: "open_wechat" },
+      { id: 20, phase: "Navigation", label: "Open Settings", kind: "hid", platformAware: "open_settings" },
       { id: 21, phase: "Clipboard", label: "Clipboard set", kind: "hid", platformAware: "clipboard_set" },
       { id: 22, phase: "System Nav", label: "Notification shade", kind: "system", params: { action: "notification" } },
       { id: 23, phase: "System Nav", label: "Recent apps", kind: "system", params: { action: "recent" } },
@@ -758,10 +758,10 @@ switch (command) {
 
     function resolvePlatformAwareParams(variant) {
       const platform = getDevicePlatform();
-      if (variant === "open_wechat") {
+      if (variant === "open_settings") {
         return platform === "ios"
-          ? { action: "open_app", bundleId: "com.tencent.xin" }
-          : { action: "open_app", appPackage: "com.tencent.mm" };
+          ? { action: "open_app", bundleId: "com.apple.Preferences" }
+          : { action: "open_app", appPackage: "com.android.settings" };
       }
       if (variant === "clipboard_set") {
         return { action: "clipboard", text: `zhihand_test_${Date.now()}` };
